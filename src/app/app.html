@@ -1,0 +1,83 @@
+<div class="app">
+  <!-- Left navigation rail -->
+  <aside class="rail">
+    <div class="brand">Zyter<span>+</span></div>
+    @for (item of rail; track item.label) {
+      <button class="rail-item" [class.active]="item.active">
+        <span class="rail-ic">
+          <z-icon [name]="item.icon" [size]="20" [stroke]="1.8"></z-icon>
+          @if (item.badge) { <span class="rail-badge">{{ item.badge }}</span> }
+        </span>
+        <span class="rail-label">{{ item.label }}</span>
+      </button>
+    }
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Top utility bar -->
+    <div class="topbar">
+      <span class="online"><span class="dot"></span>
+        <z-icon name="wifi" [size]="14" [stroke]="1.8"></z-icon> Online</span>
+      <button class="btn outline"><z-icon name="download" [size]="14"></z-icon> Export</button>
+      <button class="btn outline role"><z-icon name="shield" [size]="14"></z-icon> UM Supervisor
+        <z-icon name="chevron" [size]="14"></z-icon></button>
+      <div class="user">
+        <span class="avatar">CL</span>
+        <span class="uinfo"><b>Christina Lawson</b><small>UM Supervisor</small></span>
+      </div>
+    </div>
+
+    <!-- Dashboard header -->
+    <div class="dash-head">
+      <div class="dash-title">
+        <span class="dash-shield"><z-icon name="shield" [size]="20"></z-icon></span>
+        <div>
+          <h1>UM Supervisor Dashboard</h1>
+          <p class="section-note">Your team is performing well — here's your operational overview</p>
+        </div>
+      </div>
+      <div class="dash-date">{{ data.today }}</div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip">
+      @for (k of data.kpis; track k.label) {
+        <div class="kpi" [attr.data-tone]="k.tone">
+          <div class="kpi-ic"><z-icon [name]="k.icon" [size]="16" [stroke]="1.8"></z-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-val">{{ k.value }}</div>
+            <div class="kpi-lab">{{ k.label }}</div>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Tab bar -->
+    <nav class="tabbar">
+      @for (t of tabs; track t; let i = $index) {
+        <button class="tab" [class.active]="selected() === i" (click)="select(i)">{{ t }}</button>
+      }
+      <div class="tab-scroll">
+        <button><z-icon name="chevron" [size]="14" [stroke]="2.5"></z-icon></button>
+        <button class="flip"><z-icon name="chevron" [size]="14" [stroke]="2.5"></z-icon></button>
+      </div>
+    </nav>
+
+    <!-- Tab content -->
+    <section class="content">
+      @switch (selected()) {
+        @case (0) { <app-workforce-tab /> }
+        @case (1) { <app-tat-tab /> }
+        @case (2) { <app-clinical-tab /> }
+        @case (3) { <app-risk-tab /> }
+        @case (4) { <app-concurrent-tab /> }
+        @case (5) { <app-intake-tab /> }
+        @case (6) { <app-provider-tab /> }
+        @case (7) { <app-financial-tab /> }
+        @case (8) { <app-audit-tab /> }
+        @case (9) { <app-ai-tab /> }
+      }
+    </section>
+  </main>
+</div>

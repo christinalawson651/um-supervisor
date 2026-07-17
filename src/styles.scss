@@ -1,0 +1,248 @@
+/* ===========================================================
+   Zyter UM Supervisor Dashboard — global design system
+   Pixel-matched to the NextGen Care Management screenshots
+   =========================================================== */
+
+:root {
+  /* Brand teal */
+  --teal-900: #0f766e;
+  --teal-700: #0d9488;
+  --teal-600: #14b8a6;
+  --teal-100: #ccfbf1;
+  --teal-50:  #f0fdfa;
+
+  /* Neutrals */
+  --ink:        #1f2937;
+  --ink-soft:   #374151;
+  --gray-500:   #6b7280;
+  --gray-400:   #9ca3af;
+  --gray-300:   #d1d5db;
+  --gray-200:   #e5e7eb;
+  --gray-100:   #f3f4f6;
+  --gray-50:    #f9fafb;
+  --page-bg:    #ffffff;
+
+  /* Status */
+  --green-bg: #d1fae5;  --green-fg: #065f46;  --green: #10b981;
+  --amber-bg: #fef3c7;  --amber-fg: #92400e;  --amber: #f59e0b;
+  --red-bg:   #fee2e2;  --red-fg:   #991b1b;  --red:   #ef4444;
+  --blue-bg:  #dbeafe;  --blue-fg:  #1e40af;  --blue:  #3b82f6;
+  --purple:   #8b5cf6;
+
+  --border:     #e8eaed;
+  --radius:     10px;
+  --radius-sm:  8px;
+  --shadow:     0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: "Segoe UI", Inter, -apple-system, BlinkMacSystemFont, Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--page-bg);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- generic surface ---------- */
+.card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.section-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.section-note {
+  color: var(--teal-700);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.muted-label {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray-500);
+  font-weight: 600;
+}
+
+/* ---------- tables ---------- */
+.z-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.z-table thead th {
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray-500);
+  font-weight: 600;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.z-table tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--ink-soft);
+  vertical-align: middle;
+}
+.z-table tbody tr:last-child td { border-bottom: none; }
+.z-table tbody tr:hover { background: var(--gray-50); }
+.z-table .strong { font-weight: 600; color: var(--ink); }
+.z-table .num { font-variant-numeric: tabular-nums; }
+.z-table .danger { color: var(--red); font-weight: 600; }
+
+/* ---------- badges / pills ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.badge.green  { background: var(--green-bg); color: var(--green-fg); }
+.badge.amber  { background: var(--amber-bg); color: var(--amber-fg); }
+.badge.red    { background: var(--red-bg);   color: var(--red-fg); }
+.badge.blue   { background: var(--blue-bg);  color: var(--blue-fg); }
+.badge.teal   { background: var(--teal-100); color: var(--teal-900); }
+.badge.gray   { background: var(--gray-100); color: var(--gray-500); }
+
+/* subtle text-only rate pills used in decision/provider tables */
+.rate-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.rate-pill.good { background: var(--green-bg); color: var(--green-fg); }
+.rate-pill.mid  { background: var(--amber-bg); color: var(--amber-fg); }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: #fff;
+  color: var(--ink-soft);
+  transition: background .12s, border-color .12s;
+}
+.btn:hover { background: var(--gray-50); }
+.btn.primary {
+  background: var(--teal-700);
+  border-color: var(--teal-700);
+  color: #fff;
+}
+.btn.primary:hover { background: var(--teal-900); }
+.btn.outline { border-color: var(--gray-300); }
+.btn.outline.teal { border-color: var(--teal-700); color: var(--teal-700); }
+.btn.sm { padding: 6px 12px; font-size: 12px; }
+
+/* ---------- progress bars ---------- */
+.pbar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--gray-200);
+  overflow: hidden;
+}
+.pbar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--teal-700);
+}
+.pbar.amber > span { background: var(--amber); }
+.pbar.red > span   { background: var(--red); }
+
+/* thin inline mini-bar (tables) */
+.mini-bar {
+  display: inline-block;
+  vertical-align: middle;
+  width: 110px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--gray-200);
+  overflow: hidden;
+}
+.mini-bar > span { display:block; height:100%; background: var(--amber); border-radius:999px; }
+.mini-bar.teal > span { background: var(--teal-700); }
+.mini-bar.red  > span { background: var(--red); }
+
+/* utility */
+.flex { display: flex; }
+.between { justify-content: space-between; }
+.center { align-items: center; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+
+/* ---------- shared tab layout ---------- */
+.tab-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.tab-head h2 { font-size: 17px; font-weight: 600; margin: 0; color: var(--ink); }
+
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+
+.panel { background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); }
+.panel-pad { padding: 18px 20px; }
+.panel-title { font-size: 14px; font-weight: 600; color: var(--ink); margin: 0 0 14px; }
+
+.mb-16 { margin-bottom: 16px; }
+.mt-6 { margin-top: 24px; }
+
+/* big metric tile (financial / tat stats) */
+.metric-tile {
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 26px 22px; text-align: center;
+}
+.metric-tile .ic { color: var(--gray-400); margin-bottom: 10px; display:flex; justify-content:center; }
+.metric-tile .val { font-size: 30px; font-weight: 700; color: var(--ink); }
+.metric-tile .lab { font-size: 12px; color: var(--gray-500); margin-top: 4px; }
+
+/* small stat tile with border (tat expedited/standard, risk summary) */
+.stat-box {
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px; text-align: center;
+}
+.stat-box .val { font-size: 24px; font-weight: 700; color: var(--ink); }
+.stat-box .lab { font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--gray-500); font-weight: 600; margin-top: 4px; }
+
+/* labeled progress rows (quality/compliance) */
+.bar-block .bar-top { display:flex; align-items:center; gap:8px; margin-bottom: 12px;
+  color: var(--gray-500); font-size: 12.5px; font-weight: 500; }
+.bar-block .bar-val { font-size: 30px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+.bar-block .bar-val.amber { color: var(--amber); }
