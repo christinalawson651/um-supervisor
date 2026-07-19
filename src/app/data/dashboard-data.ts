@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import {
   Kpi, QueueCard, NurseRow, TatBucket, TatStat, DecisionStat, DecisionRow,
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
@@ -9,7 +9,8 @@ import {
 export class DashboardData {
   readonly today = 'Friday, July 17, 2026';
 
-  readonly kpis: Kpi[] = [
+  // Mutable collections are signals so the UI reacts to demo actions.
+  readonly kpis = signal<Kpi[]>([
     { icon: 'folder',   value: '247',   label: 'Pending Cases',     tone: 'green' },
     { icon: 'check',    value: '94.2%', label: 'TAT Compliance',    tone: 'green' },
     { icon: 'bolt',     value: '38%',   label: 'Auto-Approval Rate', tone: 'teal' },
@@ -18,26 +19,26 @@ export class DashboardData {
     { icon: 'inbox',    value: '8',     label: 'Unassigned Queue',  tone: 'amber' },
     { icon: 'xcircle',  value: '3',     label: 'Breached SLAs',     tone: 'red' },
     { icon: 'users',    value: '87%',   label: 'Team Utilization',  tone: 'green' },
-  ];
+  ]);
 
   // ---------- Workforce & Queue Management ----------
-  readonly queues: QueueCard[] = [
+  readonly queues = signal<QueueCard[]>([
     { name: 'Intake',          count: 42, buckets: { fresh: 45, day2: 30, over48: 18, breach: 7 } },
     { name: 'Clinical Review', count: 68, buckets: { fresh: 55, day2: 28, over48: 12, breach: 5 } },
     { name: 'MD Review',       count: 23, buckets: { fresh: 40, day2: 32, over48: 20, breach: 8 } },
     { name: 'RFI Pending',     count: 31, buckets: { fresh: 30, day2: 35, over48: 25, breach: 10 } },
     { name: 'OON Review',      count: 15, buckets: { fresh: 50, day2: 30, over48: 14, breach: 6 } },
     { name: 'Concurrent',      count: 38, buckets: { fresh: 52, day2: 30, over48: 13, breach: 5 } },
-  ];
+  ]);
 
-  readonly nurses: NurseRow[] = [
+  readonly nurses = signal<NurseRow[]>([
     { name: 'Maria Gonzalez, RN',  active: 32, pending: 8,  completed: 145, avgTat: '1.8h', utilization: 92 },
     { name: 'Jessica Williams, RN', active: 28, pending: 5,  completed: 132, avgTat: '2.1h', utilization: 85 },
     { name: 'Andrew Mitchell, RN', active: 35, pending: 12, completed: 128, avgTat: '2.6h', utilization: 96 },
     { name: 'Sarah Mitchell, RN',  active: 22, pending: 3,  completed: 156, avgTat: '1.5h', utilization: 72 },
     { name: 'Emily Chen, RN',      active: 30, pending: 7,  completed: 141, avgTat: '2.0h', utilization: 88 },
     { name: 'Robert Kim, RN',      active: 26, pending: 4,  completed: 138, avgTat: '1.9h', utilization: 80 },
-  ];
+  ]);
 
   // ---------- TAT & SLA Compliance ----------
   readonly tatCompliance = 94;
@@ -132,11 +133,11 @@ export class DashboardData {
   ];
 
   // ---------- AI / NextGen Intelligence ----------
-  readonly aiRecommendations: AiRecommendation[] = [
+  readonly aiRecommendations = signal<AiRecommendation[]>([
     { icon: 'swap',   title: 'Reassign Case AUTH-4587', detail: 'Nurse Andrew Mitchell is at 96% capacity. Reassign to Sarah Mitchell (72%) to prevent TAT breach.', confidence: 94, action: 'Reassign Case', tone: 'red' },
     { icon: 'mail',   title: 'Send RFI for AUTH-4521', detail: 'Clinical justification missing for cardiac bypass request. Provider has 24h response history.', confidence: 89, action: 'Send RFI', tone: 'amber' },
     { icon: 'arrowup', title: 'Escalate AUTH-4498 to MD', detail: 'Liver transplant evaluation exceeds nurse review scope. Dr. Patel available for immediate review.', confidence: 97, action: 'Escalate to MD', tone: 'blue' },
-  ];
+  ]);
   readonly riskGauges = [
     { value: 23, label: 'Denial Likelihood',  tone: 'red' as const },
     { value: 15, label: 'Appeal Likelihood',  tone: 'amber' as const },
@@ -156,12 +157,79 @@ export class DashboardData {
     { value: '5',  label: 'Escalated Today', tone: 'blue' as const },
     { value: '2',  label: 'Awaiting P2P',    tone: 'amber' as const },
   ];
-  readonly riskCases: RiskCase[] = [
+  readonly riskCases = signal<RiskCase[]>([
     { authId: 'AUTH-4587', member: 'Nguyen, Linda',   type: 'Clinical Review', reason: 'Approaching TAT deadline', owner: 'Andrew Mitchell, RN', slaRemaining: '2h 15m', risk: 'red',   riskLabel: 'High' },
     { authId: 'AUTH-4473', member: 'Foster, Daniel',  type: 'MD Review',       reason: 'SLA breached — decision overdue', owner: 'MD Queue', slaRemaining: 'Overdue', risk: 'red',   riskLabel: 'Breached' },
     { authId: 'AUTH-4521', member: 'Johnson, Robert', type: 'RFI Pending',     reason: 'Awaiting provider documentation', owner: 'Maria Gonzalez, RN', slaRemaining: '6h 40m', risk: 'amber', riskLabel: 'Medium' },
     { authId: 'AUTH-4498', member: 'Martinez, Carlos', type: 'MD Review',      reason: 'High-dollar case pending escalation', owner: 'Dr. Patel', slaRemaining: '4h 05m', risk: 'amber', riskLabel: 'Medium' },
     { authId: 'AUTH-4534', member: 'Williams, Sarah',  type: 'Concurrent',     reason: 'Overstay risk — continued stay review', owner: 'Emily Chen, RN', slaRemaining: '1d 3h', risk: 'amber', riskLabel: 'Medium' },
     { authId: 'AUTH-4602', member: 'Reed, Katherine',  type: 'Intake',         reason: 'Unassigned > 24h', owner: 'Unassigned', slaRemaining: '8h 20m', risk: 'amber', riskLabel: 'Medium' },
-  ];
+  ]);
+
+  // ---------- demo actions (mutate signal-backed state) ----------
+
+  private setKpi(label: string, transform: (n: number) => number, suffix = '') {
+    this.kpis.update((list) =>
+      list.map((k) => {
+        if (k.label !== label) return k;
+        const num = parseFloat(k.value);
+        const next = transform(isNaN(num) ? 0 : num);
+        return { ...k, value: `${next}${suffix}` };
+      }),
+    );
+  }
+
+  /** Recompute a nurse's utilization proportionally to their own load change. */
+  private withActive(n: NurseRow, nextActive: number, pendingDelta = 0): NurseRow {
+    const active = Math.max(0, nextActive);
+    // preserve each nurse's own active→utilization ratio, so more cases → higher %
+    const perCase = n.active > 0 ? n.utilization / n.active : 3;
+    const utilization = Math.max(0, Math.min(100, Math.round(active * perCase)));
+    return { ...n, active, pending: Math.max(0, n.pending + pendingDelta), utilization };
+  }
+
+  /** Move one case from the busiest nurse to the one with most headroom. */
+  reassignBusiest(): { from: string; to: string } | null {
+    const list = [...this.nurses()];
+    if (list.length < 2) return null;
+    const from = list.reduce((a, b) => (b.utilization > a.utilization ? b : a));
+    const to = list.reduce((a, b) => (b.utilization < a.utilization ? b : a));
+    if (from.name === to.name) return null;
+    this.nurses.update((rows) =>
+      rows.map((n) => {
+        if (n.name === from.name) return this.withActive(n, n.active - 1, -1);
+        if (n.name === to.name) return this.withActive(n, n.active + 1);
+        return n;
+      }),
+    );
+    return { from: from.name, to: to.name };
+  }
+
+  /** Reassign to a specific nurse (from the busiest). */
+  reassignTo(targetName: string) {
+    this.nurses.update((rows) => {
+      const from = rows.reduce((a, b) => (b.utilization > a.utilization ? b : a));
+      return rows.map((n) => {
+        if (n.name === from.name && n.name !== targetName) return this.withActive(n, n.active - 1, -1);
+        if (n.name === targetName) return this.withActive(n, n.active + 1);
+        return n;
+      });
+    });
+  }
+
+  /** Drop one case from a named queue (min 0). */
+  decrementQueue(name: string) {
+    this.queues.update((qs) =>
+      qs.map((q) => (q.name === name ? { ...q, count: Math.max(0, q.count - 1) } : q)),
+    );
+  }
+
+  dismissRecommendation(title: string) {
+    this.aiRecommendations.update((r) => r.filter((x) => x.title !== title));
+  }
+
+  resolveRiskCase(authId: string) {
+    this.riskCases.update((r) => r.filter((x) => x.authId !== authId));
+    this.setKpi('Cases at Risk', (n) => Math.max(0, n - 1));
+  }
 }

@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Interaction } from '../shared/interaction';
+import { AiRecommendation } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 import { Ring } from '../shared/ring';
 
@@ -22,7 +24,7 @@ import { Ring } from '../shared/ring';
 
       <!-- recommendation cards -->
       <div class="recs">
-        @for (r of data.aiRecommendations; track r.title) {
+        @for (r of data.aiRecommendations(); track r.title) {
           <div class="rec" [attr.data-tone]="r.tone">
             <div class="rec-top">
               <span class="rec-ic"><z-icon [name]="r.icon" [size]="16" [stroke]="1.8"></z-icon></span>
@@ -30,10 +32,12 @@ import { Ring } from '../shared/ring';
             </div>
             <div class="rec-title">{{ r.title }}</div>
             <div class="rec-detail">{{ r.detail }}</div>
-            <button class="btn primary rec-btn">
+            <button class="btn primary rec-btn" (click)="act(r)">
               <z-icon [name]="r.icon" [size]="14"></z-icon> {{ r.action }}
             </button>
           </div>
+        } @empty {
+          <div class="rec-empty">All AI recommendations have been actioned. ✓</div>
         }
       </div>
 
@@ -113,8 +117,40 @@ import { Ring } from '../shared/ring';
     .conf-track { flex:1; }
     .conf-pct { flex:0 0 34px; text-align:right; font-size:12px; font-weight:600; color:var(--ink-soft);
       font-variant-numeric: tabular-nums; }
+    .rec-empty { grid-column: 1 / -1; text-align:center; padding: 28px; color: var(--teal-700);
+      font-size: 13px; font-weight: 600; background:#fff; border:1px dashed var(--teal-600);
+      border-radius: var(--radius); }
   `],
 })
 export class AiTab {
   data = inject(DashboardData);
+  private ix = inject(Interaction);
+
+  act(r: AiRecommendation) {
+    this.ix.ask({
+      title: r.action,
+      body: r.detail,
+      confirmLabel: r.action,
+      tone: r.tone === 'red' ? 'red' : r.tone === 'amber' ? 'amber' : 'teal',
+      onConfirm: () => {
+        // apply the side effect implied by each recommendation
+        if (r.action === 'Reassign Case') {
+          const move = this.data.reassignBusiest();
+          this.data.decrementQueue('Clinical Review');
+          this.ix.toast(move
+            ? `Case reassigned from ${move.from} to ${move.to}.`
+            : 'Case reassigned.');
+        } else if (r.action === 'Send RFI') {
+          this.data.decrementQueue('RFI Pending');
+          this.ix.toast('RFI sent to provider for AUTH-4521.', 'info');
+        } else if (r.action === 'Escalate to MD') {
+          this.data.decrementQueue('MD Review');
+          this.ix.toast('AUTH-4498 escalated to Dr. Patel for MD review.', 'info');
+        } else {
+          this.ix.toast('Action completed.');
+        }
+        this.data.dismissRecommendation(r.title);
+      },
+    });
+  }
 }

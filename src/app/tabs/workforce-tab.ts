@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Interaction } from '../shared/interaction';
+import { NurseRow } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -10,14 +12,14 @@ import { Icon } from '../shared/icon';
     <div class="tab-head">
       <h2>Workforce &amp; Queue Management</h2>
       <div class="flex gap-8">
-        <button class="btn primary"><z-icon name="swap" [size]="14"></z-icon> Reassign</button>
-        <button class="btn outline"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
-        <button class="btn outline esc"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
+        <button class="btn primary" (click)="reassign()"><z-icon name="swap" [size]="14"></z-icon> Reassign</button>
+        <button class="btn outline" (click)="balance()"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
+        <button class="btn outline esc" (click)="escalate()"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
       </div>
     </div>
 
     <div class="queues">
-      @for (q of data.queues; track q.name) {
+      @for (q of data.queues(); track q.name) {
         <div class="qcard">
           <div class="qtop">
             <span class="qname">{{ q.name }}</span>
@@ -49,7 +51,7 @@ import { Icon } from '../shared/icon';
           </tr>
         </thead>
         <tbody>
-          @for (n of data.nurses; track n.name) {
+          @for (n of data.nurses(); track n.name) {
             <tr>
               <td class="strong">{{ n.name }}</td>
               <td class="num">{{ n.active }}</td>
@@ -63,7 +65,7 @@ import { Icon } from '../shared/icon';
                 </span>
                 <span class="util-pct">{{ n.utilization }}%</span>
               </td>
-              <td><button class="btn outline sm">Reassign</button></td>
+              <td><button class="btn outline sm" (click)="reassignTo(n)">Reassign</button></td>
             </tr>
           }
         </tbody>
@@ -95,4 +97,50 @@ import { Icon } from '../shared/icon';
 })
 export class WorkforceTab {
   data = inject(DashboardData);
+  private ix = inject(Interaction);
+
+  reassign() {
+    this.ix.ask({
+      title: 'Auto-reassign a case',
+      body: 'Move one case from the nurse at highest utilization to the one with the most capacity to balance the load?',
+      confirmLabel: 'Reassign', tone: 'teal',
+      onConfirm: () => {
+        const move = this.data.reassignBusiest();
+        this.ix.toast(move ? `Case reassigned from ${move.from} to ${move.to}.` : 'Nothing to reassign.');
+      },
+    });
+  }
+
+  balance() {
+    this.ix.ask({
+      title: 'Balance workload',
+      body: 'Rebalance the team by moving 3 cases from over-utilized nurses to those with headroom?',
+      confirmLabel: 'Balance', tone: 'teal',
+      onConfirm: () => {
+        for (let i = 0; i < 3; i++) this.data.reassignBusiest();
+        this.ix.toast('Workload rebalanced across the team.');
+      },
+    });
+  }
+
+  escalate() {
+    this.ix.ask({
+      title: 'Escalate at-risk cases',
+      body: 'Escalate the highest-risk pending cases to a supervisor for expedited review?',
+      confirmLabel: 'Escalate', tone: 'amber',
+      onConfirm: () => this.ix.toast('At-risk cases escalated to supervisor.', 'warn'),
+    });
+  }
+
+  reassignTo(n: NurseRow) {
+    this.ix.ask({
+      title: `Reassign a case to ${n.name}`,
+      body: `Move one case from the busiest nurse to ${n.name} (currently ${n.utilization}% utilized)?`,
+      confirmLabel: 'Reassign', tone: 'teal',
+      onConfirm: () => {
+        this.data.reassignTo(n.name);
+        this.ix.toast(`Case reassigned to ${n.name}.`);
+      },
+    });
+  }
 }

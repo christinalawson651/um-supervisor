@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Interaction } from '../shared/interaction';
+import { RiskCase } from '../data/dashboard.models';
 
 @Component({
   selector: 'app-risk-tab',
@@ -29,7 +31,7 @@ import { DashboardData } from '../data/dashboard-data';
           </tr>
         </thead>
         <tbody>
-          @for (r of data.riskCases; track r.authId) {
+          @for (r of data.riskCases(); track r.authId) {
             <tr>
               <td class="strong">{{ r.authId }}</td>
               <td>{{ r.member }}</td>
@@ -39,8 +41,10 @@ import { DashboardData } from '../data/dashboard-data';
               <td [class.danger]="r.slaRemaining === 'Overdue'">{{ r.slaRemaining }}</td>
               <td><span class="badge" [class.red]="r.risk==='red'" [class.amber]="r.risk==='amber'"
                     [class.green]="r.risk==='green'">{{ r.riskLabel }}</span></td>
-              <td><button class="btn outline teal sm">Escalate</button></td>
+              <td><button class="btn outline teal sm" (click)="escalate(r)">Escalate</button></td>
             </tr>
+          } @empty {
+            <tr><td colspan="8" class="empty">No at-risk cases remaining — all clear. ✓</td></tr>
           }
         </tbody>
       </table>
@@ -57,8 +61,22 @@ import { DashboardData } from '../data/dashboard-data';
     .rbox[data-tone="amber"] { border-left-color: var(--amber); }
     .rbox[data-tone="red"]   { border-left-color: var(--red); }
     .rbox[data-tone="blue"]  { border-left-color: var(--blue); }
+    .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
   `],
 })
 export class RiskTab {
   data = inject(DashboardData);
+  private ix = inject(Interaction);
+
+  escalate(r: RiskCase) {
+    this.ix.ask({
+      title: `Escalate ${r.authId}`,
+      body: `Escalate this ${r.type} case (${r.member}) for expedited review? Reason: ${r.reason}.`,
+      confirmLabel: 'Escalate', tone: r.risk === 'red' ? 'red' : 'amber',
+      onConfirm: () => {
+        this.data.resolveRiskCase(r.authId);
+        this.ix.toast(`${r.authId} escalated and removed from the risk panel.`, 'warn');
+      },
+    });
+  }
 }

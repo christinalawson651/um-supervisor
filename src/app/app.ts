@@ -1,5 +1,6 @@
 import { Component, signal, inject } from '@angular/core';
 import { Icon } from './shared/icon';
+import { Overlays } from './shared/overlays';
 import { DashboardData } from './data/dashboard-data';
 
 import { WorkforceTab } from './tabs/workforce-tab';
@@ -40,7 +41,7 @@ const RAIL = [
   selector: 'app-root',
   standalone: true,
   imports: [
-    Icon, WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
+    Icon, Overlays, WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab,
   ],
   templateUrl: './app.html',
