@@ -14,11 +14,26 @@ export interface ConfirmRequest {
   onConfirm: () => void;
 }
 
+export interface DrawerField { label: string; value: string; tone?: 'green' | 'amber' | 'red' | 'blue' | 'teal'; }
+export interface DrawerAction { label: string; tone: 'teal' | 'red' | 'amber'; run: () => void; }
+export interface DrawerData {
+  title: string;
+  subtitle?: string;
+  badge?: { text: string; tone: 'green' | 'amber' | 'red' | 'blue' | 'teal' };
+  fields: DrawerField[];
+  note?: string;
+  actions?: DrawerAction[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class Interaction {
   private nextId = 1;
   readonly toasts = signal<Toast[]>([]);
   readonly confirm = signal<ConfirmRequest | null>(null);
+  readonly drawer = signal<DrawerData | null>(null);
+
+  openDrawer(d: DrawerData) { this.drawer.set(d); }
+  closeDrawer() { this.drawer.set(null); }
 
   toast(message: string, tone: Toast['tone'] = 'success') {
     const id = this.nextId++;

@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Interaction } from '../shared/interaction';
+import { ConcurrentRow } from '../data/dashboard.models';
 
 @Component({
   selector: 'app-concurrent-tab',
@@ -20,8 +22,8 @@ import { DashboardData } from '../data/dashboard-data';
           </tr>
         </thead>
         <tbody>
-          @for (r of data.concurrentRows; track r.member) {
-            <tr>
+          @for (r of data.concurrentRows(); track r.member) {
+            <tr class="clickable" (click)="open(r)">
               <td class="strong">{{ r.member }}</td>
               <td>{{ r.facility }}</td>
               <td>{{ r.admit }}</td>
@@ -39,7 +41,33 @@ import { DashboardData } from '../data/dashboard-data';
       </table>
     </div>
   `,
+  styles: [`.clickable { cursor: pointer; }`],
 })
 export class ConcurrentTab {
   data = inject(DashboardData);
+  private ix = inject(Interaction);
+
+  open(r: ConcurrentRow) {
+    this.ix.openDrawer({
+      title: r.member,
+      subtitle: `${r.facility} · Inpatient concurrent review`,
+      badge: { text: `${r.overstayLabel} overstay risk`, tone: r.overstayRisk as any },
+      fields: [
+        { label: 'Admit Date', value: r.admit },
+        { label: 'Next Review Due', value: r.nextReview },
+        { label: 'Length of Stay', value: r.los, tone: r.losFlag ? 'red' : undefined },
+        { label: 'Expected LOS', value: r.expectedLos },
+        { label: 'Days Approved', value: String(r.daysApproved) },
+        { label: 'Days Requested', value: String(r.daysRequested) },
+        { label: 'Additional Days Pending', value: String(Math.max(0, r.daysRequested - r.daysApproved)), tone: 'amber' },
+      ],
+      note: r.daysRequested > r.daysApproved
+        ? `Provider has requested ${r.daysRequested - r.daysApproved} additional day(s) beyond what is currently approved.`
+        : 'All requested days are approved.',
+      actions: r.daysRequested > r.daysApproved
+        ? [{ label: `Approve ${r.daysRequested - r.daysApproved} additional day(s)`, tone: 'teal',
+             run: () => { this.data.approveConcurrentDays(r.member); this.ix.toast(`Approved requested days for ${r.member}.`); } }]
+        : [],
+    });
+  }
 }

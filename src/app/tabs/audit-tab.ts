@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Interaction } from '../shared/interaction';
+import { AuditFlag } from '../data/dashboard.models';
 
 @Component({
   selector: 'app-audit-tab',
@@ -27,8 +29,8 @@ import { DashboardData } from '../data/dashboard-data';
           <tr><th>ID</th><th>Type</th><th>Description</th><th>Date</th><th>Severity</th></tr>
         </thead>
         <tbody>
-          @for (f of data.auditFlags; track f.id) {
-            <tr>
+          @for (f of data.auditFlags(); track f.id) {
+            <tr class="clickable" (click)="open(f)">
               <td class="strong">{{ f.id }}</td>
               <td>{{ f.type }}</td>
               <td>{{ f.description }}</td>
@@ -37,6 +39,8 @@ import { DashboardData } from '../data/dashboard-data';
                     [class.amber]="f.severity==='amber'"
                     [class.green]="f.severity==='green'">{{ f.severityLabel }}</span></td>
             </tr>
+          } @empty {
+            <tr><td colspan="5" class="empty">No open audit flags — all resolved. ✓</td></tr>
           }
         </tbody>
       </table>
@@ -45,8 +49,30 @@ import { DashboardData } from '../data/dashboard-data';
   styles: [`
     .clab { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
     .cval { font-size: 26px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+    .clickable { cursor: pointer; }
+    .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
   `],
 })
 export class AuditTab {
   data = inject(DashboardData);
+  private ix = inject(Interaction);
+
+  open(f: AuditFlag) {
+    this.ix.openDrawer({
+      title: `${f.id} · ${f.type}`,
+      subtitle: `Flagged ${f.date}`,
+      badge: { text: `${f.severityLabel} severity`, tone: f.severity as any },
+      fields: [
+        { label: 'Flag ID', value: f.id },
+        { label: 'Type', value: f.type },
+        { label: 'Date', value: f.date },
+        { label: 'Severity', value: f.severityLabel, tone: f.severity as any },
+      ],
+      note: f.description,
+      actions: [{
+        label: 'Mark as resolved', tone: 'teal',
+        run: () => { this.data.resolveAuditFlag(f.id); this.ix.toast(`Audit flag ${f.id} marked resolved.`); },
+      }],
+    });
+  }
 }

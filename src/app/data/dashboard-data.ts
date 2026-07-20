@@ -73,13 +73,13 @@ export class DashboardData {
   ];
 
   // ---------- Concurrent Review Monitoring ----------
-  readonly concurrentRows: ConcurrentRow[] = [
+  readonly concurrentRows = signal<ConcurrentRow[]>([
     { member: 'Adams, Patricia', facility: 'Memorial Hospital',  admit: '2026-03-10', nextReview: '2026-03-18', los: '7d', losFlag: true,  expectedLos: '5d', daysApproved: 5, daysRequested: 10, overstayRisk: 'red',   overstayLabel: 'High' },
     { member: 'Brown, Michael',  facility: 'St. Mary Medical',   admit: '2026-03-12', nextReview: '2026-03-19', los: '5d', losFlag: true,  expectedLos: '4d', daysApproved: 4, daysRequested: 7,  overstayRisk: 'amber', overstayLabel: 'Medium' },
     { member: 'Clark, Jennifer', facility: 'University Hospital', admit: '2026-03-14', nextReview: '2026-03-17', los: '3d', losFlag: false, expectedLos: '3d', daysApproved: 3, daysRequested: 5,  overstayRisk: 'green', overstayLabel: 'Low' },
     { member: 'Davis, Robert',   facility: 'Community General',  admit: '2026-03-08', nextReview: '2026-03-17', los: '9d', losFlag: true,  expectedLos: '6d', daysApproved: 6, daysRequested: 12, overstayRisk: 'red',   overstayLabel: 'High' },
     { member: 'Evans, Susan',    facility: 'Regional Medical',   admit: '2026-03-13', nextReview: '2026-03-20', los: '4d', losFlag: false, expectedLos: '5d', daysApproved: 5, daysRequested: 5,  overstayRisk: 'green', overstayLabel: 'Low' },
-  ];
+  ]);
 
   // ---------- Intake & Documentation Quality ----------
   readonly qualityBars: QualityBar[] = [
@@ -125,12 +125,12 @@ export class DashboardData {
     { label: 'Guideline Adherence',        pct: 94, tone: 'teal', icon: '' },
     { label: 'Decision Rationale Documented', pct: 89, tone: 'teal', icon: '' },
   ];
-  readonly auditFlags: AuditFlag[] = [
+  readonly auditFlags = signal<AuditFlag[]>([
     { id: 'AUD-201', type: 'Missing Rationale',       description: 'Decision rationale not documented for AUTH-4488', date: '2026-03-15', severity: 'amber', severityLabel: 'Medium' },
     { id: 'AUD-202', type: 'Guideline Deviation',     description: 'Approval without XYZ criteria match — AUTH-4501',  date: '2026-03-14', severity: 'red',   severityLabel: 'High' },
     { id: 'AUD-203', type: 'Incomplete Documentation', description: 'Clinical notes incomplete for concurrent review AUTH-4515', date: '2026-03-16', severity: 'green', severityLabel: 'Low' },
     { id: 'AUD-204', type: 'TAT Compliance',          description: 'Decision rendered after SLA deadline — AUTH-4473', date: '2026-03-13', severity: 'red',   severityLabel: 'High' },
-  ];
+  ]);
 
   // ---------- AI / NextGen Intelligence ----------
   readonly aiRecommendations = signal<AiRecommendation[]>([
@@ -231,5 +231,20 @@ export class DashboardData {
   resolveRiskCase(authId: string) {
     this.riskCases.update((r) => r.filter((x) => x.authId !== authId));
     this.setKpi('Cases at Risk', (n) => Math.max(0, n - 1));
+  }
+
+  /** Approve the requested days for a concurrent-review case (clears overstay risk). */
+  approveConcurrentDays(member: string) {
+    this.concurrentRows.update((rows) =>
+      rows.map((r) =>
+        r.member === member
+          ? { ...r, daysApproved: r.daysRequested, overstayRisk: 'green', overstayLabel: 'Low', losFlag: false }
+          : r,
+      ),
+    );
+  }
+
+  resolveAuditFlag(id: string) {
+    this.auditFlags.update((f) => f.filter((x) => x.id !== id));
   }
 }

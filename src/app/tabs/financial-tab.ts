@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Interaction } from '../shared/interaction';
+import { HighDollarCase } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -30,7 +32,7 @@ import { Icon } from '../shared/icon';
         </thead>
         <tbody>
           @for (c of data.highDollarCases; track c.authId) {
-            <tr>
+            <tr class="clickable" (click)="open(c)">
               <td class="strong">{{ c.authId }}</td>
               <td>{{ c.member }}</td>
               <td>{{ c.procedure }}</td>
@@ -42,7 +44,30 @@ import { Icon } from '../shared/icon';
       </table>
     </div>
   `,
+  styles: [`.clickable { cursor: pointer; }`],
 })
 export class FinancialTab {
   data = inject(DashboardData);
+  private ix = inject(Interaction);
+
+  open(c: HighDollarCase) {
+    this.ix.openDrawer({
+      title: `${c.authId} · ${c.member}`,
+      subtitle: c.procedure,
+      badge: { text: c.status, tone: 'blue' },
+      fields: [
+        { label: 'Estimated Cost', value: c.cost, tone: 'red' },
+        { label: 'Procedure', value: c.procedure },
+        { label: 'Current Status', value: c.status, tone: 'blue' },
+        { label: 'Review Track', value: 'High-dollar / MD oversight' },
+      ],
+      note: 'High-dollar case flagged for supervisor visibility. Confirm medical necessity documentation before final determination.',
+      actions: [
+        { label: 'Assign to MD review', tone: 'teal',
+          run: () => this.ix.toast(`${c.authId} routed to MD review.`, 'info') },
+        { label: 'Request peer-to-peer', tone: 'amber',
+          run: () => this.ix.toast(`Peer-to-peer requested for ${c.authId}.`, 'warn') },
+      ],
+    });
+  }
 }

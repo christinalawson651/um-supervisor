@@ -1,5 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { Interaction } from './interaction';
+import { Interaction, DrawerAction } from './interaction';
 
 @Component({
   selector: 'app-overlays',
@@ -20,6 +20,43 @@ import { Interaction } from './interaction';
       </div>
     }
 
+    <!-- Detail drawer -->
+    @if (ix.drawer(); as d) {
+      <div class="scrim right" (click)="ix.closeDrawer()">
+        <aside class="drawer" (click)="$event.stopPropagation()">
+          <div class="dhead">
+            <div>
+              <h3>{{ d.title }}</h3>
+              @if (d.subtitle) { <p class="dsub">{{ d.subtitle }}</p> }
+            </div>
+            <button class="dx" (click)="ix.closeDrawer()">×</button>
+          </div>
+          @if (d.badge) {
+            <span class="badge" [class.green]="d.badge.tone==='green'" [class.amber]="d.badge.tone==='amber'"
+              [class.red]="d.badge.tone==='red'" [class.blue]="d.badge.tone==='blue'"
+              [class.teal]="d.badge.tone==='teal'">{{ d.badge.text }}</span>
+          }
+          <dl class="dfields">
+            @for (f of d.fields; track f.label) {
+              <div class="drow">
+                <dt>{{ f.label }}</dt>
+                <dd [attr.data-tone]="f.tone || null">{{ f.value }}</dd>
+              </div>
+            }
+          </dl>
+          @if (d.note) { <p class="dnote">{{ d.note }}</p> }
+          @if (d.actions?.length) {
+            <div class="dactions">
+              @for (a of d.actions; track a.label) {
+                <button class="btn primary" [attr.data-tone]="a.tone"
+                  (click)="runDrawer(a)">{{ a.label }}</button>
+              }
+            </div>
+          }
+        </aside>
+      </div>
+    }
+
     <!-- Toasts -->
     <div class="toasts">
       @for (t of ix.toasts(); track t.id) {
@@ -34,6 +71,27 @@ import { Interaction } from './interaction';
   styles: [`
     .scrim { position: fixed; inset: 0; background: rgba(17,24,39,.45);
       display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .scrim.right { justify-content: flex-end; align-items: stretch; }
+
+    .drawer { width: 420px; max-width: 92vw; background:#fff; height:100%; overflow-y:auto;
+      padding: 22px 24px; box-shadow: -12px 0 30px rgba(0,0,0,.15);
+      animation: slidein-r .2s ease-out; }
+    @keyframes slidein-r { from { transform: translateX(30px); opacity:.6; } to { transform:none; opacity:1; } }
+    .dhead { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 14px; }
+    .dhead h3 { margin:0; font-size:16px; color:var(--ink); }
+    .dsub { margin:4px 0 0; font-size:12.5px; color:var(--gray-500); }
+    .dx { border:none; background:none; cursor:pointer; color:var(--gray-400); font-size:22px; line-height:1; }
+    .dfields { margin: 16px 0 0; }
+    .drow { display:flex; justify-content:space-between; gap:16px; padding:11px 0;
+      border-bottom:1px solid var(--gray-100); }
+    .drow dt { color:var(--gray-500); font-size:12px; }
+    .drow dd { margin:0; font-weight:600; color:var(--ink); font-size:12.5px; text-align:right; }
+    .drow dd[data-tone="green"]{ color:var(--green-fg); } .drow dd[data-tone="red"]{ color:var(--red); }
+    .drow dd[data-tone="amber"]{ color:var(--amber-fg); } .drow dd[data-tone="blue"]{ color:var(--blue-fg); }
+    .dnote { margin-top:16px; font-size:12px; color:var(--gray-500); line-height:1.5;
+      background:var(--gray-50); border-radius:8px; padding:12px; }
+    .dactions { margin-top:20px; display:flex; flex-direction:column; gap:10px; }
+    .dactions .btn { justify-content:center; }
     .modal { background:#fff; border-radius: 12px; width: 420px; max-width: 92vw;
       padding: 22px 24px; box-shadow: 0 20px 40px rgba(0,0,0,.2); }
     .modal h3 { margin: 0 0 8px; font-size: 16px; color: var(--ink); }
@@ -62,4 +120,5 @@ import { Interaction } from './interaction';
 })
 export class Overlays {
   ix = inject(Interaction);
+  runDrawer(a: DrawerAction) { this.ix.closeDrawer(); a.run(); }
 }

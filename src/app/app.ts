@@ -1,6 +1,8 @@
 import { Component, signal, inject } from '@angular/core';
 import { Icon } from './shared/icon';
 import { Overlays } from './shared/overlays';
+import { Interaction } from './shared/interaction';
+import { downloadCsv } from './shared/export-csv';
 import { DashboardData } from './data/dashboard-data';
 
 import { WorkforceTab } from './tabs/workforce-tab';
@@ -49,9 +51,73 @@ const RAIL = [
 })
 export class App {
   readonly data = inject(DashboardData);
+  private ix = inject(Interaction);
   readonly tabs = TABS;
   readonly rail = RAIL;
   readonly selected = signal(0);
 
   select(i: number) { this.selected.set(i); }
+
+  railClick(item: { label: string; active: boolean }) {
+    if (item.active) return;
+    this.ix.toast(`${item.label} module isn't part of this demo build.`, 'info');
+  }
+
+  roleMenu() {
+    this.ix.toast('Role switching is disabled in this demo (viewing as UM Supervisor).', 'info');
+  }
+
+  /** Export the currently visible tab's dataset as CSV. */
+  exportCsv() {
+    const d = this.data;
+    const stamp = '2026-07-17';
+    switch (this.selected()) {
+      case 0:
+        downloadCsv(`workforce-nurses_${stamp}`,
+          ['Nurse', 'Active Cases', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'],
+          d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]));
+        break;
+      case 1:
+        downloadCsv(`tat-sla_${stamp}`, ['Metric', 'Value'],
+          [...d.tatBuckets.map((b) => [b.label, b.count] as (string | number)[]),
+           ...d.tatStats.map((s) => [s.label, s.value] as (string | number)[])]);
+        break;
+      case 2:
+        downloadCsv(`clinical-decisions_${stamp}`,
+          ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'],
+          d.decisionRows.map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]));
+        break;
+      case 3:
+        downloadCsv(`risk-escalation_${stamp}`,
+          ['Auth ID', 'Member', 'Type', 'Reason', 'Owner', 'SLA Remaining', 'Risk'],
+          d.riskCases().map((r) => [r.authId, r.member, r.type, r.reason, r.owner, r.slaRemaining, r.riskLabel]));
+        break;
+      case 4:
+        downloadCsv(`concurrent-review_${stamp}`,
+          ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'],
+          d.concurrentRows().map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]));
+        break;
+      case 5:
+        downloadCsv(`intake-missing-fields_${stamp}`, ['Field', 'Missing Count', '% of Submissions'],
+          d.missingFields.map((f) => [f.field, f.count, f.pct]));
+        break;
+      case 6:
+        downloadCsv(`providers_${stamp}`, ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'],
+          d.providers.map((p) => [p.provider, p.npi, p.requests, p.approvalRate, p.rfiRate]));
+        break;
+      case 7:
+        downloadCsv(`high-dollar-cases_${stamp}`, ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'],
+          d.highDollarCases.map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]));
+        break;
+      case 8:
+        downloadCsv(`audit-flags_${stamp}`, ['ID', 'Type', 'Description', 'Date', 'Severity'],
+          d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]));
+        break;
+      case 9:
+        downloadCsv(`ai-recommendations_${stamp}`, ['Title', 'Detail', 'Confidence %', 'Action'],
+          d.aiRecommendations().map((r) => [r.title, r.detail, r.confidence, r.action]));
+        break;
+    }
+    this.ix.toast(`Exported "${this.tabs[this.selected()]}" as CSV.`);
+  }
 }

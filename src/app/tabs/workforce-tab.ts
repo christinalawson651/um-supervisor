@@ -1,4 +1,5 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { NurseRow } from '../data/dashboard.models';
@@ -7,7 +8,7 @@ import { Icon } from '../shared/icon';
 @Component({
   selector: 'app-workforce-tab',
   standalone: true,
-  imports: [Icon],
+  imports: [Icon, FormsModule],
   template: `
     <div class="tab-head">
       <h2>Workforce &amp; Queue Management</h2>
@@ -42,17 +43,26 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="panel mt-6">
-      <div class="panel-pad"><h3 class="panel-title">Workload per Nurse</h3></div>
+      <div class="panel-pad tbl-head">
+        <h3 class="panel-title">Workload per Nurse</h3>
+        <input class="search" type="text" placeholder="Search nurses…"
+          [ngModel]="search()" (ngModelChange)="search.set($event)" />
+      </div>
       <table class="z-table">
         <thead>
           <tr>
-            <th>Nurse</th><th>Active Cases</th><th>Pending</th><th>Completed (MTD)</th>
-            <th>Avg TAT</th><th>Utilization</th><th>Actions</th>
+            <th class="sortable" (click)="sortBy('name')">Nurse{{ caret('name') }}</th>
+            <th class="sortable" (click)="sortBy('active')">Active Cases{{ caret('active') }}</th>
+            <th class="sortable" (click)="sortBy('pending')">Pending{{ caret('pending') }}</th>
+            <th class="sortable" (click)="sortBy('completed')">Completed (MTD){{ caret('completed') }}</th>
+            <th class="sortable" (click)="sortBy('avgTat')">Avg TAT{{ caret('avgTat') }}</th>
+            <th class="sortable" (click)="sortBy('utilization')">Utilization{{ caret('utilization') }}</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          @for (n of data.nurses(); track n.name) {
-            <tr>
+          @for (n of visibleNurses(); track n.name) {
+            <tr class="clickable" (click)="openNurse(n)">
               <td class="strong">{{ n.name }}</td>
               <td class="num">{{ n.active }}</td>
               <td class="num">{{ n.pending }}</td>
@@ -65,8 +75,10 @@ import { Icon } from '../shared/icon';
                 </span>
                 <span class="util-pct">{{ n.utilization }}%</span>
               </td>
-              <td><button class="btn outline sm" (click)="reassignTo(n)">Reassign</button></td>
+              <td><button class="btn outline sm" (click)="reassignTo(n); $event.stopPropagation()">Reassign</button></td>
             </tr>
+          } @empty {
+            <tr><td colspan="7" class="empty">No nurses match "{{ search() }}".</td></tr>
           }
         </tbody>
       </table>
@@ -93,11 +105,73 @@ import { Icon } from '../shared/icon';
     .d-over48{background:#f97316}.d-breach{background:#ef4444}
     .util-pct { margin-left: 10px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
       font-variant-numeric: tabular-nums; }
+    .clickable { cursor: pointer; }
+    .tbl-head { display:flex; align-items:center; justify-content:space-between; }
+    .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px;
+      width: 220px; outline:none; }
+    .search:focus { border-color: var(--teal-600); }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { color: var(--ink-soft); }
+    .empty { text-align:center; color: var(--gray-500); padding: 22px; }
   `],
 })
 export class WorkforceTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+
+  readonly search = signal('');
+  readonly sortKey = signal<keyof NurseRow | ''>('');
+  readonly sortDir = signal<1 | -1>(1);
+
+  readonly visibleNurses = computed(() => {
+    const q = this.search().trim().toLowerCase();
+    let rows = this.data.nurses().filter((n) => !q || n.name.toLowerCase().includes(q));
+    const key = this.sortKey();
+    if (key) {
+      const dir = this.sortDir();
+      rows = [...rows].sort((a, b) => {
+        const av = a[key], bv = b[key];
+        const an = parseFloat(String(av)), bn = parseFloat(String(bv));
+        const cmp = !isNaN(an) && !isNaN(bn)
+          ? an - bn
+          : String(av).localeCompare(String(bv));
+        return cmp * dir;
+      });
+    }
+    return rows;
+  });
+
+  sortBy(key: keyof NurseRow) {
+    if (this.sortKey() === key) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
+    else { this.sortKey.set(key); this.sortDir.set(1); }
+  }
+  caret(key: keyof NurseRow) {
+    return this.sortKey() === key ? (this.sortDir() === 1 ? ' ▲' : ' ▼') : '';
+  }
+
+  openNurse(n: NurseRow) {
+    this.ix.openDrawer({
+      title: n.name,
+      subtitle: 'Utilization Management · Nurse Reviewer',
+      badge: {
+        text: `${n.utilization}% utilized`,
+        tone: n.utilization >= 90 ? 'red' : n.utilization < 80 ? 'green' : 'amber',
+      },
+      fields: [
+        { label: 'Active Cases', value: String(n.active) },
+        { label: 'Pending', value: String(n.pending) },
+        { label: 'Completed (MTD)', value: String(n.completed) },
+        { label: 'Avg TAT', value: n.avgTat },
+        { label: 'Utilization', value: `${n.utilization}%`,
+          tone: n.utilization >= 90 ? 'red' : n.utilization < 80 ? 'green' : 'amber' },
+      ],
+      note: n.utilization >= 90
+        ? 'At or above capacity — consider reassigning cases to prevent TAT breaches.'
+        : 'Operating within healthy capacity.',
+      actions: [{ label: `Reassign a case to ${n.name.split(',')[0]}`, tone: 'teal',
+        run: () => { this.data.reassignTo(n.name); this.ix.toast(`Case reassigned to ${n.name}.`); } }],
+    });
+  }
 
   reassign() {
     this.ix.ask({

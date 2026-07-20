@@ -3,7 +3,7 @@
   <aside class="rail">
     <div class="brand">Zyter<span>+</span></div>
     @for (item of rail; track item.label) {
-      <button class="rail-item" [class.active]="item.active">
+      <button class="rail-item" [class.active]="item.active" (click)="railClick(item)">
         <span class="rail-ic">
           <z-icon [name]="item.icon" [size]="20" [stroke]="1.8"></z-icon>
           @if (item.badge) { <span class="rail-badge">{{ item.badge }}</span> }
@@ -19,8 +19,8 @@
     <div class="topbar">
       <span class="online"><span class="dot"></span>
         <z-icon name="wifi" [size]="14" [stroke]="1.8"></z-icon> Online</span>
-      <button class="btn outline"><z-icon name="download" [size]="14"></z-icon> Export</button>
-      <button class="btn outline role"><z-icon name="shield" [size]="14"></z-icon> UM Supervisor
+      <button class="btn outline" (click)="exportCsv()"><z-icon name="download" [size]="14"></z-icon> Export</button>
+      <button class="btn outline role" (click)="roleMenu()"><z-icon name="shield" [size]="14"></z-icon> UM Supervisor
         <z-icon name="chevron" [size]="14"></z-icon></button>
       <div class="user">
         <span class="avatar">CL</span>

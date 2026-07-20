@@ -1,5 +1,8 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Interaction } from '../shared/interaction';
+import { DecisionRow } from '../data/dashboard.models';
+import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -27,13 +30,16 @@ import { Icon } from '../shared/icon';
       <table class="z-table">
         <thead>
           <tr>
-            <th>Diagnosis / Procedure</th><th>Service Type</th><th>Guideline</th>
-            <th>Approval Rate</th><th>Volume</th>
+            <th class="sortable" (click)="sortBy('procedure')">Diagnosis / Procedure{{ caret('procedure') }}</th>
+            <th class="sortable" (click)="sortBy('serviceType')">Service Type{{ caret('serviceType') }}</th>
+            <th>Guideline</th>
+            <th class="sortable" (click)="sortBy('approvalRate')">Approval Rate{{ caret('approvalRate') }}</th>
+            <th class="sortable" (click)="sortBy('volume')">Volume{{ caret('volume') }}</th>
           </tr>
         </thead>
         <tbody>
-          @for (r of data.decisionRows; track r.procedure) {
-            <tr>
+          @for (r of sortedRows(); track r.procedure) {
+            <tr class="clickable" (click)="open(r)">
               <td class="strong">{{ r.procedure }}</td>
               <td><span class="stype" [attr.data-t]="r.serviceType">{{ r.serviceType }}</span></td>
               <td class="gl">{{ r.guideline }}</td>
@@ -65,8 +71,41 @@ import { Icon } from '../shared/icon';
     .stype[data-t="Inpatient"]  { background: var(--teal-100); color: var(--teal-900); }
     .stype[data-t="Outpatient"] { background: var(--green-bg); color: var(--green-fg); }
     .stype[data-t="Behavioral"] { background: var(--amber-bg); color: var(--amber-fg); }
+    .clickable { cursor: pointer; }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { color: var(--ink-soft); }
   `],
 })
 export class ClinicalTab {
   data = inject(DashboardData);
+  private ix = inject(Interaction);
+
+  readonly sortKey = signal<keyof DecisionRow | ''>('');
+  readonly sortDir = signal<SortDir>(1);
+  readonly sortedRows = computed(() => compareRows(this.data.decisionRows, this.sortKey(), this.sortDir()));
+  sortBy(k: keyof DecisionRow) {
+    if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
+    else { this.sortKey.set(k); this.sortDir.set(1); }
+  }
+  caret(k: keyof DecisionRow) { return caretFor(this.sortKey(), k, this.sortDir()); }
+
+  open(r: DecisionRow) {
+    this.ix.openDrawer({
+      title: r.procedure,
+      subtitle: `${r.serviceType} · ${r.guideline}`,
+      badge: { text: `${r.approvalRate}% approval`, tone: r.approvalRate >= 80 ? 'green' : 'amber' },
+      fields: [
+        { label: 'Service Type', value: r.serviceType },
+        { label: 'Guideline', value: r.guideline },
+        { label: 'Approval Rate', value: `${r.approvalRate}%`, tone: r.approvalRate >= 80 ? 'green' : 'amber' },
+        { label: 'Volume (MTD)', value: String(r.volume) },
+        { label: 'Denials (est.)', value: String(Math.round(r.volume * (1 - r.approvalRate / 100))) },
+      ],
+      note: r.approvalRate < 75
+        ? 'Approval rate is below the service-line benchmark. Review recent denials for guideline-application consistency.'
+        : 'Approval rate is tracking in line with the service-line benchmark.',
+      actions: [{ label: 'View decision log', tone: 'teal',
+        run: () => this.ix.toast(`Opening decision log for ${r.procedure}…`, 'info') }],
+    });
+  }
 }
