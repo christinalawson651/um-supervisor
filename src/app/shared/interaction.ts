@@ -14,6 +14,16 @@ export interface ConfirmRequest {
   onConfirm: () => void;
 }
 
+export interface ChooserRequest {
+  title: string;
+  body: string;
+  label: string;                 // field label above the select
+  options: string[];
+  confirmLabel: string;
+  tone: 'teal' | 'red' | 'amber';
+  onChoose: (value: string) => void;
+}
+
 export interface DrawerField { label: string; value: string; tone?: 'green' | 'amber' | 'red' | 'blue' | 'teal'; }
 export interface DrawerAction { label: string; tone: 'teal' | 'red' | 'amber'; run: () => void; }
 export interface DrawerTable { columns: string[]; rows: (string | number)[][]; caption?: string; }
@@ -34,6 +44,7 @@ export interface ExplorerData {
   columns: string[];
   rows: (string | number)[][]; // ALL contributing cases
   exportName: string;
+  memberColumn?: number;       // index of the Member column (renders clickable)
 }
 
 @Injectable({ providedIn: 'root' })
@@ -41,13 +52,17 @@ export class Interaction {
   private nextId = 1;
   readonly toasts = signal<Toast[]>([]);
   readonly confirm = signal<ConfirmRequest | null>(null);
+  readonly chooser = signal<ChooserRequest | null>(null);
   readonly drawer = signal<DrawerData | null>(null);
   readonly explorer = signal<ExplorerData | null>(null);
+  readonly memberChart = signal<unknown | null>(null);
 
   openDrawer(d: DrawerData) { this.drawer.set(d); }
   closeDrawer() { this.drawer.set(null); }
   openExplorer(e: ExplorerData) { this.explorer.set(e); }
   closeExplorer() { this.explorer.set(null); }
+  openMemberChart(m: unknown) { this.memberChart.set(m); }
+  closeMemberChart() { this.memberChart.set(null); }
 
   toast(message: string, tone: Toast['tone'] = 'success') {
     const id = this.nextId++;
@@ -68,5 +83,15 @@ export class Interaction {
     const req = this.confirm();
     this.confirm.set(null);
     if (ok && req) req.onConfirm();
+  }
+
+  choose(req: ChooserRequest) {
+    this.chooser.set(req);
+  }
+
+  resolveChoice(value: string | null) {
+    const req = this.chooser();
+    this.chooser.set(null);
+    if (value !== null && req) req.onChoose(value);
   }
 }

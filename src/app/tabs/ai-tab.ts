@@ -135,25 +135,36 @@ export class AiTab {
   readonly confKeys = ['ai.confHigh', 'ai.confMed', 'ai.confLow'];
 
   act(r: AiRecommendation) {
+    // Escalations let the supervisor pick who to assign to.
+    if (r.action === 'Escalate to MD') {
+      this.ix.choose({
+        title: r.title, body: r.detail, label: 'Assign to',
+        options: ['Dr. Patel — Medical Director', 'Dr. Nguyen — MD Review', 'Dr. Rivera — MD Review', 'Peer-to-Peer Review Queue'],
+        confirmLabel: 'Escalate to MD', tone: 'teal',
+        onChoose: (who) => {
+          this.data.decrementQueue('MD Review');
+          this.ix.toast(`AUTH-4498 escalated to ${who}.`, 'info');
+          this.data.addHistory('arrowup', 'AI: escalated to MD', `${r.title} → ${who}`);
+          this.data.dismissRecommendation(r.title);
+        },
+      });
+      return;
+    }
     this.ix.ask({
       title: r.action,
       body: r.detail,
       confirmLabel: r.action,
       tone: r.tone === 'red' ? 'red' : r.tone === 'amber' ? 'amber' : 'teal',
       onConfirm: () => {
-        // apply the side effect implied by each recommendation
         if (r.action === 'Reassign Case') {
           const move = this.data.reassignBusiest();
           this.data.decrementQueue('Clinical Review');
-          this.ix.toast(move
-            ? `Case reassigned from ${move.from} to ${move.to}.`
-            : 'Case reassigned.');
+          this.ix.toast(move ? `Case reassigned from ${move.from} to ${move.to}.` : 'Case reassigned.');
+          this.data.addHistory('swap', 'AI: case reassigned', move ? `${move.from} → ${move.to}` : r.title);
         } else if (r.action === 'Send RFI') {
           this.data.decrementQueue('RFI Pending');
           this.ix.toast('RFI sent to provider for AUTH-4521.', 'info');
-        } else if (r.action === 'Escalate to MD') {
-          this.data.decrementQueue('MD Review');
-          this.ix.toast('AUTH-4498 escalated to Dr. Patel for MD review.', 'info');
+          this.data.addHistory('mail', 'AI: RFI sent', 'AUTH-4521 — clinical justification requested');
         } else {
           this.ix.toast('Action completed.');
         }

@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Interaction } from './interaction';
+import { Members } from './members';
 import { downloadCsv } from './export-csv';
 
 const PAGE = 12;
@@ -43,7 +44,15 @@ const PAGE = 12;
               </thead>
               <tbody>
                 @for (row of pageRows(); track $index) {
-                  <tr>@for (cell of row; track $index) { <td>{{ cell }}</td> }</tr>
+                  <tr>
+                    @for (cell of row; track $index; let ci = $index) {
+                      @if (ci === e.memberColumn) {
+                        <td><a class="mlink" (click)="members.openByName($any(cell))">{{ cell }}</a></td>
+                      } @else {
+                        <td>{{ cell }}</td>
+                      }
+                    }
+                  </tr>
                 }
                 @empty {
                   <tr><td [attr.colspan]="e.columns.length" class="empty">No cases match "{{ q() }}".</td></tr>
@@ -93,6 +102,8 @@ const PAGE = 12;
     .etable tbody td { padding:11px 14px; border-bottom:1px solid var(--gray-100); color:var(--ink-soft);
       white-space:nowrap; }
     .etable tbody tr:hover { background: var(--gray-50); }
+    .mlink { color:#2563eb; font-weight:600; cursor:pointer; }
+    .mlink:hover { text-decoration:underline; }
     .empty { text-align:center; color:var(--gray-500); padding: 28px; }
     .pager { display:flex; align-items:center; gap:12px; padding: 14px 24px; font-size:12.5px;
       color: var(--gray-500); }
@@ -102,6 +113,7 @@ const PAGE = 12;
 })
 export class CaseExplorer {
   ix = inject(Interaction);
+  members = inject(Members);
 
   readonly q = signal('');
   readonly page = signal(0);

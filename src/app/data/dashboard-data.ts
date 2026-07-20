@@ -1,9 +1,19 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, signal, effect } from '@angular/core';
 import {
   Kpi, QueueCard, NurseRow, TatBucket, TatStat, DecisionStat, DecisionRow,
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
-  AuditFlag, AiRecommendation, RiskCase,
+  AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
+
+export interface HistoryEntry {
+  time: string;
+  icon: string;
+  action: string;
+  detail: string;
+  actor: string;
+}
+
+const STORAGE_KEY = 'zyter-um-demo-v2';
 
 @Injectable({ providedIn: 'root' })
 export class DashboardData {
@@ -150,21 +160,77 @@ export class DashboardData {
     { label: 'Low (<70%)',     pct: 7,  tone: 'red' as const },
   ];
 
-  // ---------- Risk & Escalation Panel (inferred — no screenshot) ----------
-  readonly riskSummary = [
-    { value: '12', label: 'Cases at Risk',   tone: 'amber' as const },
-    { value: '3',  label: 'Breached SLAs',   tone: 'red' as const },
-    { value: '5',  label: 'Escalated Today', tone: 'blue' as const },
-    { value: '2',  label: 'Awaiting P2P',    tone: 'amber' as const },
+  // ---------- Risk & Escalation Panel (matches um-supervisor.html) ----------
+  readonly riskTiles: RiskTile[] = [
+    { icon: 'alert',  label: 'SLA Breach Risk',       value: '12', footer: '3 already breached',        footerTone: 'red', tone: 'red' },
+    { icon: 'dollar', label: 'High-Dollar (>$50k)',   value: '9',  footer: '$1.2M exposure',            tone: 'amber' },
+    { icon: 'shield', label: 'High-Acuity',           value: '14', footer: 'ICU / transplant / oncology', tone: 'amber' },
+    { icon: 'arrowup', label: 'Escalated Today',      value: '6',  footer: '4 to MD, 2 to peer-to-peer', tone: 'blue' },
   ];
   readonly riskCases = signal<RiskCase[]>([
-    { authId: 'AUTH-4587', member: 'Nguyen, Linda',   type: 'Clinical Review', reason: 'Approaching TAT deadline', owner: 'Andrew Mitchell, RN', slaRemaining: '2h 15m', risk: 'red',   riskLabel: 'High' },
-    { authId: 'AUTH-4473', member: 'Foster, Daniel',  type: 'MD Review',       reason: 'SLA breached — decision overdue', owner: 'MD Queue', slaRemaining: 'Overdue', risk: 'red',   riskLabel: 'Breached' },
-    { authId: 'AUTH-4521', member: 'Johnson, Robert', type: 'RFI Pending',     reason: 'Awaiting provider documentation', owner: 'Maria Gonzalez, RN', slaRemaining: '6h 40m', risk: 'amber', riskLabel: 'Medium' },
-    { authId: 'AUTH-4498', member: 'Martinez, Carlos', type: 'MD Review',      reason: 'High-dollar case pending escalation', owner: 'Dr. Patel', slaRemaining: '4h 05m', risk: 'amber', riskLabel: 'Medium' },
-    { authId: 'AUTH-4534', member: 'Williams, Sarah',  type: 'Concurrent',     reason: 'Overstay risk — continued stay review', owner: 'Emily Chen, RN', slaRemaining: '1d 3h', risk: 'amber', riskLabel: 'Medium' },
-    { authId: 'AUTH-4602', member: 'Reed, Katherine',  type: 'Intake',         reason: 'Unassigned > 24h', owner: 'Unassigned', slaRemaining: '8h 20m', risk: 'amber', riskLabel: 'Medium' },
+    { authId: 'IP542119', member: 'Karen Wells',   drivers: ['SLA breached', 'Expedited'],       amount: '$18k',  stage: 'Clinical Review', score: 98, risk: 'red' },
+    { authId: 'IP543902', member: 'Robert Hayes',  drivers: ['2h to SLA', 'High-acuity ICU'],    amount: '$142k', stage: 'Clinical Review', score: 95, risk: 'red' },
+    { authId: 'IP540088', member: 'George Pike',   drivers: ['High-dollar', 'Transplant'],       amount: '$310k', stage: 'MD Review',       score: 91, risk: 'red' },
+    { authId: 'OP331880', member: 'Luis Ramirez',  drivers: ['RFI aging 4d', 'SLA risk'],        amount: '$7k',   stage: 'RFI Pending',     score: 82, risk: 'amber' },
+    { authId: 'IP539774', member: 'Nina Patel',    drivers: ['Oncology', 'High-dollar'],         amount: '$88k',  stage: 'Concurrent',      score: 79, risk: 'amber' },
+    { authId: 'OP329910', member: 'Frank Doyle',   drivers: ['OON', 'Appeal risk'],              amount: '$26k',  stage: 'OON Review',      score: 74, risk: 'amber' },
   ]);
+
+  // ---------- activity / reassignment history ----------
+  readonly history = signal<HistoryEntry[]>([]);
+
+  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson') {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    this.history.update((h) => [{ time, icon, action, detail, actor }, ...h]);
+  }
+
+  // ---------- persistence (localStorage) ----------
+  private defaults: any;
+
+  constructor() {
+    // capture pristine defaults before any hydration
+    this.defaults = this.snapshot();
+    this.hydrate();
+    // auto-save whenever any persisted signal changes
+    effect(() => {
+      const blob = this.snapshot();
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(blob)); } catch {}
+    });
+  }
+
+  private snapshot() {
+    return {
+      kpis: this.kpis(), queues: this.queues(), nurses: this.nurses(),
+      aiRecommendations: this.aiRecommendations(), riskCases: this.riskCases(),
+      concurrentRows: this.concurrentRows(), auditFlags: this.auditFlags(),
+      history: this.history(),
+    };
+  }
+
+  private hydrate() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (s.kpis) this.kpis.set(s.kpis);
+      if (s.queues) this.queues.set(s.queues);
+      if (s.nurses) this.nurses.set(s.nurses);
+      if (s.aiRecommendations) this.aiRecommendations.set(s.aiRecommendations);
+      if (s.riskCases) this.riskCases.set(s.riskCases);
+      if (s.concurrentRows) this.concurrentRows.set(s.concurrentRows);
+      if (s.auditFlags) this.auditFlags.set(s.auditFlags);
+      if (s.history) this.history.set(s.history);
+    } catch {}
+  }
+
+  /** Restore every mutable collection to its original demo state. */
+  resetDemo() {
+    const d = structuredClone(this.defaults);
+    this.kpis.set(d.kpis); this.queues.set(d.queues); this.nurses.set(d.nurses);
+    this.aiRecommendations.set(d.aiRecommendations); this.riskCases.set(d.riskCases);
+    this.concurrentRows.set(d.concurrentRows); this.auditFlags.set(d.auditFlags);
+    this.history.set([]);
+  }
 
   // ---------- demo actions (mutate signal-backed state) ----------
 

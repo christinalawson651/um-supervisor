@@ -173,6 +173,11 @@ export class WorkforceTab {
     });
   }
 
+  private readonly ESCALATE_TARGETS = [
+    'Dr. Patel — Medical Director', 'Dr. Nguyen — MD Review', 'Dr. Rivera — MD Review',
+    'Peer-to-Peer Review Queue', 'Supervisor — Christina Lawson',
+  ];
+
   reassign() {
     this.ix.ask({
       title: 'Auto-reassign a case',
@@ -180,7 +185,10 @@ export class WorkforceTab {
       confirmLabel: 'Reassign', tone: 'teal',
       onConfirm: () => {
         const move = this.data.reassignBusiest();
-        this.ix.toast(move ? `Case reassigned from ${move.from} to ${move.to}.` : 'Nothing to reassign.');
+        if (move) {
+          this.ix.toast(`Case reassigned from ${move.from} to ${move.to}.`);
+          this.data.addHistory('swap', 'Case reassigned', `From ${move.from} → ${move.to}`);
+        } else this.ix.toast('Nothing to reassign.');
       },
     });
   }
@@ -193,16 +201,21 @@ export class WorkforceTab {
       onConfirm: () => {
         for (let i = 0; i < 3; i++) this.data.reassignBusiest();
         this.ix.toast('Workload rebalanced across the team.');
+        this.data.addHistory('balance', 'Workload balanced', 'Rebalanced 3 cases across the team');
       },
     });
   }
 
   escalate() {
-    this.ix.ask({
+    this.ix.choose({
       title: 'Escalate at-risk cases',
-      body: 'Escalate the highest-risk pending cases to a supervisor for expedited review?',
+      body: 'Escalate the highest-risk pending cases for expedited review. Choose who to assign them to.',
+      label: 'Assign to', options: this.ESCALATE_TARGETS,
       confirmLabel: 'Escalate', tone: 'amber',
-      onConfirm: () => this.ix.toast('At-risk cases escalated to supervisor.', 'warn'),
+      onChoose: (who) => {
+        this.ix.toast(`At-risk cases escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Cases escalated', `Escalated at-risk cases → ${who}`);
+      },
     });
   }
 
@@ -214,6 +227,7 @@ export class WorkforceTab {
       onConfirm: () => {
         this.data.reassignTo(n.name);
         this.ix.toast(`Case reassigned to ${n.name}.`);
+        this.data.addHistory('swap', 'Case reassigned', `Reassigned to ${n.name}`);
       },
     });
   }

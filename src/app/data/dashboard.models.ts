@@ -92,10 +92,18 @@ export interface AiRecommendation {
 export interface RiskCase {
   authId: string;
   member: string;
-  type: string;
-  reason: string;
-  owner: string;
-  slaRemaining: string;
-  risk: Tone;
-  riskLabel: string;
+  drivers: string[];   // risk-driver chips
+  amount: string;      // $ exposure
+  stage: string;       // review stage
+  score: number;       // risk score
+  risk: Tone;          // red (>=90) / amber
+}
+
+export interface RiskTile {
+  icon: string;
+  label: string;
+  value: string;
+  footer: string;
+  footerTone?: Tone;
+  tone: Tone;          // left border
 }

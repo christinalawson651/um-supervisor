@@ -1,9 +1,11 @@
-import { Component, inject } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Interaction, DrawerAction } from './interaction';
 
 @Component({
   selector: 'app-overlays',
   standalone: true,
+  imports: [FormsModule],
   template: `
     <!-- Confirm modal -->
     @if (ix.confirm(); as c) {
@@ -15,6 +17,25 @@ import { Interaction, DrawerAction } from './interaction';
             <button class="btn outline" (click)="ix.resolve(false)">Cancel</button>
             <button class="btn primary" [attr.data-tone]="c.tone"
               (click)="ix.resolve(true)">{{ c.confirmLabel }}</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Chooser modal (pick an assignee) -->
+    @if (ix.chooser(); as c) {
+      <div class="scrim" (click)="ix.resolveChoice(null)">
+        <div class="modal" (click)="$event.stopPropagation()">
+          <h3>{{ c.title }}</h3>
+          <p>{{ c.body }}</p>
+          <label class="flabel">{{ c.label }}</label>
+          <select class="fselect" [ngModel]="choice()" (ngModelChange)="choice.set($event)">
+            @for (o of c.options; track o) { <option [value]="o">{{ o }}</option> }
+          </select>
+          <div class="actions">
+            <button class="btn outline" (click)="ix.resolveChoice(null)">Cancel</button>
+            <button class="btn primary" [attr.data-tone]="c.tone"
+              (click)="ix.resolveChoice(choice())">{{ c.confirmLabel }}</button>
           </div>
         </div>
       </div>
@@ -124,6 +145,11 @@ import { Interaction, DrawerAction } from './interaction';
       padding: 22px 24px; box-shadow: 0 20px 40px rgba(0,0,0,.2); }
     .modal h3 { margin: 0 0 8px; font-size: 16px; color: var(--ink); }
     .modal p { margin: 0 0 20px; font-size: 13px; color: var(--gray-500); line-height: 1.55; }
+    .flabel { display:block; font-size:11px; font-weight:600; color:var(--gray-500);
+      text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+    .fselect { width:100%; padding:9px 12px; border:1px solid var(--gray-300); border-radius:8px;
+      font-size:13px; margin-bottom:20px; outline:none; background:#fff; }
+    .fselect:focus { border-color: var(--teal-600); }
     .actions { display: flex; justify-content: flex-end; gap: 10px; }
     .btn.primary[data-tone="red"] { background: var(--red); border-color: var(--red); }
     .btn.primary[data-tone="red"]:hover { background: #dc2626; }
@@ -148,5 +174,15 @@ import { Interaction, DrawerAction } from './interaction';
 })
 export class Overlays {
   ix = inject(Interaction);
+  readonly choice = signal('');
+
+  constructor() {
+    // default the select to the first option each time a chooser opens
+    effect(() => {
+      const c = this.ix.chooser();
+      if (c && c.options.length) this.choice.set(c.options[0]);
+    });
+  }
+
   runDrawer(a: DrawerAction) { this.ix.closeDrawer(); a.run(); }
 }

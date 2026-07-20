@@ -74,7 +74,11 @@ export class AuditTab {
       note: f.description,
       actions: [{
         label: 'Mark as resolved', tone: 'teal',
-        run: () => { this.data.resolveAuditFlag(f.id); this.ix.toast(`Audit flag ${f.id} marked resolved.`); },
+        run: () => {
+          this.data.resolveAuditFlag(f.id);
+          this.ix.toast(`Audit flag ${f.id} marked resolved.`);
+          this.data.addHistory('check', 'Audit flag resolved', `${f.id} — ${f.type}`);
+        },
       }],
     });
   }

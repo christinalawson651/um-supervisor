@@ -66,7 +66,11 @@ export class ConcurrentTab {
         : 'All requested days are approved.',
       actions: r.daysRequested > r.daysApproved
         ? [{ label: `Approve ${r.daysRequested - r.daysApproved} additional day(s)`, tone: 'teal',
-             run: () => { this.data.approveConcurrentDays(r.member); this.ix.toast(`Approved requested days for ${r.member}.`); } }]
+             run: () => {
+               this.data.approveConcurrentDays(r.member);
+               this.ix.toast(`Approved requested days for ${r.member}.`);
+               this.data.addHistory('check', 'Concurrent days approved', `${r.member} — ${r.daysRequested} days approved`);
+             } }]
         : [],
     });
   }

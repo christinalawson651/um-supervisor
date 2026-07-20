@@ -105,6 +105,7 @@ export class Metrics {
       columns: COLUMNS,
       rows: cases.map(toRow),
       exportName: `${key.replace('.', '-')}_2026-07-17`,
+      memberColumn: 1, // "Member" is the 2nd column
     });
   }
 }

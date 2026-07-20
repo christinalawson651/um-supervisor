@@ -2,6 +2,7 @@ import { Component, signal, inject } from '@angular/core';
 import { Icon } from './shared/icon';
 import { Overlays } from './shared/overlays';
 import { CaseExplorer } from './shared/case-explorer';
+import { MemberChart } from './shared/member-chart';
 import { Interaction } from './shared/interaction';
 import { Metrics } from './shared/metrics';
 import { downloadCsv } from './shared/export-csv';
@@ -45,7 +46,7 @@ const RAIL = [
   selector: 'app-root',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
+    Icon, Overlays, CaseExplorer, MemberChart, WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab,
   ],
   templateUrl: './app.html',
@@ -62,6 +63,27 @@ export class App {
 
   select(i: number) { this.selected.set(i); }
   drill(key: string) { this.metrics.open(key); }
+
+  openHistory() {
+    const h = this.data.history();
+    this.ix.openDrawer({
+      title: 'Activity History',
+      subtitle: `${h.length} action${h.length === 1 ? '' : 's'} this session`,
+      table: h.length
+        ? { columns: ['Time', 'Action', 'Detail'], rows: h.map((e) => [e.time, e.action, e.detail]) }
+        : undefined,
+      note: h.length ? undefined : 'No actions yet — reassign a case or escalate one to see the log here.',
+    });
+  }
+
+  resetDemo() {
+    this.ix.ask({
+      title: 'Reset demo data',
+      body: 'Restore all cases, queues, nurses, and history to their original state? Any changes made during the demo will be cleared.',
+      confirmLabel: 'Reset', tone: 'red',
+      onConfirm: () => { this.data.resetDemo(); this.ix.toast('Demo data reset to defaults.', 'info'); },
+    });
+  }
 
   railClick(item: { label: string; active: boolean }) {
     if (item.active) return;
@@ -94,8 +116,8 @@ export class App {
         break;
       case 3:
         downloadCsv(`risk-escalation_${stamp}`,
-          ['Auth ID', 'Member', 'Type', 'Reason', 'Owner', 'SLA Remaining', 'Risk'],
-          d.riskCases().map((r) => [r.authId, r.member, r.type, r.reason, r.owner, r.slaRemaining, r.riskLabel]));
+          ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'],
+          d.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]));
         break;
       case 4:
         downloadCsv(`concurrent-review_${stamp}`,
