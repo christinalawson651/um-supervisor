@@ -28,15 +28,26 @@ export interface DrawerData {
   actions?: DrawerAction[];
 }
 
+export interface ExplorerData {
+  title: string;
+  context: string;             // headline / formula line
+  columns: string[];
+  rows: (string | number)[][]; // ALL contributing cases
+  exportName: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class Interaction {
   private nextId = 1;
   readonly toasts = signal<Toast[]>([]);
   readonly confirm = signal<ConfirmRequest | null>(null);
   readonly drawer = signal<DrawerData | null>(null);
+  readonly explorer = signal<ExplorerData | null>(null);
 
   openDrawer(d: DrawerData) { this.drawer.set(d); }
   closeDrawer() { this.drawer.set(null); }
+  openExplorer(e: ExplorerData) { this.explorer.set(e); }
+  closeExplorer() { this.explorer.set(null); }
 
   toast(message: string, tone: Toast['tone'] = 'success') {
     const id = this.nextId++;

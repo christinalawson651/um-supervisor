@@ -1,5 +1,5 @@
-// A pool of representative authorization records that back every drill-down.
-// Metric drawers filter/sample this pool so the numbers feel real and consistent.
+// A generated pool of authorization records that backs every metric drill-down.
+// Deterministic (no RNG) so the demo shows the same data on every load.
 
 export type Decision = 'Approved' | 'Denied' | 'Partial' | 'Pending';
 
@@ -12,34 +12,140 @@ export interface CaseRec {
   status: string;
   nurse: string;
   submitted: string;
-  tatH: number;      // handle time / turnaround in hours
-  cost: number;      // estimated cost in USD
-  tags: string[];    // e.g. auto, atRisk, breached, mdReview, p2p, rfi, unassigned, pending, onTrack, incompleteDoc, oon
+  tatH: number;
+  cost: number;
+  phase: 'pending' | 'decided';
+  tags: string[];
 }
 
-export const CASE_POOL: CaseRec[] = [
-  { authId: 'AUTH-4501', member: 'Adams, Patricia',   procedure: 'Total Knee Replacement',   serviceType: 'Inpatient',  decision: 'Approved', status: 'Approved',          nurse: 'Maria Gonzalez, RN',   submitted: '2026-07-10', tatH: 1.6, cost: 42000,  tags: ['onTrack'] },
-  { authId: 'AUTH-4502', member: 'Brown, Michael',     procedure: 'Lumbar Fusion',            serviceType: 'Inpatient',  decision: 'Partial',  status: 'Partial Approval', nurse: 'Andrew Mitchell, RN',  submitted: '2026-07-11', tatH: 2.9, cost: 68000,  tags: ['mdReview','atRisk'] },
-  { authId: 'AUTH-4503', member: 'Clark, Jennifer',    procedure: 'MRI Brain w/ Contrast',    serviceType: 'Outpatient', decision: 'Approved', status: 'Auto-Approved',     nurse: '—',                    submitted: '2026-07-12', tatH: 0.2, cost: 2400,   tags: ['auto','onTrack'] },
-  { authId: 'AUTH-4504', member: 'Davis, Robert',      procedure: 'Cardiac Catheterization',  serviceType: 'Outpatient', decision: 'Approved', status: 'Approved',          nurse: 'Emily Chen, RN',       submitted: '2026-07-09', tatH: 1.9, cost: 18500,  tags: ['onTrack'] },
-  { authId: 'AUTH-4505', member: 'Evans, Susan',       procedure: 'Physical Therapy (12v)',   serviceType: 'Outpatient', decision: 'Approved', status: 'Auto-Approved',     nurse: '—',                    submitted: '2026-07-12', tatH: 0.1, cost: 1800,   tags: ['auto','onTrack'] },
-  { authId: 'AUTH-4506', member: 'Foster, Daniel',     procedure: 'Spinal Fusion (3-level)',  serviceType: 'Inpatient',  decision: 'Denied',   status: 'Denied',           nurse: 'Andrew Mitchell, RN',  submitted: '2026-07-06', tatH: 3.4, cost: 127000, tags: ['mdReview','breached'] },
-  { authId: 'AUTH-4507', member: 'Garcia, Maria',      procedure: 'Behavioral Health IOP',    serviceType: 'Behavioral', decision: 'Partial',  status: 'Partial Approval', nurse: 'Robert Kim, RN',       submitted: '2026-07-10', tatH: 2.2, cost: 9600,   tags: ['atRisk'] },
-  { authId: 'AUTH-4508', member: 'Harris, James',      procedure: 'CT Abdomen',               serviceType: 'Outpatient', decision: 'Pending',  status: 'RFI Pending',      nurse: 'Maria Gonzalez, RN',   submitted: '2026-07-11', tatH: 1.2, cost: 3200,   tags: ['rfi','pending','incompleteDoc'] },
-  { authId: 'AUTH-4509', member: 'Ibrahim, Sana',      procedure: 'Knee Arthroscopy',         serviceType: 'Outpatient', decision: 'Approved', status: 'Approved',          nurse: 'Jessica Williams, RN', submitted: '2026-07-08', tatH: 1.7, cost: 12500,  tags: ['onTrack'] },
-  { authId: 'AUTH-4510', member: 'Johnson, Robert',    procedure: 'Cardiac Bypass (CABG)',    serviceType: 'Inpatient',  decision: 'Pending',  status: 'Pending Review',   nurse: 'Emily Chen, RN',       submitted: '2026-07-09', tatH: 4.1, cost: 285000, tags: ['pending','mdReview','p2p','atRisk','incompleteDoc'] },
-  { authId: 'AUTH-4511', member: 'Kim, Angela',        procedure: 'Colonoscopy',              serviceType: 'Outpatient', decision: 'Approved', status: 'Auto-Approved',     nurse: '—',                    submitted: '2026-07-12', tatH: 0.2, cost: 2100,   tags: ['auto','onTrack'] },
-  { authId: 'AUTH-4512', member: 'Lopez, Carlos',      procedure: 'Liver Transplant Eval',    serviceType: 'Inpatient',  decision: 'Pending',  status: 'MD Review',        nurse: '—',                    submitted: '2026-07-07', tatH: 5.2, cost: 142000, tags: ['pending','mdReview','p2p','atRisk'] },
-  { authId: 'AUTH-4513', member: 'Martin, Nicole',     procedure: 'Echocardiogram',           serviceType: 'Outpatient', decision: 'Approved', status: 'Approved',          nurse: 'Robert Kim, RN',       submitted: '2026-07-10', tatH: 1.4, cost: 2800,   tags: ['onTrack'] },
-  { authId: 'AUTH-4514', member: 'Nguyen, Linda',      procedure: 'Hip Replacement',          serviceType: 'Inpatient',  decision: 'Pending',  status: 'Clinical Review',  nurse: 'Andrew Mitchell, RN',  submitted: '2026-07-11', tatH: 2.6, cost: 46000,  tags: ['pending','atRisk'] },
-  { authId: 'AUTH-4515', member: 'O’Brien, Sean',      procedure: 'Sleep Study',              serviceType: 'Outpatient', decision: 'Denied',   status: 'Denied',           nurse: 'Jessica Williams, RN', submitted: '2026-07-08', tatH: 2.0, cost: 3600,   tags: ['incompleteDoc'] },
-  { authId: 'AUTH-4516', member: 'Patel, Rina',        procedure: 'Bariatric Surgery',        serviceType: 'Inpatient',  decision: 'Partial',  status: 'Partial Approval', nurse: 'Emily Chen, RN',       submitted: '2026-07-09', tatH: 3.1, cost: 58000,  tags: ['mdReview'] },
-  { authId: 'AUTH-4517', member: 'Quinn, Thomas',      procedure: 'Chemotherapy Cycle',       serviceType: 'Outpatient', decision: 'Approved', status: 'Approved',          nurse: 'Maria Gonzalez, RN',   submitted: '2026-07-10', tatH: 1.8, cost: 34000,  tags: ['onTrack'] },
-  { authId: 'AUTH-4518', member: 'Reed, Katherine',    procedure: 'MRI Lumbar Spine',         serviceType: 'Outpatient', decision: 'Pending',  status: 'Intake',           nurse: '—',                    submitted: '2026-07-11', tatH: 0.8, cost: 2600,   tags: ['pending','unassigned'] },
-  { authId: 'AUTH-4519', member: 'Silva, Antonio',     procedure: 'Cataract Surgery',         serviceType: 'Outpatient', decision: 'Approved', status: 'Auto-Approved',     nurse: '—',                    submitted: '2026-07-12', tatH: 0.2, cost: 4200,   tags: ['auto','onTrack'] },
-  { authId: 'AUTH-4520', member: 'Thompson, James',    procedure: 'Spinal Fusion (2-level)',  serviceType: 'Inpatient',  decision: 'Pending',  status: 'Pending P2P',      nurse: 'Andrew Mitchell, RN',  submitted: '2026-07-08', tatH: 4.6, cost: 98000,  tags: ['pending','p2p','mdReview','atRisk'] },
-  { authId: 'AUTH-4521', member: 'Underwood, Beth',    procedure: 'Wound Care (OON)',         serviceType: 'Outpatient', decision: 'Pending',  status: 'OON Review',       nurse: 'Robert Kim, RN',       submitted: '2026-07-11', tatH: 1.5, cost: 7400,   tags: ['pending','oon','rfi'] },
-  { authId: 'AUTH-4522', member: 'Valdez, Hector',     procedure: 'Neurology Consult (OON)',  serviceType: 'Outpatient', decision: 'Pending',  status: 'OON Review',       nurse: 'Jessica Williams, RN', submitted: '2026-07-10', tatH: 1.9, cost: 5200,   tags: ['pending','oon'] },
-  { authId: 'AUTH-4523', member: 'Williams, Sarah',    procedure: 'NICU Stay (21 days)',      serviceType: 'Inpatient',  decision: 'Pending',  status: 'Concurrent Review',nurse: 'Emily Chen, RN',       submitted: '2026-07-05', tatH: 6.0, cost: 198000, tags: ['pending','atRisk','mdReview'] },
-  { authId: 'AUTH-4524', member: 'Young, Grace',       procedure: 'Diagnostic Mammogram',     serviceType: 'Outpatient', decision: 'Approved', status: 'Auto-Approved',     nurse: '—',                    submitted: '2026-07-12', tatH: 0.1, cost: 900,    tags: ['auto','onTrack'] },
+const FIRST = ['Patricia', 'Michael', 'Jennifer', 'Robert', 'Susan', 'Daniel', 'Maria', 'James', 'Sana', 'Angela',
+  'Carlos', 'Nicole', 'Linda', 'Sean', 'Rina', 'Thomas', 'Katherine', 'Antonio', 'Beth', 'Hector',
+  'Sarah', 'Grace', 'David', 'Emily', 'John', 'Olivia', 'Noah', 'Emma', 'Liam', 'Ava'];
+const LAST = ['Adams', 'Brown', 'Clark', 'Davis', 'Evans', 'Foster', 'Garcia', 'Harris', 'Ibrahim', 'Johnson',
+  'Kim', 'Lopez', 'Martin', 'Nguyen', 'O’Brien', 'Patel', 'Quinn', 'Reed', 'Silva', 'Thompson',
+  'Underwood', 'Valdez', 'Williams', 'Young', 'Zhang', 'Bennett', 'Carter', 'Diaz', 'Ellis', 'Fisher'];
+
+interface Proc { name: string; type: CaseRec['serviceType']; cost: number; tat: number; }
+const PROCS: Proc[] = [
+  { name: 'Total Knee Replacement',  type: 'Inpatient',  cost: 42000,  tat: 2.4 },
+  { name: 'Lumbar Fusion',           type: 'Inpatient',  cost: 68000,  tat: 2.9 },
+  { name: 'Hip Replacement',         type: 'Inpatient',  cost: 46000,  tat: 2.6 },
+  { name: 'Cardiac Bypass (CABG)',   type: 'Inpatient',  cost: 285000, tat: 4.1 },
+  { name: 'Spinal Fusion (3-level)', type: 'Inpatient',  cost: 127000, tat: 3.4 },
+  { name: 'Bariatric Surgery',       type: 'Inpatient',  cost: 58000,  tat: 3.1 },
+  { name: 'NICU Stay',               type: 'Inpatient',  cost: 198000, tat: 6.0 },
+  { name: 'MRI Brain w/ Contrast',   type: 'Outpatient', cost: 2400,   tat: 0.4 },
+  { name: 'MRI Lumbar Spine',        type: 'Outpatient', cost: 2600,   tat: 0.8 },
+  { name: 'CT Abdomen',              type: 'Outpatient', cost: 3200,   tat: 1.2 },
+  { name: 'Cardiac Catheterization', type: 'Outpatient', cost: 18500,  tat: 1.9 },
+  { name: 'Colonoscopy',             type: 'Outpatient', cost: 2100,   tat: 0.6 },
+  { name: 'Physical Therapy (12v)',  type: 'Outpatient', cost: 1800,   tat: 0.3 },
+  { name: 'Cataract Surgery',        type: 'Outpatient', cost: 4200,   tat: 0.5 },
+  { name: 'Chemotherapy Cycle',      type: 'Outpatient', cost: 34000,  tat: 1.8 },
+  { name: 'Echocardiogram',          type: 'Outpatient', cost: 2800,   tat: 1.4 },
+  { name: 'Sleep Study',             type: 'Outpatient', cost: 3600,   tat: 2.0 },
+  { name: 'Behavioral Health IOP',   type: 'Behavioral', cost: 9600,   tat: 2.2 },
+  { name: 'Behavioral Health PHP',   type: 'Behavioral', cost: 14500,  tat: 2.5 },
 ];
+const NURSES = ['Maria Gonzalez, RN', 'Jessica Williams, RN', 'Andrew Mitchell, RN',
+  'Sarah Mitchell, RN', 'Emily Chen, RN', 'Robert Kim, RN'];
+
+// simple deterministic date within July 2026
+function dateFor(i: number): string {
+  const day = 4 + (i % 9); // 4..12
+  return `2026-07-${String(day).padStart(2, '0')}`;
+}
+function member(i: number): string {
+  return `${LAST[i % LAST.length]}, ${FIRST[(i * 7 + 3) % FIRST.length]}`;
+}
+function vary(base: number, i: number, spread: number): number {
+  const d = ((i % 5) - 2) * spread; // -2..+2 * spread
+  return Math.max(0, Math.round((base + d) * 100) / 100);
+}
+
+// ---- Pending population (247), distributed across the six queues ----
+const PENDING_QUEUES: { status: string; count: number; tag: string }[] = [
+  { status: 'Intake',            count: 42, tag: 'intake' },
+  { status: 'Clinical Review',   count: 68, tag: 'clinical' },
+  { status: 'MD Review',         count: 23, tag: 'mdReview' },
+  { status: 'RFI Pending',       count: 31, tag: 'rfi' },
+  { status: 'OON Review',        count: 15, tag: 'oon' },
+  { status: 'Concurrent Review', count: 38, tag: 'concurrent' },
+  { status: 'Pending P2P',       count: 30, tag: 'p2p' },
+];
+
+function buildPending(): CaseRec[] {
+  const out: CaseRec[] = [];
+  let i = 0;
+  for (const q of PENDING_QUEUES) {
+    for (let k = 0; k < q.count; k++, i++) {
+      const p = PROCS[(i * 3 + 1) % PROCS.length];
+      const tags = ['pending', q.tag];
+      if (q.tag === 'rfi') { tags.push('incompleteDoc'); if (k < 8) tags.push('paused'); }
+      if (q.tag === 'mdReview' || q.tag === 'p2p') tags.push('mdReview');
+      if (q.tag === 'intake' && k < 8) tags.push('unassigned');       // 8 unassigned
+      if (i % 21 === 0 && tags.filter((t) => t === 'atRisk').length === 0) tags.push('atRisk'); // ~12 at risk
+      const nurse = tags.includes('unassigned') ? '—' : NURSES[i % NURSES.length];
+      out.push({
+        authId: `AUTH-${4000 + i}`,
+        member: member(i),
+        procedure: p.name, serviceType: p.type,
+        decision: 'Pending',
+        status: q.status,
+        nurse,
+        submitted: dateFor(i),
+        tatH: vary(p.tat, i, 0.3),
+        cost: vary(p.cost, i, p.cost * 0.05),
+        phase: 'pending',
+        tags,
+      });
+    }
+  }
+  // exactly 3 breached among pending
+  [5, 120, 210].forEach((idx) => out[idx] && out[idx].tags.push('breached'));
+  return out;
+}
+
+// ---- Decided population (247): 153 approved / 44 denied / 50 partial ----
+function buildDecided(): CaseRec[] {
+  const out: CaseRec[] = [];
+  for (let j = 0; j < 247; j++) {
+    const i = 1000 + j;
+    const p = PROCS[(j * 5 + 2) % PROCS.length];
+    let decision: Decision; let status: string; const tags: string[] = [];
+    if (j < 153) { decision = 'Approved'; status = 'Approved'; }
+    else if (j < 197) { decision = 'Denied'; status = 'Denied'; }
+    else { decision = 'Partial'; status = 'Partial Approval'; }
+
+    if (decision === 'Approved' && j < 94) { status = 'Auto-Approved'; tags.push('auto'); } // 94 auto
+    if (j % 6 === 0) tags.push('mdReview');   // ~41 md review
+    if (j % 14 === 0) tags.push('p2p');       // ~17 p2p
+    if (decision !== 'Approved') tags.push('appeal');
+
+    // TAT buckets across decided: 186 on track / 42 at risk / 19 breached
+    if (j < 186) tags.push('onTrack');
+    else if (j < 228) tags.push('atRisk');
+    else { tags.push('breached'); }
+
+    // review priority: 34 expedited / 213 standard
+    tags.push(j < 34 ? 'expedited' : 'standard');
+
+    if (j % 9 === 0) tags.push('incompleteDoc'); // ~27 incomplete docs
+
+    out.push({
+      authId: `AUTH-${4300 + j}`,
+      member: member(i),
+      procedure: p.name, serviceType: p.type,
+      decision, status,
+      nurse: tags.includes('auto') ? '—' : NURSES[j % NURSES.length],
+      submitted: dateFor(j),
+      tatH: vary(p.tat, j, 0.4),
+      cost: vary(p.cost, j, p.cost * 0.05),
+      phase: 'decided',
+      tags,
+    });
+  }
+  return out;
+}
+
+export const CASE_POOL: CaseRec[] = [...buildPending(), ...buildDecided()];
