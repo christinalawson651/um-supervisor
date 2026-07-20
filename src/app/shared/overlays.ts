@@ -36,14 +36,30 @@ import { Interaction, DrawerAction } from './interaction';
               [class.red]="d.badge.tone==='red'" [class.blue]="d.badge.tone==='blue'"
               [class.teal]="d.badge.tone==='teal'">{{ d.badge.text }}</span>
           }
-          <dl class="dfields">
-            @for (f of d.fields; track f.label) {
-              <div class="drow">
-                <dt>{{ f.label }}</dt>
-                <dd [attr.data-tone]="f.tone || null">{{ f.value }}</dd>
-              </div>
-            }
-          </dl>
+          @if (d.formula) { <div class="formula">{{ d.formula }}</div> }
+          @if (d.fields?.length) {
+            <dl class="dfields">
+              @for (f of d.fields; track f.label) {
+                <div class="drow">
+                  <dt>{{ f.label }}</dt>
+                  <dd [attr.data-tone]="f.tone || null">{{ f.value }}</dd>
+                </div>
+              }
+            </dl>
+          }
+          @if (d.table) {
+            @if (d.table.caption) { <div class="tcap">{{ d.table.caption }}</div> }
+            <div class="dtable-wrap">
+              <table class="dtable">
+                <thead><tr>@for (c of d.table.columns; track c) { <th>{{ c }}</th> }</tr></thead>
+                <tbody>
+                  @for (row of d.table.rows; track $index) {
+                    <tr>@for (cell of row; track $index) { <td>{{ cell }}</td> }</tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
           @if (d.note) { <p class="dnote">{{ d.note }}</p> }
           @if (d.actions?.length) {
             <div class="dactions">
@@ -88,6 +104,18 @@ import { Interaction, DrawerAction } from './interaction';
     .drow dd { margin:0; font-weight:600; color:var(--ink); font-size:12.5px; text-align:right; }
     .drow dd[data-tone="green"]{ color:var(--green-fg); } .drow dd[data-tone="red"]{ color:var(--red); }
     .drow dd[data-tone="amber"]{ color:var(--amber-fg); } .drow dd[data-tone="blue"]{ color:var(--blue-fg); }
+    .formula { margin:14px 0 4px; font-size:14px; font-weight:700; color:var(--teal-900);
+      background:var(--teal-50); border:1px solid var(--teal-100); border-radius:8px; padding:12px 14px; }
+    .tcap { margin:16px 0 8px; font-size:11px; letter-spacing:.05em; text-transform:uppercase;
+      color:var(--gray-500); font-weight:600; }
+    .dtable-wrap { overflow-x:auto; border:1px solid var(--gray-100); border-radius:8px; }
+    .dtable { width:100%; border-collapse:collapse; font-size:12px; }
+    .dtable thead th { text-align:left; padding:8px 10px; background:var(--gray-50);
+      color:var(--gray-500); font-size:10px; letter-spacing:.04em; text-transform:uppercase;
+      font-weight:600; white-space:nowrap; border-bottom:1px solid var(--gray-100); }
+    .dtable tbody td { padding:8px 10px; border-bottom:1px solid var(--gray-100); color:var(--ink-soft);
+      white-space:nowrap; }
+    .dtable tbody tr:last-child td { border-bottom:none; }
     .dnote { margin-top:16px; font-size:12px; color:var(--gray-500); line-height:1.5;
       background:var(--gray-50); border-radius:8px; padding:12px; }
     .dactions { margin-top:20px; display:flex; flex-direction:column; gap:10px; }

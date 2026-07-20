@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
+import { Metrics } from '../shared/metrics';
 import { ProviderRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
@@ -15,7 +16,7 @@ import { Icon } from '../shared/icon';
       <span class="section-note">Provider performance and network utilization</span>
     </div>
 
-    <div class="oon">
+    <div class="oon clickable" (click)="metrics.open('prov.oon')">
       <div class="oon-ic"><z-icon name="mappin" [size]="18" [stroke]="1.8"></z-icon></div>
       <div>
         <div class="oon-val">{{ data.oonRequests }}</div>
@@ -67,6 +68,7 @@ import { Icon } from '../shared/icon';
 export class ProviderTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  metrics = inject(Metrics);
 
   readonly sortKey = signal<keyof ProviderRow | ''>('');
   readonly sortDir = signal<SortDir>(1);

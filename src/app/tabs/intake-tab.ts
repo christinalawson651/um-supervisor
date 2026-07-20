@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Metrics } from '../shared/metrics';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -13,8 +14,8 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="grid-3">
-      @for (b of data.qualityBars; track b.label) {
-        <div class="panel panel-pad bar-block">
+      @for (b of data.qualityBars; track b.label; let i = $index) {
+        <div class="panel panel-pad bar-block clickable" (click)="metrics.open(barKeys[i])">
           <div class="bar-top"><z-icon [name]="b.icon" [size]="15" [stroke]="1.8"></z-icon>{{ b.label }}</div>
           <div class="bar-val" [class.amber]="b.tone==='amber'">{{ b.pct }}%</div>
           <div class="pbar" [class.amber]="b.tone==='amber'">
@@ -49,8 +50,12 @@ import { Icon } from '../shared/icon';
     .bar-top z-icon { color: var(--gray-400); }
     .pct { margin-left: 12px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
       font-variant-numeric: tabular-nums; }
+    .clickable { cursor: pointer; transition: box-shadow .12s; }
+    .clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
   `],
 })
 export class IntakeTab {
   data = inject(DashboardData);
+  metrics = inject(Metrics);
+  readonly barKeys = ['intake.complete', 'intake.auto', 'intake.rfi'];
 }

@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
+import { Metrics } from '../shared/metrics';
 import { Ring } from '../shared/ring';
 
 @Component({
@@ -15,13 +16,13 @@ import { Ring } from '../shared/ring';
     <div class="panel panel-pad">
       <div class="tat-grid">
         <div class="left">
-          <div class="donut">
+          <div class="donut clickable" (click)="metrics.open('tat.compliance')">
             <z-ring [value]="data.tatCompliance" [size]="120" [thickness]="12" tone="teal"></z-ring>
             <div class="donut-lab">TAT Compliance</div>
           </div>
           <div class="rows">
-            @for (b of data.tatBuckets; track b.label) {
-              <div class="row" [attr.data-tone]="b.tone">
+            @for (b of data.tatBuckets; track b.label; let i = $index) {
+              <div class="row clickable" [attr.data-tone]="b.tone" (click)="metrics.open(bucketKeys[i])">
                 <span><i></i>{{ b.label }}</span>
                 <b>{{ b.count }}</b>
               </div>
@@ -30,8 +31,10 @@ import { Ring } from '../shared/ring';
         </div>
 
         <div class="stats">
-          @for (s of data.tatStats; track s.label) {
-            <div class="stat-box"><div class="val">{{ s.value }}</div><div class="lab">{{ s.label }}</div></div>
+          @for (s of data.tatStats; track s.label; let i = $index) {
+            <div class="stat-box clickable" (click)="metrics.open(statKeys[i])">
+              <div class="val">{{ s.value }}</div><div class="lab">{{ s.label }}</div>
+            </div>
           }
         </div>
       </div>
@@ -55,8 +58,14 @@ import { Ring } from '../shared/ring';
     .row[data-tone="red"] { background:#fdecec; color: var(--red-fg); }
     .row[data-tone="red"] i { background: var(--red); }
     .stats { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .clickable { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+    .stat-box.clickable:hover, .row.clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
+    .donut.clickable:hover { transform: scale(1.03); }
   `],
 })
 export class TatTab {
   data = inject(DashboardData);
+  metrics = inject(Metrics);
+  readonly bucketKeys = ['tat.onTrack', 'tat.atRisk', 'tat.breached'];
+  readonly statKeys = ['tat.expedited', 'tat.standard', 'tat.paused', 'tat.turnaround'];
 }

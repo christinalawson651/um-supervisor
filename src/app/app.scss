@@ -116,6 +116,8 @@
   display: flex; align-items: center; gap: 10px;
   box-shadow: var(--shadow);
 }
+.kpi.clickable { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+.kpi.clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); transform: translateY(-1px); }
 .kpi-ic {
   width: 30px; height: 30px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;

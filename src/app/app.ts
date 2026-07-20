@@ -2,6 +2,7 @@ import { Component, signal, inject } from '@angular/core';
 import { Icon } from './shared/icon';
 import { Overlays } from './shared/overlays';
 import { Interaction } from './shared/interaction';
+import { Metrics } from './shared/metrics';
 import { downloadCsv } from './shared/export-csv';
 import { DashboardData } from './data/dashboard-data';
 
@@ -52,11 +53,14 @@ const RAIL = [
 export class App {
   readonly data = inject(DashboardData);
   private ix = inject(Interaction);
+  private metrics = inject(Metrics);
   readonly tabs = TABS;
   readonly rail = RAIL;
   readonly selected = signal(0);
+  readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
 
   select(i: number) { this.selected.set(i); }
+  drill(key: string) { this.metrics.open(key); }
 
   railClick(item: { label: string; active: boolean }) {
     if (item.active) return;

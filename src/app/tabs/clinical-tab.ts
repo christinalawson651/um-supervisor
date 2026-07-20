@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
+import { Metrics } from '../shared/metrics';
 import { DecisionRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
@@ -16,8 +17,8 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="dstats">
-      @for (s of data.decisionStats; track s.label) {
-        <div class="dstat" [attr.data-tone]="s.tone">
+      @for (s of data.decisionStats; track s.label; let i = $index) {
+        <div class="dstat clickable" [attr.data-tone]="s.tone" (click)="metrics.open(decKeys[i])">
           <div class="dic"><z-icon [name]="s.icon" [size]="20" [stroke]="1.8"></z-icon></div>
           <div class="dval">{{ s.value }}</div>
           <div class="dlab">{{ s.label }}</div>
@@ -79,6 +80,8 @@ import { Icon } from '../shared/icon';
 export class ClinicalTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  metrics = inject(Metrics);
+  readonly decKeys = ['dec.approved', 'dec.denied', 'dec.partial', 'dec.auto', 'dec.md', 'dec.p2p'];
 
   readonly sortKey = signal<keyof DecisionRow | ''>('');
   readonly sortDir = signal<SortDir>(1);

@@ -16,11 +16,14 @@ export interface ConfirmRequest {
 
 export interface DrawerField { label: string; value: string; tone?: 'green' | 'amber' | 'red' | 'blue' | 'teal'; }
 export interface DrawerAction { label: string; tone: 'teal' | 'red' | 'amber'; run: () => void; }
+export interface DrawerTable { columns: string[]; rows: (string | number)[][]; caption?: string; }
 export interface DrawerData {
   title: string;
   subtitle?: string;
   badge?: { text: string; tone: 'green' | 'amber' | 'red' | 'blue' | 'teal' };
-  fields: DrawerField[];
+  formula?: string;            // e.g. "62% = 153 of 247 decisions"
+  fields?: DrawerField[];
+  table?: DrawerTable;         // contributing case list
   note?: string;
   actions?: DrawerAction[];
 }

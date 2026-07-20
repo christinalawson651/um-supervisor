@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
+import { Metrics } from '../shared/metrics';
 import { AiRecommendation } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 import { Ring } from '../shared/ring';
@@ -46,8 +47,8 @@ import { Ring } from '../shared/ring';
         <div class="panel panel-pad">
           <h3 class="panel-title">Predictive Risk Gauges</h3>
           <div class="gauges">
-            @for (g of data.riskGauges; track g.label) {
-              <div class="gauge">
+            @for (g of data.riskGauges; track g.label; let i = $index) {
+              <div class="gauge clickable" (click)="metrics.open(gaugeKeys[i])">
                 <z-ring [value]="g.value" [size]="92" [thickness]="9" [tone]="g.tone" [fontSize]="18"></z-ring>
                 <div class="glab">{{ g.label }}</div>
               </div>
@@ -57,13 +58,13 @@ import { Ring } from '../shared/ring';
 
         <div class="panel panel-pad">
           <h3 class="panel-title">Automation Metrics</h3>
-          <div class="auto-val">{{ data.aiAutoApproved }}%</div>
+          <div class="auto-val clickable" (click)="metrics.open('ai.auto')">{{ data.aiAutoApproved }}%</div>
           <div class="auto-cap">Auto-Approved</div>
           <div class="pbar auto-bar"><span [style.width.%]="data.aiAutoApproved"></span></div>
 
           <div class="conf-title">AI Confidence Distribution</div>
-          @for (c of data.aiConfidence; track c.label) {
-            <div class="conf-row">
+          @for (c of data.aiConfidence; track c.label; let i = $index) {
+            <div class="conf-row clickable" (click)="metrics.open(confKeys[i])">
               <span class="conf-lab">{{ c.label }}</span>
               <span class="conf-track">
                 <span class="pbar" [class.amber]="c.tone==='amber'" [class.red]="c.tone==='red'">
@@ -120,11 +121,18 @@ import { Ring } from '../shared/ring';
     .rec-empty { grid-column: 1 / -1; text-align:center; padding: 28px; color: var(--teal-700);
       font-size: 13px; font-weight: 600; background:#fff; border:1px dashed var(--teal-600);
       border-radius: var(--radius); }
+    .clickable { cursor: pointer; }
+    .gauge.clickable:hover { transform: scale(1.04); transition: transform .12s; }
+    .conf-row.clickable:hover .conf-lab { color: var(--teal-700); }
+    .auto-val.clickable:hover { color: var(--teal-900); }
   `],
 })
 export class AiTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  metrics = inject(Metrics);
+  readonly gaugeKeys = ['ai.denial', 'ai.appeal', 'ai.tatrisk'];
+  readonly confKeys = ['ai.confHigh', 'ai.confMed', 'ai.confLow'];
 
   act(r: AiRecommendation) {
     this.ix.ask({

@@ -42,8 +42,8 @@
 
     <!-- KPI strip -->
     <div class="kpi-strip">
-      @for (k of data.kpis(); track k.label) {
-        <div class="kpi" [attr.data-tone]="k.tone">
+      @for (k of data.kpis(); track k.label; let i = $index) {
+        <div class="kpi clickable" [attr.data-tone]="k.tone" (click)="drill(kpiKeys[i])">
           <div class="kpi-ic"><z-icon [name]="k.icon" [size]="16" [stroke]="1.8"></z-icon></div>
           <div class="kpi-body">
             <div class="kpi-val">{{ k.value }}</div>

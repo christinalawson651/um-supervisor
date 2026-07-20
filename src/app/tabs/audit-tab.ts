@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
+import { Metrics } from '../shared/metrics';
 import { AuditFlag } from '../data/dashboard.models';
 
 @Component({
@@ -13,8 +14,8 @@ import { AuditFlag } from '../data/dashboard.models';
     </div>
 
     <div class="grid-3">
-      @for (b of data.complianceBars; track b.label) {
-        <div class="panel panel-pad">
+      @for (b of data.complianceBars; track b.label; let i = $index) {
+        <div class="panel panel-pad clickable" (click)="metrics.open(barKeys[i])">
           <div class="clab">{{ b.label }}</div>
           <div class="cval">{{ b.pct }}%</div>
           <div class="pbar"><span [style.width.%]="b.pct"></span></div>
@@ -56,6 +57,8 @@ import { AuditFlag } from '../data/dashboard.models';
 export class AuditTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  metrics = inject(Metrics);
+  readonly barKeys = ['audit.doc', 'audit.guideline', 'audit.rationale'];
 
   open(f: AuditFlag) {
     this.ix.openDrawer({

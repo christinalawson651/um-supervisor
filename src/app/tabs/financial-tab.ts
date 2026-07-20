@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
+import { Metrics } from '../shared/metrics';
 import { HighDollarCase } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 
@@ -15,8 +16,8 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="grid-3">
-      @for (m of data.financials; track m.label) {
-        <div class="metric-tile">
+      @for (m of data.financials; track m.label; let i = $index) {
+        <div class="metric-tile clickable" (click)="metrics.open(finKeys[i])">
           <div class="ic"><z-icon [name]="m.icon" [size]="22" [stroke]="1.6"></z-icon></div>
           <div class="val">{{ m.value }}</div>
           <div class="lab">{{ m.label }}</div>
@@ -44,11 +45,16 @@ import { Icon } from '../shared/icon';
       </table>
     </div>
   `,
-  styles: [`.clickable { cursor: pointer; }`],
+  styles: [`
+    .clickable { cursor: pointer; transition: box-shadow .12s; }
+    .metric-tile.clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
+  `],
 })
 export class FinancialTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  metrics = inject(Metrics);
+  readonly finKeys = ['fin.pending', 'fin.avoided', 'fin.los'];
 
   open(c: HighDollarCase) {
     this.ix.openDrawer({
