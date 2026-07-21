@@ -1,9 +1,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
 import { Members } from '../shared/members';
 import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
+import { compareRows, caretFor, SortDir } from '../shared/sort';
+import { downloadCsv } from '../shared/export-csv';
 
 interface Appeal {
   appealId: string; auth: string; member: string; service: string;
@@ -17,7 +20,7 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
 @Component({
   selector: 'app-appeals-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring],
+  imports: [KpiStrip, Ring, FormsModule],
   template: `
     <app-kpi-strip [items]="kpis" />
 
@@ -31,14 +34,24 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
       <!-- 0: Workforce & Queue -->
       @case (0) {
         <div class="tab-head"><h2>Appeals Worklist</h2><span class="section-note">Prioritized by smart priority — deadline &amp; risk weighted</span></div>
-        <div class="pills">
-          @for (f of filters; track f.key) {
-            <button class="pill" [class.active]="filter() === f.key" (click)="filter.set(f.key)"><span class="pdot" [attr.data-tone]="f.tone"></span>{{ f.label }}<span class="pcount">{{ countFor(f.key) }}</span></button>
-          }
+        <div class="wl-tools">
+          <div class="pills">
+            @for (f of filters; track f.key) {
+              <button class="pill" [class.active]="filter() === f.key" (click)="filter.set(f.key)"><span class="pdot" [attr.data-tone]="f.tone"></span>{{ f.label }}<span class="pcount">{{ countFor(f.key) }}</span></button>
+            }
+          </div>
+          <div class="flex gap-8 center">
+            <input class="search" type="text" placeholder="Search appeals…" [ngModel]="apSearch()" (ngModelChange)="apSearch.set($event)" />
+            <button class="btn outline sm" (click)="exportAppeals()">Export</button>
+          </div>
         </div>
         <div class="panel"><table class="z-table">
-          <thead><tr><th>Next Action</th><th>Member</th><th>Appeal · Auth</th><th>Level</th><th>Status</th><th>TAT</th><th>Assigned To</th></tr></thead>
-          <tbody>@for (a of visible(); track a.appealId) {
+          <thead><tr><th>Next Action</th>
+            <th class="srt" (click)="sortAp('member')">Member{{ caretAp('member') }}</th>
+            <th>Appeal · Auth</th>
+            <th class="srt" (click)="sortAp('level')">Level{{ caretAp('level') }}</th>
+            <th>Status</th><th>TAT</th><th>Assigned To</th></tr></thead>
+          <tbody>@for (a of worklistRows(); track a.appealId) {
             <tr class="clk" (click)="open(a)"><td><span class="nba" [attr.data-tone]="a.nbaTone">{{ a.nba }}</span></td>
               <td><a class="ml" (click)="members.openByName(a.member); $event.stopPropagation()">{{ a.member }}</a></td>
               <td><span class="strong">{{ a.appealId }}</span><br><span class="sub">{{ a.auth }} · {{ a.service }}</span></td>
@@ -47,9 +60,15 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
               <td><span class="tat" [attr.data-tone]="a.tatTone">{{ a.tat }}</span></td><td>{{ a.assigned }}</td></tr>
           } @empty { <tr><td colspan="7" class="empty">No appeals in this queue.</td></tr> }</tbody>
         </table></div>
-        <div class="panel mt-6"><div class="panel-pad"><h3 class="pt">Workload per Reviewer</h3></div>
-          <table class="z-table"><thead><tr><th>Reviewer</th><th>Open</th><th>Near SLA</th><th>Overdue</th><th>Overturn Rate</th><th>Utilization</th></tr></thead>
-          <tbody>@for (r of reviewers; track r.name) {
+        <div class="panel mt-6"><div class="panel-pad tbl-head"><h3 class="pt">Workload per Reviewer</h3>
+          <button class="btn outline sm" (click)="exportReviewers()">Export</button></div>
+          <table class="z-table"><thead><tr><th class="srt" (click)="sortRv('name')">Reviewer{{ caretRv('name') }}</th>
+            <th class="srt" (click)="sortRv('open')">Open{{ caretRv('open') }}</th>
+            <th class="srt" (click)="sortRv('nearSla')">Near SLA{{ caretRv('nearSla') }}</th>
+            <th class="srt" (click)="sortRv('overdue')">Overdue{{ caretRv('overdue') }}</th>
+            <th class="srt" (click)="sortRv('overturnRate')">Overturn Rate{{ caretRv('overturnRate') }}</th>
+            <th class="srt" (click)="sortRv('utilization')">Utilization{{ caretRv('utilization') }}</th></tr></thead>
+          <tbody>@for (r of sortedReviewers(); track r.name) {
             <tr><td class="strong">{{ r.name }}<div class="sub">{{ r.role }}</div></td><td class="num">{{ r.open }}</td>
               <td><b [class.warn]="r.nearSla>0">{{ r.nearSla }}</b></td><td><b [class.hot]="r.overdue>0">{{ r.overdue }}</b></td>
               <td class="num">{{ r.overturnRate }}%</td>
@@ -221,6 +240,12 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
     .clk { cursor:pointer; } .ml { color:#5B47E0; font-weight:600; cursor:pointer; } .ml:hover { text-decoration:underline; }
     .pt { font-size:14px; font-weight:600; color:var(--ink); margin:0 0 4px; }
     .note-warn { color:var(--amber-fg); } .tbl-head { display:flex; align-items:center; justify-content:space-between; }
+    .flex { display:flex; } .gap-8 { gap:8px; } .center { align-items:center; }
+    .srt { cursor:pointer; user-select:none; } .srt:hover { color:var(--ink-soft); }
+    .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:190px; outline:none; }
+    .search:focus { border-color:var(--teal-600); }
+    .wl-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+    .wl-tools .pills { margin-bottom:0; }
     .pills { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
     .pill { display:flex; align-items:center; gap:7px; border:1px solid var(--gray-300); background:#fff; border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; color:var(--gray-500); cursor:pointer; }
     .pill.active { background:#5B47E0; border-color:#5B47E0; color:#fff; } .pill.active .pcount { background:rgba(255,255,255,.25); color:#fff; }
@@ -312,6 +337,35 @@ export class AppealsDashboard {
   readonly visible = computed(() => { const f = this.filter(); const rows = this.appeals(); return f === 'all' ? rows.filter((a) => a.queue !== 'closed') : rows.filter((a) => a.queue === f); });
   countFor(key: string) { const rows = this.appeals(); return key === 'all' ? rows.filter((a) => a.queue !== 'closed').length : rows.filter((a) => a.queue === key).length; }
   readonly riskCases = computed(() => this.appeals().filter((a) => ['overdue', 'md', 'info'].includes(a.queue) || a.tatTone === 'amber'));
+
+  // worklist search + sort + export
+  readonly apSearch = signal('');
+  readonly apSortKey = signal<keyof Appeal | ''>('');
+  readonly apSortDir = signal<SortDir>(1);
+  readonly worklistRows = computed(() => {
+    const q = this.apSearch().trim().toLowerCase();
+    const rows = this.visible().filter((a) => !q || a.member.toLowerCase().includes(q) || a.appealId.toLowerCase().includes(q) || a.auth.toLowerCase().includes(q) || a.service.toLowerCase().includes(q));
+    return compareRows(rows, this.apSortKey(), this.apSortDir());
+  });
+  sortAp(k: keyof Appeal) { if (this.apSortKey() === k) this.apSortDir.set(this.apSortDir() === 1 ? -1 : 1); else { this.apSortKey.set(k); this.apSortDir.set(1); } }
+  caretAp(k: keyof Appeal) { return caretFor(this.apSortKey(), k, this.apSortDir()); }
+  exportAppeals() {
+    downloadCsv('appeals-worklist_2026-07-17', ['Appeal', 'Auth', 'Member', 'Service', 'Level', 'Status', 'TAT', 'Assigned'],
+      this.visible().map((a) => [a.appealId, a.auth, a.member, a.service, a.level, a.status, a.tat, a.assigned]));
+    this.ix.toast('Exported appeals worklist as CSV.');
+  }
+
+  // reviewers sort + export
+  readonly rvSortKey = signal<keyof Reviewer | ''>('');
+  readonly rvSortDir = signal<SortDir>(1);
+  readonly sortedReviewers = computed(() => compareRows(this.reviewers, this.rvSortKey(), this.rvSortDir()));
+  sortRv(k: keyof Reviewer) { if (this.rvSortKey() === k) this.rvSortDir.set(this.rvSortDir() === 1 ? -1 : 1); else { this.rvSortKey.set(k); this.rvSortDir.set(1); } }
+  caretRv(k: keyof Reviewer) { return caretFor(this.rvSortKey(), k, this.rvSortDir()); }
+  exportReviewers() {
+    downloadCsv('appeals-reviewers_2026-07-17', ['Reviewer', 'Role', 'Open', 'Near SLA', 'Overdue', 'Overturn Rate %', 'Utilization %'],
+      this.reviewers.map((r) => [r.name, r.role, r.open, r.nearSla, r.overdue, r.overturnRate, r.utilization]));
+    this.ix.toast('Exported reviewer workload as CSV.');
+  }
 
   readonly reviewers: Reviewer[] = [
     { name: 'C. Lawson', role: 'Appeals RN', open: 5, nearSla: 2, overdue: 1, overturnRate: 63, utilization: 91 },

@@ -1,10 +1,13 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
 import { Members } from '../shared/members';
 import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { REFERRALS, Referral } from '../data/referrals';
+import { compareRows, caretFor, SortDir } from '../shared/sort';
+import { downloadCsv } from '../shared/export-csv';
 
 interface CaseManager { name: string; discipline: string; active: number; highRisk: number; highAcuity: number; highCost: number; slaAtRisk: number; utilization: number; }
 interface CmMemberRow { name: string; risk: number; level: 'Low'|'Moderate'|'High'|'Critical'; acuity: 'Low'|'Medium'|'High'; cost: string; sla: string; slaTone: string; cm: string; dx: string; }
@@ -14,7 +17,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 @Component({
   selector: 'app-cm-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring],
+  imports: [KpiStrip, Ring, FormsModule],
   template: `
     <app-kpi-strip [items]="kpis" (drill)="onKpi($event)" />
 
@@ -28,11 +31,20 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
       <!-- 0: Workforce & Caseload -->
       @case (0) {
         <div class="tab-head"><h2>Caseload &amp; Workload Balancing</h2>
-          <button class="btn primary" (click)="rebalance()">Balance caseloads</button></div>
+          <div class="flex gap-8">
+            <button class="btn outline sm" (click)="exportCaseload()">Export</button>
+            <button class="btn primary" (click)="rebalance()">Balance caseloads</button></div></div>
         <div class="panel"><table class="z-table">
-          <thead><tr><th>Care Manager</th><th>Active</th><th>High Risk</th><th>High Acuity</th><th>High Cost</th><th>SLA At-Risk</th><th>Utilization</th><th>Action</th></tr></thead>
-          <tbody>@for (c of caseManagers(); track c.name) {
-            <tr><td class="strong">{{ c.name }}<div class="sub">{{ c.discipline }}</div></td>
+          <thead><tr>
+            <th class="srt" (click)="sortCm('name')">Care Manager{{ caretCm('name') }}</th>
+            <th class="srt" (click)="sortCm('active')">Active{{ caretCm('active') }}</th>
+            <th class="srt" (click)="sortCm('highRisk')">High Risk{{ caretCm('highRisk') }}</th>
+            <th class="srt" (click)="sortCm('highAcuity')">High Acuity{{ caretCm('highAcuity') }}</th>
+            <th class="srt" (click)="sortCm('highCost')">High Cost{{ caretCm('highCost') }}</th>
+            <th class="srt" (click)="sortCm('slaAtRisk')">SLA At-Risk{{ caretCm('slaAtRisk') }}</th>
+            <th class="srt" (click)="sortCm('utilization')">Utilization{{ caretCm('utilization') }}</th><th>Action</th></tr></thead>
+          <tbody>@for (c of sortedCms(); track c.name) {
+            <tr class="clk" (click)="openCm(c)"><td class="strong">{{ c.name }}<div class="sub">{{ c.discipline }}</div></td>
               <td class="num">{{ c.active }}</td>
               <td><b [class.hot]="c.highRisk>=5">{{ c.highRisk }}</b></td>
               <td><b [class.hot]="c.highAcuity>=4">{{ c.highAcuity }}</b></td>
@@ -40,7 +52,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               <td><b [class.warn]="c.slaAtRisk>0">{{ c.slaAtRisk }}</b></td>
               <td><span class="mini-bar" [class.teal]="c.utilization<80" [class.red]="c.utilization>=90"><span [style.width.%]="c.utilization"></span></span>
                 <span class="pct">{{ c.utilization }}%</span></td>
-              <td><button class="btn outline sm" (click)="reassign(c)">Reassign</button></td></tr>
+              <td><button class="btn outline sm" (click)="reassign(c); $event.stopPropagation()">Reassign</button></td></tr>
           }</tbody></table></div>
       }
 
@@ -91,9 +103,15 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           <div class="rtile amber"><div class="rl">High-Cost (>$100k)</div><div class="rv">9</div><div class="rf">$3.4M annual exposure</div></div>
           <div class="rtile blue"><div class="rl">Escalated Today</div><div class="rv">4</div><div class="rf">to MD / social work</div></div>
         </div>
-        <div class="panel mt-6"><div class="panel-pad"><h3 class="pt">High-Priority Member Worklist</h3></div>
-          <table class="z-table"><thead><tr><th>Member</th><th>Primary Dx</th><th>Risk</th><th>Acuity</th><th>Annual Cost</th><th>SLA</th><th>Care Manager</th><th>Action</th></tr></thead>
-          <tbody>@for (m of worklist; track m.name) {
+        <div class="panel mt-6"><div class="panel-pad tbl-head"><h3 class="pt">High-Priority Member Worklist</h3>
+          <div class="flex gap-8 center">
+            <input class="search" type="text" placeholder="Search members…" [ngModel]="wlSearch()" (ngModelChange)="wlSearch.set($event)" />
+            <button class="btn outline sm" (click)="exportWorklist()">Export</button></div></div>
+          <table class="z-table"><thead><tr>
+            <th class="srt" (click)="sortWl('name')">Member{{ caretWl('name') }}</th><th>Primary Dx</th>
+            <th class="srt" (click)="sortWl('risk')">Risk{{ caretWl('risk') }}</th><th>Acuity</th>
+            <th>Annual Cost</th><th>SLA</th><th>Care Manager</th><th>Action</th></tr></thead>
+          <tbody>@for (m of visibleWorklist(); track m.name) {
             <tr class="clk" (click)="members.openByName(m.name)"><td><a class="ml">{{ m.name }}</a></td><td>{{ m.dx }}</td>
               <td><span class="score" [attr.data-l]="m.level">{{ m.risk }} · {{ m.level }}</span></td>
               <td><span class="ac" [attr.data-a]="m.acuity">{{ m.acuity }}</span></td>
@@ -101,7 +119,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               <td><span class="badge" [class.red]="m.slaTone==='red'" [class.amber]="m.slaTone==='amber'" [class.green]="m.slaTone==='green'">{{ m.sla }}</span></td>
               <td>{{ m.cm }}</td>
               <td><button class="btn outline teal sm" (click)="escalate(m); $event.stopPropagation()">Escalate</button></td></tr>
-          }</tbody></table></div>
+          } @empty { <tr><td colspan="8" class="empty">No members match "{{ wlSearch() }}".</td></tr> }</tbody></table></div>
       }
 
       <!-- 4: Program Management -->
@@ -217,6 +235,12 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .clk { cursor:pointer; } .ml { color:#2563eb; font-weight:600; cursor:pointer; } .ml:hover { text-decoration:underline; }
     .pt { font-size:14px; font-weight:600; color:var(--ink); margin:0 0 4px; }
     .note-warn { color:var(--amber-fg); }
+    .flex { display:flex; } .gap-8 { gap:8px; } .center { align-items:center; }
+    .tbl-head { display:flex; align-items:center; justify-content:space-between; }
+    .srt { cursor:pointer; user-select:none; } .srt:hover { color:var(--ink-soft); }
+    .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:200px; outline:none; }
+    .search:focus { border-color:var(--teal-600); }
+    .empty { text-align:center; color:var(--gray-500); padding:22px; }
     .score { font-weight:600; font-size:12px; padding:2px 9px; border-radius:6px; }
     .score[data-l="Critical"]{ background:var(--red-bg); color:var(--red-fg); } .score[data-l="High"]{ background:#ffedd5; color:#c2410c; }
     .score[data-l="Moderate"]{ background:var(--amber-bg); color:var(--amber-fg); } .score[data-l="Low"]{ background:var(--green-bg); color:var(--green-fg); }
@@ -331,6 +355,51 @@ export class CmDashboard {
     { id: 'CM-119', type: 'Missing Assessment', desc: 'HRA not completed for high-risk member — MBR000098', date: '2026-07-14', sev: 'High' },
     { id: 'CM-120', type: 'Consent', desc: 'Verbal consent not documented — MBR000201', date: '2026-07-13', sev: 'Low' },
   ];
+
+  // ---- caseload sort + export + drill ----
+  readonly cmSortKey = signal<keyof CaseManager | ''>('');
+  readonly cmSortDir = signal<SortDir>(1);
+  readonly sortedCms = computed(() => compareRows(this.caseManagers(), this.cmSortKey(), this.cmSortDir()));
+  sortCm(k: keyof CaseManager) { if (this.cmSortKey() === k) this.cmSortDir.set(this.cmSortDir() === 1 ? -1 : 1); else { this.cmSortKey.set(k); this.cmSortDir.set(1); } }
+  caretCm(k: keyof CaseManager) { return caretFor(this.cmSortKey(), k, this.cmSortDir()); }
+  exportCaseload() {
+    downloadCsv('cm-caseload_2026-07-17', ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
+      this.caseManagers().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]));
+    this.ix.toast('Exported CM caseload as CSV.');
+  }
+  openCm(c: CaseManager) {
+    this.ix.openDrawer({
+      title: c.name, subtitle: c.discipline,
+      badge: { text: `${c.utilization}% utilized`, tone: c.utilization >= 90 ? 'red' : c.utilization < 80 ? 'green' : 'amber' },
+      fields: [
+        { label: 'Active Members', value: String(c.active) },
+        { label: 'High Risk', value: String(c.highRisk), tone: c.highRisk >= 5 ? 'red' : undefined },
+        { label: 'High Acuity', value: String(c.highAcuity) },
+        { label: 'High Cost', value: String(c.highCost) },
+        { label: 'SLA At-Risk', value: String(c.slaAtRisk), tone: c.slaAtRisk > 0 ? 'amber' : undefined },
+        { label: 'Utilization', value: `${c.utilization}%`, tone: c.utilization >= 90 ? 'red' : c.utilization < 80 ? 'green' : 'amber' },
+      ],
+      note: c.utilization >= 90 ? 'At or above capacity — consider reassigning members.' : 'Operating within healthy capacity.',
+      actions: [{ label: `Reassign a member from ${c.name.split(',')[0]}`, tone: 'teal', run: () => this.reassign(c) }],
+    });
+  }
+
+  // ---- worklist search + sort + export ----
+  readonly wlSearch = signal('');
+  readonly wlSortKey = signal<keyof CmMemberRow | ''>('');
+  readonly wlSortDir = signal<SortDir>(1);
+  readonly visibleWorklist = computed(() => {
+    const q = this.wlSearch().trim().toLowerCase();
+    let rows = this.worklist.filter((m) => !q || m.name.toLowerCase().includes(q) || m.dx.toLowerCase().includes(q) || m.cm.toLowerCase().includes(q));
+    return compareRows(rows, this.wlSortKey(), this.wlSortDir());
+  });
+  sortWl(k: keyof CmMemberRow) { if (this.wlSortKey() === k) this.wlSortDir.set(this.wlSortDir() === 1 ? -1 : 1); else { this.wlSortKey.set(k); this.wlSortDir.set(1); } }
+  caretWl(k: keyof CmMemberRow) { return caretFor(this.wlSortKey(), k, this.wlSortDir()); }
+  exportWorklist() {
+    downloadCsv('cm-high-risk-members_2026-07-17', ['Member', 'Primary Dx', 'Risk', 'Level', 'Acuity', 'Annual Cost', 'SLA', 'Care Manager'],
+      this.worklist.map((m) => [m.name, m.dx, m.risk, m.level, m.acuity, m.cost, m.sla, m.cm]));
+    this.ix.toast('Exported high-risk members as CSV.');
+  }
 
   private clampUtil(active: number, ref: CaseManager) { const perCase = ref.active > 0 ? ref.utilization / ref.active : 3; return Math.max(0, Math.min(100, Math.round(active * perCase))); }
   rebalance() {
