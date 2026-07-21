@@ -69,7 +69,7 @@ const KEY = 'zyter-exec-widgets-v1';
 
     <div class="wgrid">
       @for (w of shown(); track w.id) {
-        <div class="widget" [class.full]="w.size === 'full'">
+        <div class="widget" [class.full]="w.size === 'full'" [class.pie]="isPie(w.id)">
           <div class="w-head"><h3>{{ w.title }}</h3>
             <button class="w-x" title="Remove from view" (click)="toggle(w.id)">×</button>
           </div>
@@ -207,6 +207,9 @@ const KEY = 'zyter-exec-widgets-v1';
     .wgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-items:start; }
     .widget { background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); padding:16px 18px; }
     .widget.full { grid-column:1 / -1; }
+    .widget.pie { min-height:210px; display:flex; flex-direction:column; }
+    .widget.pie .foot { margin-top:auto; }
+    .widget.pie z-donut { flex:1; align-items:center; }
     .w-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .w-head h3 { font-size:14px; font-weight:600; color:var(--ink); margin:0; }
     .w-x { border:none; background:none; color:var(--gray-400); font-size:18px; line-height:1; cursor:pointer; padding:0 2px; }
@@ -312,6 +315,7 @@ export class OverviewDashboard {
   scopeOk(w: WidgetDef) { return w.scope.every((m) => this.nav.scope().includes(m)); }
   widgetsIn(cat: string) { return WIDGETS.filter((w) => w.category === cat); }
   scopeReq(w: WidgetDef) { return w.scope.map((m) => m.toUpperCase()).join('/'); }
+  isPie(id: string) { return ['um-decisions', 'appeal-outcomes', 'cm-adherence', 'case-mix', 'automation'].includes(id); }
   readonly shown = computed(() =>
     WIDGETS.filter((w) => this.enabled().includes(w.id) && w.scope.every((m) => this.nav.scope().includes(m))));
 
