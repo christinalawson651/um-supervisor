@@ -1,8 +1,8 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, output, signal } from '@angular/core';
 
-export interface Segment { label: string; value: number; color: string; }
+export interface Segment { label: string; value: number; color: string; key?: string; }
 
-/** Multi-segment donut with a center figure and a labeled legend (identity never color-alone). */
+/** Multi-segment donut with hover tooltip, click-to-drill, center figure, labeled legend. */
 @Component({
   selector: 'z-donut',
   standalone: true,
@@ -10,30 +10,48 @@ export interface Segment { label: string; value: number; color: string; }
     <div class="wrap">
       <svg [attr.width]="size" [attr.height]="size" [attr.viewBox]="'0 0 ' + size + ' ' + size">
         <circle [attr.cx]="c" [attr.cy]="c" [attr.r]="r" fill="none" stroke="var(--gray-100)" [attr.stroke-width]="tw" />
-        @for (s of arcs; track s.label) {
+        @for (s of arcs; track s.label; let i = $index) {
           <circle [attr.cx]="c" [attr.cy]="c" [attr.r]="r" fill="none"
-            [attr.stroke]="s.color" [attr.stroke-width]="tw"
+            [attr.stroke]="s.color" [attr.stroke-width]="hover() === i ? tw + 4 : tw"
             [attr.stroke-dasharray]="s.dash" [attr.stroke-dashoffset]="s.offset"
-            [attr.transform]="'rotate(-90 ' + c + ' ' + c + ')'" stroke-linecap="butt" />
+            [attr.transform]="'rotate(-90 ' + c + ' ' + c + ')'" stroke-linecap="butt"
+            [class.hot]="clickable"
+            (mouseenter)="hover.set(i)" (mouseleave)="hover.set(-1)" (click)="pick(i)" />
         }
       </svg>
-      <div class="mid"><div class="cv">{{ centerValue }}</div><div class="cl">{{ centerLabel }}</div></div>
+      <div class="mid">
+        @if (hover() >= 0) {
+          <div class="cv">{{ pctOf(segments[hover()].value) }}%</div>
+          <div class="cl">{{ segments[hover()].label }}</div>
+        } @else {
+          <div class="cv">{{ centerValue }}</div><div class="cl">{{ centerLabel }}</div>
+        }
+      </div>
+      @if (hover() >= 0) {
+        <div class="tip">{{ segments[hover()].label }}: {{ segments[hover()].value }} ({{ pctOf(segments[hover()].value) }}%)@if (clickable) { <span class="tap"> · click to view</span> }</div>
+      }
     </div>
     <div class="legend">
-      @for (s of segments; track s.label) {
-        <div class="lg"><span class="sw" [style.background]="s.color"></span>{{ s.label }}
-          <b>{{ pctOf(s.value) }}%</b></div>
+      @for (s of segments; track s.label; let i = $index) {
+        <div class="lg" [class.hot]="clickable" (mouseenter)="hover.set(i)" (mouseleave)="hover.set(-1)" (click)="pick(i)">
+          <span class="sw" [style.background]="s.color"></span>{{ s.label }}<b>{{ pctOf(s.value) }}%</b>
+        </div>
       }
     </div>
   `,
   styles: [`
     :host { display:flex; align-items:center; gap:18px; }
     .wrap { position:relative; flex:0 0 auto; }
-    .mid { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+    circle.hot { cursor:pointer; transition: stroke-width .1s; }
+    .mid { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; }
     .cv { font-size:22px; font-weight:700; color:var(--ink); line-height:1; }
-    .cl { font-size:10px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; margin-top:3px; }
+    .cl { font-size:10px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; margin-top:3px; text-align:center; }
+    .tip { position:absolute; top:-10px; left:50%; transform:translate(-50%,-100%); white-space:nowrap;
+      background:var(--ink); color:#fff; font-size:11px; font-weight:600; padding:5px 9px; border-radius:6px; pointer-events:none; z-index:5; }
+    .tap { opacity:.7; font-weight:400; }
     .legend { display:flex; flex-direction:column; gap:8px; }
     .lg { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); }
+    .lg.hot { cursor:pointer; } .lg.hot:hover { color:var(--ink); }
     .lg b { margin-left:auto; font-variant-numeric:tabular-nums; color:var(--ink); }
     .sw { width:10px; height:10px; border-radius:3px; flex:0 0 10px; }
   `],
@@ -43,16 +61,20 @@ export class Donut {
   @Input() tw = 16;
   @Input() centerValue = '';
   @Input() centerLabel = '';
+  @Input() clickable = false;
   @Input() set segments(v: Segment[]) { this._segs = v; this.build(); }
   get segments() { return this._segs; }
   private _segs: Segment[] = [];
   arcs: { label: string; color: string; dash: string; offset: number }[] = [];
+  readonly hover = signal(-1);
+  segClick = output<Segment>();
 
   get c() { return this.size / 2; }
   get r() { return this.size / 2 - this.tw / 2 - 1; }
   get circ() { return 2 * Math.PI * this.r; }
   get total() { return this._segs.reduce((s, x) => s + x.value, 0) || 1; }
   pctOf(v: number) { return Math.round((v / this.total) * 100); }
+  pick(i: number) { if (this.clickable) this.segClick.emit(this._segs[i]); }
 
   private build() {
     let cum = 0;
