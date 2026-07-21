@@ -7,7 +7,7 @@ import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
-import { downloadCsv } from '../shared/export-csv';
+import { Exporter } from '../shared/exporter';
 
 interface CaseManager { name: string; discipline: string; active: number; highRisk: number; highAcuity: number; highCost: number; slaAtRisk: number; utilization: number; }
 interface CmMemberRow { name: string; risk: number; level: 'Low'|'Moderate'|'High'|'Critical'; acuity: 'Low'|'Medium'|'High'; cost: string; sla: string; slaTone: string; cm: string; dx: string; }
@@ -290,6 +290,7 @@ export class CmDashboard {
   members = inject(Members);
   private ix = inject(Interaction);
   private data = inject(DashboardData);
+  private exporter = inject(Exporter);
   readonly tabs = TABS;
   readonly sel = signal(0);
 
@@ -363,9 +364,9 @@ export class CmDashboard {
   sortCm(k: keyof CaseManager) { if (this.cmSortKey() === k) this.cmSortDir.set(this.cmSortDir() === 1 ? -1 : 1); else { this.cmSortKey.set(k); this.cmSortDir.set(1); } }
   caretCm(k: keyof CaseManager) { return caretFor(this.cmSortKey(), k, this.cmSortDir()); }
   exportCaseload() {
-    downloadCsv('cm-caseload_2026-07-17', ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
-      this.caseManagers().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]));
-    this.ix.toast('Exported CM caseload as CSV.');
+    this.exporter.open({ title: 'CM Caseload', name: 'cm-caseload_2026-07-17',
+      columns: ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
+      rows: this.caseManagers().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]) });
   }
   openCm(c: CaseManager) {
     this.ix.openDrawer({
@@ -396,9 +397,9 @@ export class CmDashboard {
   sortWl(k: keyof CmMemberRow) { if (this.wlSortKey() === k) this.wlSortDir.set(this.wlSortDir() === 1 ? -1 : 1); else { this.wlSortKey.set(k); this.wlSortDir.set(1); } }
   caretWl(k: keyof CmMemberRow) { return caretFor(this.wlSortKey(), k, this.wlSortDir()); }
   exportWorklist() {
-    downloadCsv('cm-high-risk-members_2026-07-17', ['Member', 'Primary Dx', 'Risk', 'Level', 'Acuity', 'Annual Cost', 'SLA', 'Care Manager'],
-      this.worklist.map((m) => [m.name, m.dx, m.risk, m.level, m.acuity, m.cost, m.sla, m.cm]));
-    this.ix.toast('Exported high-risk members as CSV.');
+    this.exporter.open({ title: 'High-Risk Members', name: 'cm-high-risk-members_2026-07-17',
+      columns: ['Member', 'Primary Dx', 'Risk', 'Level', 'Acuity', 'Annual Cost', 'SLA', 'Care Manager'],
+      rows: this.worklist.map((m) => [m.name, m.dx, m.risk, m.level, m.acuity, m.cost, m.sla, m.cm]) });
   }
 
   private clampUtil(active: number, ref: CaseManager) { const perCase = ref.active > 0 ? ref.utilization / ref.active : 3; return Math.max(0, Math.min(100, Math.round(active * perCase))); }

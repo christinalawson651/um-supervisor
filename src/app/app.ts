@@ -5,10 +5,12 @@ import { CaseExplorer } from './shared/case-explorer';
 import { MemberChart } from './shared/member-chart';
 import { ReassignPanel } from './shared/reassign-panel';
 import { GlobalSearch } from './shared/global-search';
+import { ExportDialog } from './shared/export-dialog';
 import { Interaction } from './shared/interaction';
 import { Metrics } from './shared/metrics';
 import { Nav, ROLES } from './shared/nav';
-import { downloadCsv } from './shared/export-csv';
+import { Exporter } from './shared/exporter';
+import { REFERRALS } from './data/referrals';
 import { DashboardData } from './data/dashboard-data';
 
 import { OverviewDashboard } from './modules/overview-dashboard';
@@ -69,7 +71,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   selector: 'app-root',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, GlobalSearch, OverviewDashboard, CmDashboard, AppealsDashboard,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard,
     WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab, ReferralsTab,
   ],
@@ -80,6 +82,7 @@ export class App {
   readonly data = inject(DashboardData);
   private ix = inject(Interaction);
   private metrics = inject(Metrics);
+  private exporter = inject(Exporter);
   readonly nav = inject(Nav);
   readonly tabs = TABS;
   readonly rail = RAIL;
@@ -132,61 +135,38 @@ export class App {
     });
   }
 
-  /** Export the currently visible tab's dataset as CSV. */
+  /** Open the export dialog for the currently visible UM tab. */
   exportCsv() {
     if (this.nav.module() !== 'um') {
-      this.ix.toast('Export is available from the tables and drill-downs within this view.', 'info');
+      this.ix.toast('Export is available from the Export button on each table in this view.', 'info');
       return;
     }
     const d = this.data;
-    const stamp = '2026-07-17';
+    let name = 'export', columns: string[] = [], rows: (string | number)[][] = [];
     switch (this.selected()) {
-      case 0:
-        downloadCsv(`workforce-nurses_${stamp}`,
-          ['Nurse', 'Active Cases', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'],
-          d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]));
-        break;
-      case 1:
-        downloadCsv(`tat-sla_${stamp}`, ['Metric', 'Value'],
-          [...d.tatBuckets.map((b) => [b.label, b.count] as (string | number)[]),
-           ...d.tatStats.map((s) => [s.label, s.value] as (string | number)[])]);
-        break;
-      case 2:
-        downloadCsv(`clinical-decisions_${stamp}`,
-          ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'],
-          d.decisionRows.map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]));
-        break;
-      case 3:
-        downloadCsv(`risk-escalation_${stamp}`,
-          ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'],
-          d.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]));
-        break;
-      case 4:
-        downloadCsv(`concurrent-review_${stamp}`,
-          ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'],
-          d.concurrentRows().map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]));
-        break;
-      case 5:
-        downloadCsv(`intake-missing-fields_${stamp}`, ['Field', 'Missing Count', '% of Submissions'],
-          d.missingFields.map((f) => [f.field, f.count, f.pct]));
-        break;
-      case 6:
-        downloadCsv(`providers_${stamp}`, ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'],
-          d.providers.map((p) => [p.provider, p.npi, p.requests, p.approvalRate, p.rfiRate]));
-        break;
-      case 7:
-        downloadCsv(`high-dollar-cases_${stamp}`, ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'],
-          d.highDollarCases.map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]));
-        break;
-      case 8:
-        downloadCsv(`audit-flags_${stamp}`, ['ID', 'Type', 'Description', 'Date', 'Severity'],
-          d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]));
-        break;
-      case 9:
-        downloadCsv(`ai-recommendations_${stamp}`, ['Title', 'Detail', 'Confidence %', 'Action'],
-          d.aiRecommendations().map((r) => [r.title, r.detail, r.confidence, r.action]));
-        break;
+      case 0: name = 'workforce-nurses'; columns = ['Nurse', 'Active Cases', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
+        rows = d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]); break;
+      case 1: name = 'tat-sla'; columns = ['Metric', 'Value'];
+        rows = [...d.tatBuckets.map((b) => [b.label, b.count] as (string | number)[]), ...d.tatStats.map((s) => [s.label, s.value] as (string | number)[])]; break;
+      case 2: name = 'clinical-decisions'; columns = ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'];
+        rows = d.decisionRows.map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]); break;
+      case 3: name = 'risk-escalation'; columns = ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'];
+        rows = d.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]); break;
+      case 4: name = 'concurrent-review'; columns = ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'];
+        rows = d.concurrentRows().map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]); break;
+      case 5: name = 'intake-missing-fields'; columns = ['Field', 'Missing Count', '% of Submissions'];
+        rows = d.missingFields.map((f) => [f.field, f.count, f.pct]); break;
+      case 6: name = 'providers'; columns = ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'];
+        rows = d.providers.map((p) => [p.provider, p.npi, p.requests, p.approvalRate, p.rfiRate]); break;
+      case 7: name = 'high-dollar-cases'; columns = ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'];
+        rows = d.highDollarCases.map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]); break;
+      case 8: name = 'audit-flags'; columns = ['ID', 'Type', 'Description', 'Date', 'Severity'];
+        rows = d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]); break;
+      case 9: name = 'ai-recommendations'; columns = ['Title', 'Detail', 'Confidence %', 'Action'];
+        rows = d.aiRecommendations().map((r) => [r.title, r.detail, r.confidence, r.action]); break;
+      case 10: name = 'cm-referrals'; columns = ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'Status'];
+        rows = REFERRALS.map((r) => [r.authId, r.member, r.reason, r.fromStage, r.received, r.status]); break;
     }
-    this.ix.toast(`Exported "${this.tabs[this.selected()]}" as CSV.`);
+    this.exporter.open({ title: this.tabs[this.selected()], name: `${name}_2026-07-17`, columns, rows });
   }
 }

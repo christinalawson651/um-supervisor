@@ -6,7 +6,7 @@ import { Members } from '../shared/members';
 import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
-import { downloadCsv } from '../shared/export-csv';
+import { Exporter } from '../shared/exporter';
 
 interface Appeal {
   appealId: string; auth: string; member: string; service: string;
@@ -303,6 +303,7 @@ export class AppealsDashboard {
   members = inject(Members);
   private ix = inject(Interaction);
   private data = inject(DashboardData);
+  private exporter = inject(Exporter);
   readonly tabs = TABS;
   readonly sel = signal(0);
 
@@ -350,9 +351,9 @@ export class AppealsDashboard {
   sortAp(k: keyof Appeal) { if (this.apSortKey() === k) this.apSortDir.set(this.apSortDir() === 1 ? -1 : 1); else { this.apSortKey.set(k); this.apSortDir.set(1); } }
   caretAp(k: keyof Appeal) { return caretFor(this.apSortKey(), k, this.apSortDir()); }
   exportAppeals() {
-    downloadCsv('appeals-worklist_2026-07-17', ['Appeal', 'Auth', 'Member', 'Service', 'Level', 'Status', 'TAT', 'Assigned'],
-      this.visible().map((a) => [a.appealId, a.auth, a.member, a.service, a.level, a.status, a.tat, a.assigned]));
-    this.ix.toast('Exported appeals worklist as CSV.');
+    this.exporter.open({ title: 'Appeals Worklist', name: 'appeals-worklist_2026-07-17',
+      columns: ['Appeal', 'Auth', 'Member', 'Service', 'Level', 'Status', 'TAT', 'Assigned'],
+      rows: this.visible().map((a) => [a.appealId, a.auth, a.member, a.service, a.level, a.status, a.tat, a.assigned]) });
   }
 
   // reviewers sort + export
@@ -362,9 +363,9 @@ export class AppealsDashboard {
   sortRv(k: keyof Reviewer) { if (this.rvSortKey() === k) this.rvSortDir.set(this.rvSortDir() === 1 ? -1 : 1); else { this.rvSortKey.set(k); this.rvSortDir.set(1); } }
   caretRv(k: keyof Reviewer) { return caretFor(this.rvSortKey(), k, this.rvSortDir()); }
   exportReviewers() {
-    downloadCsv('appeals-reviewers_2026-07-17', ['Reviewer', 'Role', 'Open', 'Near SLA', 'Overdue', 'Overturn Rate %', 'Utilization %'],
-      this.reviewers.map((r) => [r.name, r.role, r.open, r.nearSla, r.overdue, r.overturnRate, r.utilization]));
-    this.ix.toast('Exported reviewer workload as CSV.');
+    this.exporter.open({ title: 'Reviewer Workload', name: 'appeals-reviewers_2026-07-17',
+      columns: ['Reviewer', 'Role', 'Open', 'Near SLA', 'Overdue', 'Overturn Rate %', 'Utilization %'],
+      rows: this.reviewers.map((r) => [r.name, r.role, r.open, r.nearSla, r.overdue, r.overturnRate, r.utilization]) });
   }
 
   readonly reviewers: Reviewer[] = [
