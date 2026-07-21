@@ -9,9 +9,12 @@ interface WidgetDef {
 }
 
 const WIDGETS: WidgetDef[] = [
+  // top 2x2 pies
   { id: 'um-decisions',    title: 'UM Decisions',            category: 'Outcomes & Quality', scope: ['um'],      size: 'half' },
   { id: 'appeal-outcomes', title: 'Appeal Outcomes',         category: 'Outcomes & Quality', scope: ['appeals'], size: 'half' },
   { id: 'cm-adherence',    title: 'Care-Plan Adherence',     category: 'Outcomes & Quality', scope: ['cm'],      size: 'half' },
+  { id: 'case-mix',        title: 'Case Mix by Module',      category: 'Outcomes & Quality', scope: [],          size: 'half' },
+  // trends & everything else
   { id: 'tat-trend',       title: 'TAT / SLA Compliance Trend', category: 'Outcomes & Quality', scope: ['um'],  size: 'full' },
   { id: 'overturn-trend',  title: 'Appeal Overturn Trend',   category: 'Outcomes & Quality', scope: ['appeals'], size: 'half' },
   { id: 'cost-heroes',     title: 'Cost Headlines',          category: 'Cost & Financial',   scope: [],          size: 'full' },
@@ -22,7 +25,8 @@ const WIDGETS: WidgetDef[] = [
   { id: 'risk-distribution', title: 'Member Risk Distribution', category: 'Risk & Population', scope: ['cm'],    size: 'half' },
 ];
 
-const DEFAULT_ENABLED = ['um-decisions', 'appeal-outcomes', 'cm-adherence', 'cost-heroes', 'cost-trend'];
+// default view: the four pies (2x2) + cost headline + cost trend
+const DEFAULT_ENABLED = ['um-decisions', 'appeal-outcomes', 'cm-adherence', 'case-mix', 'cost-heroes', 'cost-trend'];
 const KEY = 'zyter-exec-widgets-v1';
 
 @Component({
@@ -78,6 +82,11 @@ const KEY = 'zyter-exec-widgets-v1';
               <z-donut [clickable]="true" [segments]="cmMix" [size]="120" centerValue="91%" centerLabel="adherent"
                 (segClick)="nav.go('cm')" />
               <div class="foot"><span class="up">▲ 2 pts</span> vs last month · click to open CM</div>
+            }
+            @case ('case-mix') {
+              <z-donut [clickable]="true" [segments]="caseMix()" [size]="120" [centerValue]="caseMixTotal()" centerLabel="open items"
+                (segClick)="goModule($event)" />
+              <div class="foot">Share of active work across your modules · click a slice to open</div>
             }
             @case ('tat-trend') {
               <div class="w-big">{{ tat[tat.length-1] }}%</div>
@@ -239,4 +248,15 @@ export class OverviewDashboard {
   });
 
   drillDecision(seg: Segment) { if (seg.key) this.metrics.open(seg.key); }
+
+  readonly caseMix = computed<Segment[]>(() => {
+    const all: Segment[] = [
+      { label: 'UM', value: 247, color: '#0d9488', key: 'um' },
+      { label: 'CM', value: 68, color: '#3b82f6', key: 'cm' },
+      { label: 'Appeals', value: 18, color: '#8b5cf6', key: 'appeals' },
+    ];
+    return all.filter((s) => this.nav.scope().includes(s.key as BizModule));
+  });
+  caseMixTotal() { return String(this.caseMix().reduce((n, s) => n + s.value, 0)); }
+  goModule(seg: Segment) { if (seg.key) this.nav.go(seg.key as any); }
 }
