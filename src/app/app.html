@@ -25,20 +25,22 @@
       </button>
       <button class="btn outline" (click)="resetDemo()">Reset demo</button>
       <button class="btn outline" (click)="exportCsv()"><z-icon name="download" [size]="14"></z-icon> Export</button>
-      <button class="btn outline role" (click)="roleMenu()"><z-icon name="shield" [size]="14"></z-icon> {{ headings[nav.module()].role }}
+      <button class="btn outline role" (click)="roleMenu()"><z-icon name="shield" [size]="14"></z-icon> {{ nav.role().label }}
         <z-icon name="chevron" [size]="14"></z-icon></button>
       <div class="user">
         <span class="avatar">CL</span>
-        <span class="uinfo"><b>Christina Lawson</b><small>{{ headings[nav.module()].role }}</small></span>
+        <span class="uinfo"><b>Christina Lawson</b><small>{{ nav.role().label }}</small></span>
       </div>
     </div>
 
-    <!-- Module switcher -->
-    <div class="modbar">
-      @for (m of modules; track m.id) {
-        <button class="modtab" [class.active]="nav.module() === m.id" (click)="nav.go(m.id)">{{ m.label }}</button>
-      }
-    </div>
+    <!-- Module switcher (only when the role sees more than one) -->
+    @if (visibleTabs().length > 1) {
+      <div class="modbar">
+        @for (m of visibleTabs(); track m.id) {
+          <button class="modtab" [class.active]="nav.module() === m.id" (click)="nav.go(m.id)">{{ m.label }}</button>
+        }
+      </div>
+    }
 
     <!-- Dashboard header -->
     <div class="dash-head">

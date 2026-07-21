@@ -1,11 +1,11 @@
-import { Component, signal, inject } from '@angular/core';
+import { Component, signal, computed, inject } from '@angular/core';
 import { Icon } from './shared/icon';
 import { Overlays } from './shared/overlays';
 import { CaseExplorer } from './shared/case-explorer';
 import { MemberChart } from './shared/member-chart';
 import { Interaction } from './shared/interaction';
 import { Metrics } from './shared/metrics';
-import { Nav } from './shared/nav';
+import { Nav, ROLES } from './shared/nav';
 import { downloadCsv } from './shared/export-csv';
 import { DashboardData } from './data/dashboard-data';
 
@@ -81,6 +81,7 @@ export class App {
   readonly rail = RAIL;
   readonly modules = MODULES;
   readonly headings = HEADINGS;
+  readonly visibleTabs = computed(() => MODULES.filter((m) => this.nav.visibleModules().includes(m.id)));
   readonly selected = signal(0);
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
 
@@ -114,7 +115,16 @@ export class App {
   }
 
   roleMenu() {
-    this.ix.toast('Role switching is disabled in this demo (viewing as UM Supervisor).', 'info');
+    this.ix.choose({
+      title: 'Switch role',
+      body: 'Role determines which modules you can see. Executive and combo roles include the cross-module Overview.',
+      label: 'View as', options: ROLES.map((r) => r.label),
+      confirmLabel: 'Switch', tone: 'teal',
+      onChoose: (label) => {
+        this.nav.setRole(label);
+        this.ix.toast(`Now viewing as ${label}.`, 'info');
+      },
+    });
   }
 
   /** Export the currently visible tab's dataset as CSV. */
