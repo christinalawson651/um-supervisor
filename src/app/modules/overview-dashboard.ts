@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Nav, BizModule } from '../shared/nav';
 import { Metrics } from '../shared/metrics';
+import { Exporter } from '../shared/exporter';
 import { Donut, Trend, Segment } from '../shared/charts';
 import { Icon } from '../shared/icon';
 
@@ -71,7 +72,10 @@ const KEY = 'zyter-exec-widgets-v1';
       @for (w of shown(); track w.id) {
         <div class="widget" [class.full]="w.size === 'full'" [class.pie]="isPie(w.id)">
           <div class="w-head"><h3>{{ w.title }}</h3>
-            <button class="w-x" title="Remove from view" (click)="toggle(w.id)">×</button>
+            <div class="w-actions">
+              <button class="w-rep" title="Report / export this widget" (click)="report(w.id)"><z-icon name="download" [size]="13"></z-icon></button>
+              <button class="w-x" title="Remove from view" (click)="toggle(w.id)">×</button>
+            </div>
           </div>
 
           @switch (w.id) {
@@ -106,10 +110,11 @@ const KEY = 'zyter-exec-widgets-v1';
             @case ('cost-heroes') {
               <div class="heroes">
                 @for (h of heroes; track h.label) {
-                  <div class="hero" [attr.data-tone]="h.tone">
+                  <button class="hero click" [attr.data-tone]="h.tone" (click)="metrics.open(h.key)">
                     <div class="h-val">{{ h.value }}</div><div class="h-lab">{{ h.label }}</div>
                     <div class="h-delta" [attr.data-dir]="h.dir">{{ h.delta }}</div>
-                  </div>
+                    <div class="h-drill">View cases →</div>
+                  </button>
                 }
               </div>
             }
@@ -212,8 +217,15 @@ const KEY = 'zyter-exec-widgets-v1';
     .widget.pie z-donut { flex:1; align-items:center; }
     .w-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .w-head h3 { font-size:14px; font-weight:600; color:var(--ink); margin:0; }
+    .w-actions { display:flex; align-items:center; gap:6px; }
+    .w-rep { border:none; background:none; color:var(--gray-400); cursor:pointer; padding:2px; line-height:0; border-radius:5px; }
+    .w-rep:hover { color:var(--teal-700); background:var(--teal-50); }
     .w-x { border:none; background:none; color:var(--gray-400); font-size:18px; line-height:1; cursor:pointer; padding:0 2px; }
     .w-x:hover { color:var(--red); }
+    .hero.click { cursor:pointer; text-align:left; font:inherit; width:100%; position:relative; }
+    .hero.click:hover { box-shadow:0 4px 12px rgba(16,24,40,.10); }
+    .h-drill { font-size:11px; font-weight:600; color:var(--teal-700); margin-top:6px; opacity:0; transition:opacity .12s; }
+    .hero.click:hover .h-drill { opacity:1; }
     .w-big { font-size:24px; font-weight:700; color:var(--teal-700); margin-bottom:6px; } .w-big.green { color:var(--green); }
     .foot { margin-top:14px; font-size:11.5px; color:var(--gray-500); } .up { color:var(--green); font-weight:600; }
     .empty { grid-column:1/-1; text-align:center; padding:36px; color:var(--gray-500);
@@ -237,6 +249,7 @@ const KEY = 'zyter-exec-widgets-v1';
 export class OverviewDashboard {
   nav = inject(Nav);
   metrics = inject(Metrics);
+  private exporter = inject(Exporter);
 
   readonly customizing = signal(false);
   readonly enabled = signal<string[]>(this.load());
@@ -262,9 +275,9 @@ export class OverviewDashboard {
     { label: 'Gap',      value: 9,  color: '#e5e7eb' },
   ];
   readonly heroes = [
-    { value: '$1.8M', label: 'Cost Avoided (MTD)', delta: '▲ 12% vs last month', dir: 'up', tone: 'green' },
-    { value: '$4.3M', label: 'Estimated Pending Cost', delta: '▲ 4% vs last month', dir: 'down', tone: 'red' },
-    { value: '$2.1M', label: 'High-Dollar Exposure (>$100k)', delta: '9 open cases', dir: 'flat', tone: 'amber' },
+    { value: '$1.8M', label: 'Cost Avoided (MTD)', delta: '▲ 12% vs last month', dir: 'up', tone: 'green', key: 'fin.avoided' },
+    { value: '$4.3M', label: 'Estimated Pending Cost', delta: '▲ 4% vs last month', dir: 'down', tone: 'red', key: 'fin.pending' },
+    { value: '$2.1M', label: 'High-Dollar Exposure (>$50k)', delta: '9 open cases', dir: 'flat', tone: 'amber', key: 'fin.highdollar' },
   ];
   readonly riskDist = [
     { label: 'Low', value: 120, pct: 100, color: '#10b981' },
@@ -316,6 +329,33 @@ export class OverviewDashboard {
   widgetsIn(cat: string) { return WIDGETS.filter((w) => w.category === cat); }
   scopeReq(w: WidgetDef) { return w.scope.map((m) => m.toUpperCase()).join('/'); }
   isPie(id: string) { return ['um-decisions', 'appeal-outcomes', 'cm-adherence', 'case-mix', 'automation'].includes(id); }
+
+  /** Every widget is reportable — open the export dialog with its underlying data. */
+  report(id: string) {
+    const seg = (arr: Segment[]) => arr.map((s) => [s.label, s.value] as (string | number)[]);
+    const trend = (pts: number[]) => this.months.map((m, i) => [m, pts[i]] as (string | number)[]);
+    const map: Record<string, { title: string; columns: string[]; rows: (string | number)[][] }> = {
+      'um-decisions':    { title: 'UM Decisions', columns: ['Decision', 'Count'], rows: seg(this.umMix) },
+      'appeal-outcomes': { title: 'Appeal Outcomes', columns: ['Outcome', 'Percent'], rows: seg(this.appealMix) },
+      'cm-adherence':    { title: 'Care-Plan Adherence', columns: ['Status', 'Percent'], rows: seg(this.cmMix) },
+      'case-mix':        { title: 'Case Mix by Module', columns: ['Module', 'Open Items'], rows: seg(this.caseMix()) },
+      'automation':      { title: 'Automation Rate', columns: ['Type', 'Percent'], rows: seg(this.autoMix) },
+      'tat-trend':       { title: 'TAT / SLA Compliance Trend', columns: ['Month', 'TAT %'], rows: trend(this.tat) },
+      'overturn-trend':  { title: 'Appeal Overturn Trend', columns: ['Month', 'Overturn %'], rows: trend(this.overturn) },
+      'cost-trend':      { title: 'Cost Avoided — 6-Month Trend', columns: ['Month', 'Cost Avoided ($M)'], rows: trend(this.savings) },
+      'volume-trend':    { title: 'Case Volume Trend', columns: ['Month', 'Volume'], rows: trend(this.volume) },
+      'cost-heroes':     { title: 'Cost Headlines', columns: ['Metric', 'Value', 'Change'], rows: this.heroes.map((h) => [h.label, h.value, h.delta]) },
+      'cost-by-module':  { title: 'Cost Avoided by Module', columns: ['Module', 'Cost Avoided'], rows: this.costByModule().map((b) => [b.label, b.value]) },
+      'pmpm':            { title: 'PMPM (Medical)', columns: ['Metric', 'Value'], rows: [['PMPM (medical)', '$412'], ['Change', '-2% vs last month']] },
+      'risk-distribution': { title: 'Member Risk Distribution', columns: ['Risk Tier', 'Members'], rows: this.riskDist.map((b) => [b.label, b.value]) },
+      'denial-reasons':  { title: 'Top Denial Reasons', columns: ['Reason', 'Share'], rows: this.denialReasons.map((b) => [b.label, b.value]) },
+      'appeals-aging':   { title: 'Appeals Aging', columns: ['Bucket', 'Count'], rows: this.appealsAging.map((b) => [b.label, b.value]) },
+      'provider-outliers': { title: 'Provider RFI Outliers', columns: ['Provider', 'RFI Rate'], rows: this.providerOutliers.map((b) => [b.label, b.value]) },
+      'program-outcomes': { title: 'Program Enrollment', columns: ['Program', 'Enrolled'], rows: this.programOutcomes.map((b) => [b.label, b.value]) },
+    };
+    const d = map[id];
+    if (d) this.exporter.open({ title: d.title, name: `${id}_2026-07-17`, columns: d.columns, rows: d.rows });
+  }
   readonly shown = computed(() =>
     WIDGETS.filter((w) => this.enabled().includes(w.id) && w.scope.every((m) => this.nav.scope().includes(m))));
 

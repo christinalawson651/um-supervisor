@@ -65,6 +65,7 @@ const DRILLS: Record<string, Drill> = {
   'fin.pending':  { title: 'Estimated Pending Cost', ctx: (n) => `$4.3M estimated cost across ${n} pending authorizations (highest first)`, pick: () => byCost(pend()) },
   'fin.avoided':  { title: 'Cost Avoided (MTD)', ctx: (n) => `$1.8M avoided across ${n} denied & partial decisions`, pick: () => byCost(deci((c) => c.decision === 'Denied' || c.decision === 'Partial')) },
   'fin.los':      { title: 'LOS Variance', ctx: (n) => `+1.3 days average LOS variance across ${n} inpatient cases`, pick: () => byCost(CASE_POOL.filter((c) => c.serviceType === 'Inpatient')) },
+  'fin.highdollar': { title: 'High-Dollar Exposure (>$50k)', ctx: (n) => `${n} open high-dollar cases driving cost exposure (highest first)`, pick: () => byCost(CASE_POOL.filter((c) => c.cost >= 50000)) },
 
   // ---- Provider ----
   'prov.oon':     { title: 'Out-of-Network Requests', ctx: (n) => `${n} out-of-network requests under review`, pick: () => pend(has('oon')) },
