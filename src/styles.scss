@@ -222,6 +222,24 @@ body {
 .mb-16 { margin-bottom: 16px; }
 .mt-6 { margin-top: 24px; }
 
+/* ---------- module sub-tab bar (CM / Appeals, mirrors UM) ---------- */
+.subtabs {
+  display: flex; align-items: center; gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.subtabs::-webkit-scrollbar { display: none; }
+.subtab {
+  border: none; background: none; cursor: pointer;
+  padding: 11px 12px; font-size: 12.5px; font-weight: 500;
+  color: var(--gray-500); border-bottom: 2px solid transparent;
+  margin-bottom: -1px; white-space: nowrap;
+}
+.subtab:hover { color: var(--ink-soft); }
+.subtab.active { color: var(--teal-700); font-weight: 600; border-bottom-color: var(--teal-700); }
+
 /* big metric tile (financial / tat stats) */
 .metric-tile {
   background: #fff; border: 1px solid var(--border); border-radius: var(--radius);

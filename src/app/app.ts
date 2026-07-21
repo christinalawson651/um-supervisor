@@ -23,6 +23,7 @@ import { ProviderTab } from './tabs/provider-tab';
 import { FinancialTab } from './tabs/financial-tab';
 import { AuditTab } from './tabs/audit-tab';
 import { AiTab } from './tabs/ai-tab';
+import { ReferralsTab } from './tabs/referrals-tab';
 
 const TABS = [
   'Workforce & Queue Management',
@@ -35,6 +36,7 @@ const TABS = [
   'Financial / Cost Indicators',
   'Audit & Compliance',
   'AI / NextGen Intelligence',
+  'CM Referrals',
 ] as const;
 
 const RAIL = [
@@ -67,7 +69,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   imports: [
     Icon, Overlays, CaseExplorer, MemberChart, OverviewDashboard, CmDashboard, AppealsDashboard,
     WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
-    IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab,
+    IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab, ReferralsTab,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
