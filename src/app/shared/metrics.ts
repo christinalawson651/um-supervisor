@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { DashboardData } from '../data/dashboard-data';
+import { nbaFor } from '../data/um-status';
 import { Interaction } from './interaction';
 import { downloadCsv } from './export-csv';
 
@@ -20,16 +21,24 @@ const PENDING_TOTAL = pend().length;   // 247
 const DECIDED_TOTAL = deci().length;   // 247
 const pct = (n: number, d: number) => Math.round((n / d) * 100);
 
-// Canonical UM pend reason (status) + Next Best Action, from the real Zyter/NextGen model (PEND_REASONS).
-const PEND_MAP: Record<string, { reason: string; nba: string }> = {
-  'Intake':            { reason: 'Pending Eligibility',  nba: 'Review Eligibility' },
-  'Clinical Review':   { reason: 'Pending Review',        nba: 'Resume Review' },
-  'MD Review':         { reason: 'Pending MD Review',     nba: 'MD Review' },
-  'RFI Pending':       { reason: 'Pending Information',   nba: 'Follow Up RFI' },
-  'OON Review':        { reason: 'Pending OON Review',    nba: 'OON Provider Review' },
-  'Concurrent Review': { reason: 'Pending Review',        nba: 'Resume Review' },
-  'Pending P2P':       { reason: 'Pending Peer-to-Peer',  nba: 'P2P' },
+// Map a pending queue -> canonical pend reason (status); NBA comes from the shared model.
+const QUEUE_TO_PEND: Record<string, string> = {
+  'Intake': 'Pending Eligibility',
+  'Clinical Review': 'Pending Review',
+  'MD Review': 'Pending MD Review',
+  'RFI Pending': 'Pending Information',
+  'OON Review': 'Pending OON Review',
+  'Concurrent Review': 'Pending Review',
+  'Pending P2P': 'Pending Peer-to-Peer',
 };
+
+/** Resolve a pending case to its canonical pend reason (splits some queues for realistic variety). */
+function pendReason(c: CaseRec): string {
+  const even = Number(c.authId.slice(-1)) % 2 === 0;
+  if (c.status === 'Clinical Review' && even) return 'Pending Determination';
+  if (c.status === 'MD Review' && even) return 'Pending Notification';
+  return QUEUE_TO_PEND[c.status] ?? 'Pending Review';
+}
 
 interface Drill { title: string; ctx: (n: number) => string; pick: () => CaseRec[]; }
 
@@ -115,12 +124,8 @@ export class Metrics {
       const cases = d.pick();
       const columns = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Pend Reason', 'Next Best Action', 'Submitted', 'Est. Cost'];
       const rows = cases.map((c) => {
-        let p = PEND_MAP[c.status] ?? { reason: 'Pending Review', nba: 'Resume Review' };
-        // clinical-review holds split between resume-review and pending-determination
-        if (c.status === 'Clinical Review' && Number(c.authId.slice(-1)) % 2 === 0) {
-          p = { reason: 'Pending Determination', nba: 'Determination' };
-        }
-        return [c.authId, c.member, c.procedure, c.serviceType, p.reason, p.nba, c.submitted, `$${c.cost.toLocaleString()}`];
+        const reason = pendReason(c);
+        return [c.authId, c.member, c.procedure, c.serviceType, reason, nbaFor(reason), c.submitted, `$${c.cost.toLocaleString()}`];
       });
       this.ix.openExplorer({
         title: 'Pending Authorizations',

@@ -3,6 +3,7 @@ import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
 import { HighDollarCase } from '../data/dashboard.models';
+import { nbaFor } from '../data/um-status';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -29,7 +30,7 @@ import { Icon } from '../shared/icon';
       <div class="panel-pad"><h3 class="panel-title">High-Dollar Cases</h3></div>
       <table class="z-table">
         <thead>
-          <tr><th>Auth ID</th><th>Member</th><th>Procedure</th><th>Estimated Cost</th><th>Status</th></tr>
+          <tr><th>Auth ID</th><th>Member</th><th>Procedure</th><th>Estimated Cost</th><th>Status</th><th>Next Best Action</th></tr>
         </thead>
         <tbody>
           @for (c of data.highDollarCases; track c.authId) {
@@ -39,6 +40,7 @@ import { Icon } from '../shared/icon';
               <td>{{ c.procedure }}</td>
               <td class="strong num">{{ c.cost }}</td>
               <td><span class="badge blue">{{ c.status }}</span></td>
+              <td>{{ nba(c.status) }}</td>
             </tr>
           }
         </tbody>
@@ -55,6 +57,7 @@ export class FinancialTab {
   private ix = inject(Interaction);
   metrics = inject(Metrics);
   readonly finKeys = ['fin.pending', 'fin.avoided', 'fin.los'];
+  nba(status: string) { return nbaFor(status); }
 
   open(c: HighDollarCase) {
     this.ix.openDrawer({
@@ -65,6 +68,7 @@ export class FinancialTab {
         { label: 'Estimated Cost', value: c.cost, tone: 'red' },
         { label: 'Procedure', value: c.procedure },
         { label: 'Current Status', value: c.status, tone: 'blue' },
+        { label: 'Next Best Action', value: this.nba(c.status), tone: 'teal' },
         { label: 'Review Track', value: 'High-dollar / MD oversight' },
       ],
       note: 'High-dollar case flagged for supervisor visibility. Confirm medical necessity documentation before final determination.',
