@@ -5,8 +5,13 @@ import { CaseExplorer } from './shared/case-explorer';
 import { MemberChart } from './shared/member-chart';
 import { Interaction } from './shared/interaction';
 import { Metrics } from './shared/metrics';
+import { Nav } from './shared/nav';
 import { downloadCsv } from './shared/export-csv';
 import { DashboardData } from './data/dashboard-data';
+
+import { OverviewDashboard } from './modules/overview-dashboard';
+import { CmDashboard } from './modules/cm-dashboard';
+import { AppealsDashboard } from './modules/appeals-dashboard';
 
 import { WorkforceTab } from './tabs/workforce-tab';
 import { TatTab } from './tabs/tat-tab';
@@ -42,11 +47,26 @@ const RAIL = [
   { icon: 'clock', label: 'Changelog', active: false, badge: 0 },
 ];
 
+const MODULES = [
+  { id: 'overview' as const, label: 'Overview' },
+  { id: 'um' as const, label: 'UM' },
+  { id: 'cm' as const, label: 'CM' },
+  { id: 'appeals' as const, label: 'Appeals' },
+];
+
+const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
+  overview: { title: 'Supervisor Command Center', sub: 'Utilization, Care Management & Appeals — one operational view', role: 'Operations Supervisor' },
+  um: { title: 'UM Supervisor Dashboard', sub: "Your team is performing well — here's your operational overview", role: 'UM Supervisor' },
+  cm: { title: 'CM Supervisor Dashboard', sub: 'Care management worklist and referral intake', role: 'CM Supervisor' },
+  appeals: { title: 'Appeals Supervisor Dashboard', sub: 'Appeals & grievances worklist, prioritized by deadline', role: 'Appeals Supervisor' },
+};
+
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
+    Icon, Overlays, CaseExplorer, MemberChart, OverviewDashboard, CmDashboard, AppealsDashboard,
+    WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab,
   ],
   templateUrl: './app.html',
@@ -56,8 +76,11 @@ export class App {
   readonly data = inject(DashboardData);
   private ix = inject(Interaction);
   private metrics = inject(Metrics);
+  readonly nav = inject(Nav);
   readonly tabs = TABS;
   readonly rail = RAIL;
+  readonly modules = MODULES;
+  readonly headings = HEADINGS;
   readonly selected = signal(0);
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
 
@@ -96,6 +119,10 @@ export class App {
 
   /** Export the currently visible tab's dataset as CSV. */
   exportCsv() {
+    if (this.nav.module() !== 'um') {
+      this.ix.toast('Export is available from the tables and drill-downs within this view.', 'info');
+      return;
+    }
     const d = this.data;
     const stamp = '2026-07-17';
     switch (this.selected()) {
