@@ -22,7 +22,12 @@ const WIDGETS: WidgetDef[] = [
   { id: 'cost-by-module',  title: 'Cost Avoided by Module',  category: 'Cost & Financial',   scope: [],          size: 'half' },
   { id: 'pmpm',            title: 'PMPM (Medical)',          category: 'Cost & Financial',   scope: [],          size: 'half' },
   { id: 'volume-trend',    title: 'Case Volume Trend',       category: 'Volume & Throughput', scope: [],         size: 'half' },
+  { id: 'automation',      title: 'Automation Rate',         category: 'Outcomes & Quality', scope: ['um'],      size: 'half' },
+  { id: 'denial-reasons',  title: 'Top Denial Reasons',      category: 'Outcomes & Quality', scope: ['um'],      size: 'half' },
+  { id: 'appeals-aging',   title: 'Appeals Aging',           category: 'Volume & Throughput', scope: ['appeals'], size: 'half' },
+  { id: 'provider-outliers', title: 'Provider RFI Outliers', category: 'Volume & Throughput', scope: ['um'],    size: 'half' },
   { id: 'risk-distribution', title: 'Member Risk Distribution', category: 'Risk & Population', scope: ['cm'],    size: 'half' },
+  { id: 'program-outcomes', title: 'Program Enrollment',      category: 'Risk & Population', scope: ['cm'],       size: 'half' },
 ];
 
 // default view: the four pies (2x2) + cost headline + cost trend
@@ -65,7 +70,9 @@ const KEY = 'zyter-exec-widgets-v1';
     <div class="wgrid">
       @for (w of shown(); track w.id) {
         <div class="widget" [class.full]="w.size === 'full'">
-          <div class="w-head"><h3>{{ w.title }}</h3></div>
+          <div class="w-head"><h3>{{ w.title }}</h3>
+            <button class="w-x" title="Remove from view" (click)="toggle(w.id)">×</button>
+          </div>
 
           @switch (w.id) {
             @case ('um-decisions') {
@@ -136,6 +143,47 @@ const KEY = 'zyter-exec-widgets-v1';
                 }
               </div>
             }
+            @case ('automation') {
+              <z-donut [clickable]="true" [segments]="autoMix" [size]="120" centerValue="38%" centerLabel="automated"
+                (segClick)="metrics.open('kpi.auto')" />
+              <div class="foot">Auto-approved by rules vs. manual review · click to view</div>
+            }
+            @case ('denial-reasons') {
+              <div class="bars">
+                @for (b of denialReasons; track b.label) {
+                  <div class="bar-row"><span class="bl wide">{{ b.label }}</span>
+                    <span class="bt"><span class="bf" [style.width.%]="b.pct" [style.background]="b.color"></span></span>
+                    <span class="bv">{{ b.value }}</span></div>
+                }
+              </div>
+            }
+            @case ('appeals-aging') {
+              <div class="bars">
+                @for (b of appealsAging; track b.label) {
+                  <div class="bar-row"><span class="bl">{{ b.label }}</span>
+                    <span class="bt"><span class="bf" [style.width.%]="b.pct" [style.background]="b.color"></span></span>
+                    <span class="bv">{{ b.value }}</span></div>
+                }
+              </div>
+            }
+            @case ('provider-outliers') {
+              <div class="bars">
+                @for (b of providerOutliers; track b.label) {
+                  <div class="bar-row"><span class="bl wide">{{ b.label }}</span>
+                    <span class="bt"><span class="bf" [style.width.%]="b.pct" [style.background]="b.color"></span></span>
+                    <span class="bv">{{ b.value }}</span></div>
+                }
+              </div>
+            }
+            @case ('program-outcomes') {
+              <div class="bars">
+                @for (b of programOutcomes; track b.label) {
+                  <div class="bar-row"><span class="bl wide">{{ b.label }}</span>
+                    <span class="bt"><span class="bf" [style.width.%]="b.pct" [style.background]="b.color"></span></span>
+                    <span class="bv">{{ b.value }}</span></div>
+                }
+              </div>
+            }
           }
         </div>
       } @empty {
@@ -161,6 +209,8 @@ const KEY = 'zyter-exec-widgets-v1';
     .widget.full { grid-column:1 / -1; }
     .w-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .w-head h3 { font-size:14px; font-weight:600; color:var(--ink); margin:0; }
+    .w-x { border:none; background:none; color:var(--gray-400); font-size:18px; line-height:1; cursor:pointer; padding:0 2px; }
+    .w-x:hover { color:var(--red); }
     .w-big { font-size:24px; font-weight:700; color:var(--teal-700); margin-bottom:6px; } .w-big.green { color:var(--green); }
     .foot { margin-top:14px; font-size:11.5px; color:var(--gray-500); } .up { color:var(--green); font-weight:600; }
     .empty { grid-column:1/-1; text-align:center; padding:36px; color:var(--gray-500);
@@ -175,13 +225,15 @@ const KEY = 'zyter-exec-widgets-v1';
 
     .bars { display:flex; flex-direction:column; gap:14px; }
     .bar-row { display:grid; grid-template-columns:90px 1fr 60px; align-items:center; gap:12px; font-size:12.5px; }
-    .bl { color:var(--ink-soft); font-weight:600; } .bt { height:10px; border-radius:999px; background:var(--gray-100); overflow:hidden; }
+    .bl { color:var(--ink-soft); font-weight:600; } .bl.wide { font-size:11.5px; }
+    .bar-row:has(.bl.wide) { grid-template-columns:120px 1fr 48px; }
+    .bt { height:10px; border-radius:999px; background:var(--gray-100); overflow:hidden; }
     .bf { display:block; height:100%; border-radius:999px; } .bv { text-align:right; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
   `],
 })
 export class OverviewDashboard {
   nav = inject(Nav);
-  private metrics = inject(Metrics);
+  metrics = inject(Metrics);
 
   readonly customizing = signal(false);
   readonly enabled = signal<string[]>(this.load());
@@ -216,6 +268,35 @@ export class OverviewDashboard {
     { label: 'Moderate', value: 64, pct: 53, color: '#f59e0b' },
     { label: 'High', value: 38, pct: 32, color: '#f97316' },
     { label: 'Critical', value: 20, pct: 17, color: '#ef4444' },
+  ];
+  readonly autoMix: Segment[] = [
+    { label: 'Auto-approved', value: 38, color: '#0d9488' },
+    { label: 'Manual review', value: 62, color: '#9ca3af' },
+  ];
+  readonly denialReasons = [
+    { label: 'Not med. necessary', value: '38%', pct: 100, color: '#ef4444' },
+    { label: 'Missing docs', value: '27%', pct: 71, color: '#f59e0b' },
+    { label: 'Out of network', value: '18%', pct: 47, color: '#f97316' },
+    { label: 'Experimental', value: '10%', pct: 26, color: '#8b5cf6' },
+    { label: 'Other', value: '7%', pct: 18, color: '#9ca3af' },
+  ];
+  readonly appealsAging = [
+    { label: '0–7 days', value: 6, pct: 100, color: '#10b981' },
+    { label: '8–14 days', value: 5, pct: 83, color: '#f59e0b' },
+    { label: '15–30 days', value: 4, pct: 67, color: '#f97316' },
+    { label: '> 30 days', value: 3, pct: 50, color: '#ef4444' },
+  ];
+  readonly providerOutliers = [
+    { label: 'Memorial Ortho', value: '24%', pct: 100, color: '#ef4444' },
+    { label: 'Coastal Neuro', value: '22%', pct: 92, color: '#f97316' },
+    { label: 'Dr. James Parker', value: '18%', pct: 75, color: '#f59e0b' },
+    { label: 'Dr. S. Mitchell', value: '12%', pct: 50, color: '#3b82f6' },
+  ];
+  readonly programOutcomes = [
+    { label: 'CHF DM', value: 42, pct: 100, color: '#0d9488' },
+    { label: 'Diabetes', value: 38, pct: 90, color: '#3b82f6' },
+    { label: 'Complex Care', value: 28, pct: 67, color: '#8b5cf6' },
+    { label: 'BH Integration', value: 20, pct: 48, color: '#f59e0b' },
   ];
 
   // ---- widget selection ----

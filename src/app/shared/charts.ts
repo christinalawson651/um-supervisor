@@ -89,27 +89,43 @@ export class Donut {
   }
 }
 
-/** Single-series area + line trend with axis labels and a value marker. */
+/** Single-series area + line trend with axis labels, value marker, and hover crosshair + tooltip. */
 @Component({
   selector: 'z-trend',
   standalone: true,
   template: `
-    <svg [attr.viewBox]="'0 0 ' + W + ' ' + H" preserveAspectRatio="none" class="chart">
-      <defs>
-        <linearGradient [attr.id]="gid" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" [attr.stop-color]="color" stop-opacity="0.22" />
-          <stop offset="100%" [attr.stop-color]="color" stop-opacity="0" />
-        </linearGradient>
-      </defs>
-      <path [attr.d]="areaPath" [attr.fill]="'url(#' + gid + ')'" />
-      <path [attr.d]="linePath" fill="none" [attr.stroke]="color" stroke-width="2" stroke-linejoin="round" />
-      <circle [attr.cx]="lastX" [attr.cy]="lastY" r="3.5" [attr.fill]="color" />
-    </svg>
+    <div class="plot" (mousemove)="onMove($event)" (mouseleave)="hover.set(-1)">
+      <svg [attr.viewBox]="'0 0 ' + W + ' ' + H" preserveAspectRatio="none" class="chart">
+        <defs>
+          <linearGradient [attr.id]="gid" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" [attr.stop-color]="color" stop-opacity="0.22" />
+            <stop offset="100%" [attr.stop-color]="color" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <path [attr.d]="areaPath" [attr.fill]="'url(#' + gid + ')'" />
+        <path [attr.d]="linePath" fill="none" [attr.stroke]="color" stroke-width="2" stroke-linejoin="round" />
+        @if (hover() >= 0) {
+          <line [attr.x1]="xAt(hover())" [attr.x2]="xAt(hover())" y1="0" [attr.y2]="H"
+            stroke="var(--gray-300)" stroke-width="1" stroke-dasharray="3 3" />
+          <circle [attr.cx]="xAt(hover())" [attr.cy]="yAt(hover())" r="4" [attr.fill]="color" stroke="#fff" stroke-width="1.5" />
+        }
+        <circle [attr.cx]="lastX" [attr.cy]="lastY" r="3.5" [attr.fill]="color" />
+      </svg>
+      @if (hover() >= 0) {
+        <div class="tip" [style.left.%]="(hover() / (points.length - 1 || 1)) * 100">
+          <b>{{ labels[hover()] }}</b> · {{ points[hover()] }}
+        </div>
+      }
+    </div>
     <div class="xlabels">@for (l of labels; track l) { <span>{{ l }}</span> }</div>
   `,
   styles: [`
     :host { display:block; }
-    .chart { width:100%; height:90px; display:block; }
+    .plot { position:relative; }
+    .chart { width:100%; height:90px; display:block; cursor:crosshair; }
+    .tip { position:absolute; top:-4px; transform:translate(-50%,-100%); white-space:nowrap;
+      background:var(--ink); color:#fff; font-size:11px; padding:4px 8px; border-radius:6px; pointer-events:none; }
+    .tip b { font-weight:700; }
     .xlabels { display:flex; justify-content:space-between; margin-top:6px; font-size:10px; color:var(--gray-400); }
   `],
 })
@@ -121,6 +137,14 @@ export class Trend {
   private _pts: number[] = [];
   readonly W = 300; readonly H = 90;
   readonly gid = 'g' + Math.floor(performance.now() % 100000);
+  readonly hover = signal(-1);
+
+  onMove(e: MouseEvent) {
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    this.hover.set(Math.round(frac * (this._pts.length - 1 || 0)));
+  }
 
   private xy() {
     const p = this._pts;
@@ -133,6 +157,8 @@ export class Trend {
       y: this.H - pad - ((v - min) / span) * (this.H - pad * 2),
     }));
   }
+  xAt(i: number) { const pts = this.xy(); return pts[i]?.x ?? 0; }
+  yAt(i: number) { const pts = this.xy(); return pts[i]?.y ?? 0; }
   get linePath() { const pts = this.xy(); return pts.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' '); }
   get areaPath() { const pts = this.xy(); if (!pts.length) return ''; return `M${pts[0].x} ${this.H} ` + pts.map((q) => `L${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' ') + ` L${pts[pts.length - 1].x} ${this.H} Z`; }
   get lastX() { const pts = this.xy(); return pts.length ? pts[pts.length - 1].x : 0; }

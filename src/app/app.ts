@@ -48,14 +48,14 @@ const RAIL = [
 ];
 
 const MODULES = [
-  { id: 'overview' as const, label: 'Executive Summary' },
+  { id: 'overview' as const, label: 'TruCare Pulse' },
   { id: 'um' as const, label: 'UM' },
   { id: 'cm' as const, label: 'CM' },
   { id: 'appeals' as const, label: 'Appeals' },
 ];
 
 const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
-  overview: { title: 'Executive Summary', sub: 'Outcomes, quality & financial performance across UM, CM & Appeals', role: 'Operations Supervisor' },
+  overview: { title: 'TruCare Pulse', sub: 'Outcomes, quality & financial performance across UM, CM & Appeals', role: 'Operations Supervisor' },
   um: { title: 'UM Supervisor Dashboard', sub: "Your team is performing well — here's your operational overview", role: 'UM Supervisor' },
   cm: { title: 'CM Supervisor Dashboard', sub: 'Care management worklist and referral intake', role: 'CM Supervisor' },
   appeals: { title: 'Appeals Supervisor Dashboard', sub: 'Appeals & grievances worklist, prioritized by deadline', role: 'Appeals Supervisor' },
