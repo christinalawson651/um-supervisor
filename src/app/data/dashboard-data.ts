@@ -294,6 +294,12 @@ export class DashboardData {
     });
   }
 
+  /** Assign N unassigned cases to a nurse and shrink the Unassigned Queue KPI. */
+  assignUnassigned(count: number, target: string) {
+    for (let i = 0; i < count; i++) this.moveOneCase(null, target);
+    this.setKpi('Unassigned Queue', (n) => Math.max(0, n - count));
+  }
+
   /** Drop one case from a named queue (min 0). */
   decrementQueue(name: string) {
     this.queues.update((qs) =>

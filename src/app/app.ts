@@ -10,7 +10,9 @@ import { Interaction } from './shared/interaction';
 import { Metrics } from './shared/metrics';
 import { Nav, ROLES } from './shared/nav';
 import { Exporter } from './shared/exporter';
+import { Reassign, ReassignCase } from './shared/reassign';
 import { REFERRALS } from './data/referrals';
+import { CASE_POOL } from './data/case-pool';
 import { DashboardData } from './data/dashboard-data';
 
 import { OverviewDashboard } from './modules/overview-dashboard';
@@ -83,6 +85,7 @@ export class App {
   private ix = inject(Interaction);
   private metrics = inject(Metrics);
   private exporter = inject(Exporter);
+  private rx = inject(Reassign);
   readonly nav = inject(Nav);
   readonly tabs = TABS;
   readonly rail = RAIL;
@@ -93,7 +96,27 @@ export class App {
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
 
   select(i: number) { this.selected.set(i); }
-  drill(key: string) { this.metrics.open(key); }
+  drill(key: string) {
+    if (key === 'kpi.unassigned') { this.assignUnassigned(); return; }
+    this.metrics.open(key);
+  }
+
+  /** Assign the unassigned queue using the same reassign workspace. */
+  assignUnassigned() {
+    const cases: ReassignCase[] = CASE_POOL
+      .filter((c) => c.phase === 'pending' && c.nurse === '—')
+      .map((c) => ({ authId: c.authId, member: c.member, type: c.serviceType, queue: c.status, priority: 'Unassigned', owner: 'Unassigned' }));
+    const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
+    this.rx.open({
+      title: 'Assign Unassigned Cases',
+      cases, nurses,
+      apply: (ids, target) => {
+        this.data.assignUnassigned(ids.length, target);
+        this.ix.toast(`${ids.length} unassigned case(s) assigned to ${target}.`);
+        this.data.addHistory('swap', 'Cases assigned', `${ids.length} unassigned → ${target}`);
+      },
+    });
+  }
 
   openHistory() {
     const h = this.data.history();
