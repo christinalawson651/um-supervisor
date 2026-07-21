@@ -20,6 +20,17 @@ const PENDING_TOTAL = pend().length;   // 247
 const DECIDED_TOTAL = deci().length;   // 247
 const pct = (n: number, d: number) => Math.round((n / d) * 100);
 
+// Canonical UM pend reason (status) + Next Best Action, from the real Zyter/NextGen model (PEND_REASONS).
+const PEND_MAP: Record<string, { reason: string; nba: string }> = {
+  'Intake':            { reason: 'Pending Eligibility',  nba: 'Review Eligibility' },
+  'Clinical Review':   { reason: 'Pending Review',        nba: 'Resume Review' },
+  'MD Review':         { reason: 'Pending MD Review',     nba: 'MD Review' },
+  'RFI Pending':       { reason: 'Pending Information',   nba: 'Follow Up RFI' },
+  'OON Review':        { reason: 'Pending OON Review',    nba: 'OON Provider Review' },
+  'Concurrent Review': { reason: 'Pending Review',        nba: 'Resume Review' },
+  'Pending P2P':       { reason: 'Pending Peer-to-Peer',  nba: 'P2P' },
+};
+
 interface Drill { title: string; ctx: (n: number) => string; pick: () => CaseRec[]; }
 
 const DRILLS: Record<string, Drill> = {
@@ -96,6 +107,26 @@ export class Metrics {
       const columns = ['Nurse', 'Active Cases', 'Pending', 'Completed (MTD)', 'Avg TAT', 'Utilization'];
       const rows = nurses.map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, `${n.utilization}%`]);
       this.ix.openExplorer({ title: d.title, context: d.ctx(nurses.length), columns, rows, exportName: 'team-utilization_2026-07-17' });
+      return;
+    }
+
+    // Pending Cases -> pending authorizations with their pend reason + NBA (from the real UM model)
+    if (key === 'kpi.pending') {
+      const cases = d.pick();
+      const columns = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Pend Reason', 'Next Best Action', 'Submitted', 'Est. Cost'];
+      const rows = cases.map((c) => {
+        let p = PEND_MAP[c.status] ?? { reason: 'Pending Review', nba: 'Resume Review' };
+        // clinical-review holds split between resume-review and pending-determination
+        if (c.status === 'Clinical Review' && Number(c.authId.slice(-1)) % 2 === 0) {
+          p = { reason: 'Pending Determination', nba: 'Determination' };
+        }
+        return [c.authId, c.member, c.procedure, c.serviceType, p.reason, p.nba, c.submitted, `$${c.cost.toLocaleString()}`];
+      });
+      this.ix.openExplorer({
+        title: 'Pending Authorizations',
+        context: `${cases.length} pending authorizations — by pend reason & next best action`,
+        columns, rows, exportName: `pending-auths_2026-07-17`, memberColumn: 1,
+      });
       return;
     }
 
