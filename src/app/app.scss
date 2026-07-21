@@ -64,10 +64,10 @@
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 14px;
   padding: 12px 26px 4px;
 }
+.topbar .spacer { flex: 1; }
 .hbadge { background: var(--teal-700); color:#fff; font-size:10px; font-weight:700;
   border-radius:999px; padding:1px 6px; margin-left:2px; }
 .online {

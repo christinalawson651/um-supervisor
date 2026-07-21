@@ -271,6 +271,17 @@ export class DashboardData {
     return { from: from.name, to: to.name };
   }
 
+  /** Move one case from a specific owner (or Unassigned) to a target nurse. */
+  moveOneCase(fromName: string | null, toName: string) {
+    this.nurses.update((rows) =>
+      rows.map((n) => {
+        if (fromName && n.name === fromName && n.name !== toName) return this.withActive(n, n.active - 1);
+        if (n.name === toName) return this.withActive(n, n.active + 1);
+        return n;
+      }),
+    );
+  }
+
   /** Reassign to a specific nurse (from the busiest). */
   reassignTo(targetName: string) {
     this.nurses.update((rows) => {

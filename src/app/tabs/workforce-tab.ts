@@ -2,7 +2,9 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
+import { Reassign, ReassignCase } from '../shared/reassign';
 import { NurseRow } from '../data/dashboard.models';
+import { CASE_POOL } from '../data/case-pool';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -118,6 +120,7 @@ import { Icon } from '../shared/icon';
 export class WorkforceTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  private rx = inject(Reassign);
 
   readonly search = signal('');
   readonly sortKey = signal<keyof NurseRow | ''>('');
@@ -179,16 +182,24 @@ export class WorkforceTab {
   ];
 
   reassign() {
-    this.ix.ask({
-      title: 'Auto-reassign a case',
-      body: 'Move one case from the nurse at highest utilization to the one with the most capacity to balance the load?',
-      confirmLabel: 'Reassign', tone: 'teal',
-      onConfirm: () => {
-        const move = this.data.reassignBusiest();
-        if (move) {
-          this.ix.toast(`Case reassigned from ${move.from} to ${move.to}.`);
-          this.data.addHistory('swap', 'Case reassigned', `From ${move.from} → ${move.to}`);
-        } else this.ix.toast('Nothing to reassign.');
+    const cases: ReassignCase[] = CASE_POOL
+      .filter((c) => c.phase === 'pending')
+      .map((c) => ({
+        authId: c.authId, member: c.member, type: c.serviceType, queue: c.status,
+        priority: c.tags.includes('breached') ? 'Breached' : c.tags.includes('atRisk') ? 'At risk' : 'Routine',
+        owner: c.nurse === '—' ? 'Unassigned' : c.nurse,
+      }));
+    const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
+    this.rx.open({
+      title: 'Reassign cases',
+      cases, nurses,
+      apply: (ids, target) => {
+        ids.forEach((id) => {
+          const cs = cases.find((x) => x.authId === id);
+          this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);
+        });
+        this.ix.toast(`${ids.length} case(s) reassigned to ${target}.`);
+        this.data.addHistory('swap', 'Cases reassigned', `${ids.length} case(s) → ${target}`);
       },
     });
   }

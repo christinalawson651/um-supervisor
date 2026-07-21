@@ -3,6 +3,8 @@ import { Icon } from './shared/icon';
 import { Overlays } from './shared/overlays';
 import { CaseExplorer } from './shared/case-explorer';
 import { MemberChart } from './shared/member-chart';
+import { ReassignPanel } from './shared/reassign-panel';
+import { GlobalSearch } from './shared/global-search';
 import { Interaction } from './shared/interaction';
 import { Metrics } from './shared/metrics';
 import { Nav, ROLES } from './shared/nav';
@@ -67,7 +69,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   selector: 'app-root',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, OverviewDashboard, CmDashboard, AppealsDashboard,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, GlobalSearch, OverviewDashboard, CmDashboard, AppealsDashboard,
     WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab, ReferralsTab,
   ],
@@ -99,6 +101,7 @@ export class App {
         ? { columns: ['Time', 'Action', 'Detail'], rows: h.map((e) => [e.time, e.action, e.detail]) }
         : undefined,
       note: h.length ? undefined : 'No actions yet — reassign a case or escalate one to see the log here.',
+      actions: [{ label: 'Reset demo data', tone: 'red', run: () => this.resetDemo() }],
     });
   }
 

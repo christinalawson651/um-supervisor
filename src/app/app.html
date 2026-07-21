@@ -17,13 +17,14 @@
   <main class="main">
     <!-- Top utility bar -->
     <div class="topbar">
+      <app-global-search />
+      <span class="spacer"></span>
       <span class="online"><span class="dot"></span>
         <z-icon name="wifi" [size]="14" [stroke]="1.8"></z-icon> Online</span>
       <button class="btn outline" (click)="openHistory()">
         <z-icon name="clock" [size]="14"></z-icon> History
         @if (data.history().length) { <span class="hbadge">{{ data.history().length }}</span> }
       </button>
-      <button class="btn outline" (click)="resetDemo()">Reset demo</button>
       <button class="btn outline" (click)="exportCsv()"><z-icon name="download" [size]="14"></z-icon> Export</button>
       <button class="btn outline role" (click)="roleMenu()"><z-icon name="shield" [size]="14"></z-icon> {{ nav.role().label }}
         <z-icon name="chevron" [size]="14"></z-icon></button>
@@ -106,4 +107,5 @@
   <app-overlays />
   <app-case-explorer />
   <app-member-chart />
+  <app-reassign-panel />
 </div>
