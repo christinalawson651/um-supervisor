@@ -204,7 +204,7 @@ const KEY = 'zyter-exec-widgets-v1';
     .cz-item.disabled { color:var(--gray-400); cursor:not-allowed; }
     .req { font-size:10px; color:var(--gray-400); background:var(--gray-100); padding:1px 6px; border-radius:5px; }
 
-    .wgrid { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+    .wgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-items:start; }
     .widget { background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); padding:16px 18px; }
     .widget.full { grid-column:1 / -1; }
     .w-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
