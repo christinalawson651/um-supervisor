@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Reassign, ReassignCase } from '../shared/reassign';
+import { Escalate } from '../shared/escalate';
 import { NurseRow } from '../data/dashboard.models';
 import { CASE_POOL } from '../data/case-pool';
 import { Icon } from '../shared/icon';
@@ -125,6 +126,7 @@ export class WorkforceTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
   private rx = inject(Reassign);
+  private esc = inject(Escalate);
 
   readonly search = signal('');
   readonly sortKey = signal<keyof NurseRow | ''>('');
@@ -252,14 +254,20 @@ export class WorkforceTab {
   }
 
   escalate() {
-    this.ix.choose({
-      title: 'Escalate at-risk cases',
-      body: 'Escalate the highest-risk pending cases for expedited review. Choose who to assign them to.',
-      label: 'Assign to', options: this.ESCALATE_TARGETS,
-      confirmLabel: 'Escalate', tone: 'amber',
-      onChoose: (who) => {
-        this.ix.toast(`At-risk cases escalated to ${who}.`, 'warn');
-        this.data.addHistory('arrowup', 'Cases escalated', `Escalated at-risk cases → ${who}`);
+    const candidates = this.data.riskCases().map((r) => ({
+      authId: r.authId, member: r.member,
+      detail: `${r.stage} · ${r.drivers.join(', ')}`,
+      riskLabel: `${r.score} · ${r.risk === 'red' ? 'High' : 'Med'}`,
+      risk: r.risk as 'red' | 'amber' | 'green',
+    }));
+    this.esc.open({
+      title: 'Escalate cases',
+      candidates,
+      targets: this.ESCALATE_TARGETS,
+      apply: (ids, who) => {
+        ids.forEach((id) => this.data.resolveRiskCase(id));
+        this.ix.toast(`${ids.length} case(s) escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Cases escalated', `${ids.length} case(s) → ${who}`);
       },
     });
   }
