@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { Nav, BizModule } from '../shared/nav';
 import { Metrics } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
+import { Interaction } from '../shared/interaction';
 import { Donut, Trend, Segment } from '../shared/charts';
 import { Icon } from '../shared/icon';
 
@@ -42,7 +43,7 @@ const KEY = 'zyter-exec-widgets-v1';
   template: `
     <div class="ex-head">
       <span class="section-note">Showing {{ scopeLabel() }} · your saved view</span>
-      <button class="btn outline" (click)="customizing.set(!customizing())">
+      <button class="btn outline" (click)="customizing() ? cancelCustomize() : openCustomize()">
         <z-icon name="barchart" [size]="14"></z-icon> Customize
       </button>
     </div>
@@ -50,15 +51,21 @@ const KEY = 'zyter-exec-widgets-v1';
     @if (customizing()) {
       <div class="customize">
         <div class="cz-head"><b>Choose your widgets</b>
-          <span class="cz-hint">Tailor this view — your selection is saved for you.</span>
-          <button class="cz-x" (click)="customizing.set(false)">Done</button></div>
+          <span class="cz-hint">Toggle widgets to preview, then Save to keep your view.</span>
+          @if (dirty()) { <span class="cz-dirty">● Unsaved changes</span> }
+          <span class="cz-actions">
+            <button class="cz-reset" (click)="resetDefault()">Reset to default</button>
+            <button class="cz-cancel" (click)="cancelCustomize()">Cancel</button>
+            <button class="cz-save" (click)="saveView()">Save view</button>
+          </span>
+        </div>
         @for (cat of categories; track cat) {
           <div class="cz-cat">{{ cat }}</div>
           <div class="cz-grid">
             @for (w of widgetsIn(cat); track w.id) {
               <label class="cz-item" [class.disabled]="!scopeOk(w)">
-                <input type="checkbox" [checked]="enabled().includes(w.id)" [disabled]="!scopeOk(w)"
-                  (change)="toggle(w.id)" />
+                <input type="checkbox" [checked]="draft().includes(w.id)" [disabled]="!scopeOk(w)"
+                  (change)="toggleDraft(w.id)" />
                 {{ w.title }}
                 @if (!scopeOk(w)) { <span class="req">needs {{ scopeReq(w) }}</span> }
               </label>
@@ -74,7 +81,7 @@ const KEY = 'zyter-exec-widgets-v1';
           <div class="w-head"><h3>{{ w.title }}</h3>
             <div class="w-actions">
               <button class="w-rep" title="Report / export this widget" (click)="report(w.id)"><z-icon name="download" [size]="13"></z-icon></button>
-              <button class="w-x" title="Remove from view" (click)="toggle(w.id)">×</button>
+              <button class="w-x" title="Remove from view" (click)="removeCard(w.id)">×</button>
             </div>
           </div>
 
@@ -200,16 +207,23 @@ const KEY = 'zyter-exec-widgets-v1';
     .ex-head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:16px; }
     .ex-head h2 { font-size:17px; font-weight:600; margin:0; }
     .customize { background:#fff; border:1px solid var(--teal-600); border-radius:12px; padding:16px 18px; margin-bottom:16px; }
-    .cz-head { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .cz-head { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
     .cz-hint { font-size:12px; color:var(--gray-500); }
-    .cz-x { margin-left:auto; border:none; background:var(--teal-700); color:#fff; border-radius:8px; padding:6px 14px; font-weight:600; cursor:pointer; font-size:12.5px; }
+    .cz-dirty { font-size:11.5px; color:var(--amber-fg); font-weight:600; }
+    .cz-actions { margin-left:auto; display:flex; gap:8px; align-items:center; }
+    .cz-reset, .cz-cancel { border:1px solid var(--gray-300); background:#fff; color:var(--ink-soft); border-radius:8px; padding:6px 12px; font-weight:600; cursor:pointer; font-size:12.5px; }
+    .cz-reset:hover, .cz-cancel:hover { background:var(--gray-50); }
+    .cz-save { border:none; background:var(--teal-700); color:#fff; border-radius:8px; padding:6px 14px; font-weight:600; cursor:pointer; font-size:12.5px; }
+    .cz-save:hover { background:var(--teal-900); }
     .cz-cat { font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-500); font-weight:700; margin:12px 0 8px; }
     .cz-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
     .cz-item { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); cursor:pointer; }
     .cz-item.disabled { color:var(--gray-400); cursor:not-allowed; }
     .req { font-size:10px; color:var(--gray-400); background:var(--gray-100); padding:1px 6px; border-radius:5px; }
 
-    .wgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-items:start; }
+    /* cap at 4 columns so the four pies always fill a row exactly (no dead column);
+       drops to 3/2/1 as the viewport narrows */
+    .wgrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(max(300px, calc((100% - 42px) / 4)), 1fr)); gap:14px; align-items:start; }
     .widget { background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); padding:16px 18px; }
     .widget.full { grid-column:1 / -1; }
     .widget.pie { min-height:210px; display:flex; flex-direction:column; }
@@ -250,10 +264,17 @@ export class OverviewDashboard {
   nav = inject(Nav);
   metrics = inject(Metrics);
   private exporter = inject(Exporter);
+  private ix = inject(Interaction);
 
   readonly customizing = signal(false);
-  readonly enabled = signal<string[]>(this.load());
+  readonly enabled = signal<string[]>(this.load());  // committed & persisted view
+  readonly draft = signal<string[]>([]);             // working copy while the panel is open
   readonly categories = ['Outcomes & Quality', 'Cost & Financial', 'Volume & Throughput', 'Risk & Population'];
+  readonly dirty = computed(() => {
+    const a = [...this.enabled()].sort().join(',');
+    const b = [...this.draft()].sort().join(',');
+    return this.customizing() && a !== b;
+  });
 
   readonly months = ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
   readonly tat = [90, 91, 92, 93, 94, 94];
@@ -321,9 +342,20 @@ export class OverviewDashboard {
     return [...DEFAULT_ENABLED];
   }
   private save() { try { localStorage.setItem(KEY, JSON.stringify(this.enabled())); } catch {} }
-  toggle(id: string) {
-    this.enabled.update((e) => e.includes(id) ? e.filter((x) => x !== id) : [...e, id]);
-    this.save();
+
+  // ---- customize: draft is edited live (preview), then committed or discarded ----
+  openCustomize() { this.draft.set([...this.enabled()]); this.customizing.set(true); }
+  cancelCustomize() { this.customizing.set(false); }               // discard draft
+  toggleDraft(id: string) { this.draft.update((e) => e.includes(id) ? e.filter((x) => x !== id) : [...e, id]); }
+  resetDefault() { this.draft.set([...DEFAULT_ENABLED]); this.ix.toast('Reset to the default view — Save to keep it.', 'info'); }
+  saveView() {
+    this.enabled.set([...this.draft()]); this.save(); this.customizing.set(false);
+    this.ix.toast('Dashboard view saved.', 'info');
+  }
+  /** The × on a card: edits the draft while customizing, otherwise removes and persists immediately. */
+  removeCard(id: string) {
+    if (this.customizing()) { this.toggleDraft(id); return; }
+    this.enabled.update((e) => e.filter((x) => x !== id)); this.save();
   }
   scopeOk(w: WidgetDef) { return w.scope.every((m) => this.nav.scope().includes(m)); }
   widgetsIn(cat: string) { return WIDGETS.filter((w) => w.category === cat); }
@@ -356,8 +388,10 @@ export class OverviewDashboard {
     const d = map[id];
     if (d) this.exporter.open({ title: d.title, name: `${id}_2026-07-17`, columns: d.columns, rows: d.rows });
   }
-  readonly shown = computed(() =>
-    WIDGETS.filter((w) => this.enabled().includes(w.id) && w.scope.every((m) => this.nav.scope().includes(m))));
+  readonly shown = computed(() => {
+    const source = this.customizing() ? this.draft() : this.enabled();
+    return WIDGETS.filter((w) => source.includes(w.id) && w.scope.every((m) => this.nav.scope().includes(m)));
+  });
 
   scopeLabel() {
     const names: Record<string, string> = { um: 'UM', cm: 'CM', appeals: 'Appeals' };

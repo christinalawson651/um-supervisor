@@ -272,10 +272,8 @@ function tatStatus(c: CaseRec) {
     .urg-counts .mid { color:var(--amber-fg,#b45309); } .urg-counts .bad { color:var(--red-fg,#b91c1c); }
     .urg-counts .urg-vol { margin-left:auto; font-weight:600; }
     .hide { display:none; }
-    .mini-bar { display:inline-block; height:7px; border-radius:999px; background:var(--gray-200,#e5e7eb); width:100%; overflow:hidden; vertical-align:middle; }
-    .mini-bar > span { display:block; height:100%; background:var(--gray-400,#9ca3af); border-radius:999px; }
-    .mini-bar.teal > span { background:var(--green,#14b8a6); }
-    .mini-bar.red > span { background:var(--red,#ef4444); }
+    /* only the panel bars fill their container; table (.comp) bars keep the global fixed 110px so the % pill stays inside the cell */
+    .notif-bars .mini-bar, .urg-card .mini-bar { width:100%; height:7px; }
   `],
 })
 export class TatTab {
