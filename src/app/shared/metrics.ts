@@ -135,6 +135,20 @@ export class Metrics {
       return;
     }
 
+    // Breached SLAs -> show how far past the deadline each auth is
+    if (key === 'kpi.breached') {
+      const cases = d.pick();
+      const overdue = (id: string) => { const h = 5 + (Number(id.slice(-2)) % 60); return h < 24 ? `${h}h past deadline` : `${Math.floor(h / 24)}d ${h % 24}h past deadline`; };
+      const rows = cases.map((c) => [c.authId, c.member, c.procedure, c.status, overdue(c.authId), `$${c.cost.toLocaleString()}`]);
+      this.ix.openExplorer({
+        title: 'Breached SLAs',
+        context: `${cases.length} authorizations past their SLA deadline — time overdue shown`,
+        columns: ['Auth ID', 'Member', 'Procedure', 'Stage', 'Time Past Deadline', 'Est. Cost'],
+        rows, exportName: 'breached-slas_2026-07-17', memberColumn: 1,
+      });
+      return;
+    }
+
     const cases = d.pick();
     this.ix.openExplorer({
       title: d.title,

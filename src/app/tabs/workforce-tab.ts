@@ -21,6 +21,7 @@ import { Icon } from '../shared/icon';
       </div>
     </div>
 
+    <div class="qhint">Bars show <b>case age in queue</b> (time waiting since the request was received). Click a band to see those cases. <b>Breach</b> = past the SLA deadline.</div>
     <div class="queues">
       @for (q of data.queues(); track q.name) {
         <div class="qcard">
@@ -29,16 +30,16 @@ import { Icon } from '../shared/icon';
             <span class="qcount">{{ q.count }}</span>
           </div>
           <div class="seg">
-            <span class="s-fresh"  [style.width.%]="q.buckets.fresh"></span>
-            <span class="s-day2"   [style.width.%]="q.buckets.day2"></span>
-            <span class="s-over48" [style.width.%]="q.buckets.over48"></span>
-            <span class="s-breach" [style.width.%]="q.buckets.breach"></span>
+            <span class="s-fresh"  [style.width.%]="q.buckets.fresh"  title="0–24h in queue" (click)="openBucket(q.name, 'fresh')"></span>
+            <span class="s-day2"   [style.width.%]="q.buckets.day2"   title="24–48h in queue" (click)="openBucket(q.name, 'day2')"></span>
+            <span class="s-over48" [style.width.%]="q.buckets.over48" title="Over 48h in queue" (click)="openBucket(q.name, 'over48')"></span>
+            <span class="s-breach" [style.width.%]="q.buckets.breach" title="Past SLA deadline" (click)="openBucket(q.name, 'breach')"></span>
           </div>
           <div class="legend">
-            <span><i class="d-fresh"></i>0-24h</span>
-            <span><i class="d-day2"></i>24-48h</span>
-            <span><i class="d-over48"></i>&gt;48h</span>
-            <span><i class="d-breach"></i>Breach</span>
+            <span (click)="openBucket(q.name, 'fresh')"><i class="d-fresh"></i>0-24h</span>
+            <span (click)="openBucket(q.name, 'day2')"><i class="d-day2"></i>24-48h</span>
+            <span (click)="openBucket(q.name, 'over48')"><i class="d-over48"></i>&gt;48h</span>
+            <span (click)="openBucket(q.name, 'breach')"><i class="d-breach"></i>Breach</span>
           </div>
         </div>
       }
@@ -88,6 +89,9 @@ import { Icon } from '../shared/icon';
   `,
   styles: [`
     .esc { color: var(--amber-fg); border-color: var(--gray-300); }
+    .qhint { font-size: 12px; color: var(--gray-500); margin-bottom: 12px; } .qhint b { color: var(--ink-soft); }
+    .seg > span { cursor: pointer; }
+    .legend span { cursor: pointer; } .legend span:hover { color: var(--ink-soft); }
     .queues { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .qcard { background:#fff; border:1px solid var(--border); border-radius: var(--radius);
       box-shadow: var(--shadow); padding: 16px 18px; }
@@ -205,15 +209,45 @@ export class WorkforceTab {
   }
 
   balance() {
-    this.ix.ask({
+    this.ix.choose({
       title: 'Balance workload',
-      body: 'Rebalance the team by moving 3 cases from over-utilized nurses to those with headroom?',
+      body: 'Choose how aggressively to rebalance cases from over-utilized nurses to those with capacity.',
+      label: 'Balancing strategy',
+      options: [
+        'Light — move 1 case from the busiest nurse',
+        'Standard — rebalance 3 cases',
+        'Aggressive — rebalance 6 cases',
+        'Even out — level everyone toward the team average',
+      ],
       confirmLabel: 'Balance', tone: 'teal',
-      onConfirm: () => {
-        for (let i = 0; i < 3; i++) this.data.reassignBusiest();
-        this.ix.toast('Workload rebalanced across the team.');
-        this.data.addHistory('balance', 'Workload balanced', 'Rebalanced 3 cases across the team');
+      onChoose: (opt) => {
+        const n = opt.startsWith('Light') ? 1 : opt.startsWith('Aggressive') ? 6 : opt.startsWith('Even') ? 5 : 3;
+        for (let i = 0; i < n; i++) this.data.reassignBusiest();
+        this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${n} case${n > 1 ? 's' : ''} moved).`);
+        this.data.addHistory('balance', 'Workload balanced', `${opt.split(' — ')[0]} · ${n} case(s) moved`);
       },
+    });
+  }
+
+  private ageH(authId: string) { return 6 + (Number(authId.slice(-2)) % 90); }
+  private bandOf(authId: string, breached: boolean) {
+    if (breached) return 'breach';
+    const h = this.ageH(authId);
+    return h < 24 ? 'fresh' : h < 48 ? 'day2' : 'over48';
+  }
+  private ageLabel(h: number) { return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d ${h % 24}h`; }
+
+  /** Drill a queue's age band -> Case Explorer of those cases. */
+  openBucket(queue: string, band: string) {
+    const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
+    const rows = CASE_POOL
+      .filter((c) => c.phase === 'pending' && c.status === queue && this.bandOf(c.authId, c.tags.includes('breached')) === band)
+      .map((c) => [c.authId, c.member, c.procedure, this.ageLabel(this.ageH(c.authId)), c.nurse === '—' ? 'Unassigned' : c.nurse] as (string | number)[]);
+    this.ix.openExplorer({
+      title: `${queue} — ${labels[band]}`,
+      context: `${rows.length} case(s) in ${queue} · ${labels[band]}`,
+      columns: ['Auth ID', 'Member', 'Procedure', 'Age in Queue', 'Owner'],
+      rows, exportName: `${queue.toLowerCase().replace(/\s+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
     });
   }
 
