@@ -93,6 +93,27 @@ export class App {
   readonly selected = signal(0);
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
 
+  // ---- lookback period on the KPI tiles ----
+  readonly periods = [
+    { id: 'today', label: 'Today' },
+    { id: '7d', label: '7 days' },
+    { id: '30d', label: '30 days' },
+    { id: 'qtd', label: 'QTD' },
+  ];
+  readonly period = signal('30d');
+  // value overrides per lookback (order matches the KPI strip); '30d' uses the live/current values
+  private readonly PERIOD_VALUES: Record<string, string[]> = {
+    today: ['38', '93.1%', '41%', '4', '2.2h', '3', '1', '89%'],
+    '7d': ['162', '93.8%', '39%', '9', '2.3h', '6', '2', '88%'],
+    qtd: ['712', '94.5%', '37%', '21', '2.5h', '12', '7', '86%'],
+  };
+  readonly displayKpis = computed(() => {
+    const p = this.period();
+    const live = this.data.kpis();
+    if (p === '30d' || !this.PERIOD_VALUES[p]) return live;
+    return live.map((k, i) => ({ ...k, value: this.PERIOD_VALUES[p][i] }));
+  });
+
   select(i: number) { this.selected.set(i); }
   drill(key: string) { this.metrics.open(key); }
 

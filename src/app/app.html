@@ -60,9 +60,19 @@
       @case ('cm') { <section class="content"><app-cm-dashboard /></section> }
       @case ('appeals') { <section class="content"><app-appeals-dashboard /></section> }
       @case ('um') {
+        <!-- Lookback period selector -->
+        <div class="period-bar">
+          <span class="period-lab">Lookback</span>
+          <div class="period-seg">
+            @for (p of periods; track p.id) {
+              <button [class.on]="period() === p.id" (click)="period.set(p.id)">{{ p.label }}</button>
+            }
+          </div>
+        </div>
+
         <!-- KPI strip -->
         <div class="kpi-strip">
-          @for (k of data.kpis(); track k.label; let i = $index) {
+          @for (k of displayKpis(); track k.label; let i = $index) {
             <div class="kpi clickable" [attr.data-tone]="k.tone" (click)="drill(kpiKeys[i])">
               <div class="kpi-ic"><z-icon [name]="k.icon" [size]="16" [stroke]="1.8"></z-icon></div>
               <div class="kpi-body">
