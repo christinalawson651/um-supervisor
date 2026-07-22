@@ -48,44 +48,69 @@ import { Icon } from '../shared/icon';
 
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
-        <h3 class="panel-title">Workload per Nurse</h3>
-        <input class="search" type="text" placeholder="Search nurses…"
-          [ngModel]="search()" (ngModelChange)="search.set($event)" />
+        <h3 class="panel-title">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Nurse' }}</h3>
+        <div class="flex gap-8 center">
+          <div class="seg-toggle">
+            <button [class.on]="groupBy() === 'nurse'" (click)="groupBy.set('nurse')">By Nurse</button>
+            <button [class.on]="groupBy() === 'team'" (click)="groupBy.set('team')">By Team</button>
+          </div>
+          @if (groupBy() === 'nurse') {
+            <input class="search" type="text" placeholder="Search nurses…" [ngModel]="search()" (ngModelChange)="search.set($event)" />
+          }
+        </div>
       </div>
-      <table class="z-table">
-        <thead>
-          <tr>
+
+      @if (groupBy() === 'nurse') {
+        <table class="z-table">
+          <thead><tr>
             <th class="sortable" (click)="sortBy('name')">Nurse{{ caret('name') }}</th>
             <th class="sortable" (click)="sortBy('active')">Active Cases{{ caret('active') }}</th>
             <th class="sortable" (click)="sortBy('pending')">Pending{{ caret('pending') }}</th>
             <th class="sortable" (click)="sortBy('completed')">Completed (MTD){{ caret('completed') }}</th>
             <th class="sortable" (click)="sortBy('avgTat')">Avg TAT{{ caret('avgTat') }}</th>
             <th class="sortable" (click)="sortBy('utilization')">Utilization{{ caret('utilization') }}</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (n of visibleNurses(); track n.name) {
-            <tr class="clickable" (click)="openNurse(n)">
-              <td class="strong">{{ n.name }}</td>
-              <td class="num">{{ n.active }}</td>
-              <td class="num">{{ n.pending }}</td>
-              <td class="num">{{ n.completed }}</td>
-              <td class="num">{{ n.avgTat }}</td>
-              <td>
-                <span class="mini-bar" [class.teal]="n.utilization < 80"
-                  [class.red]="n.utilization >= 90">
-                  <span [style.width.%]="n.utilization"></span>
-                </span>
-                <span class="util-pct">{{ n.utilization }}%</span>
-              </td>
-              <td><button class="btn outline sm" (click)="reassignTo(n); $event.stopPropagation()">Reassign</button></td>
-            </tr>
-          } @empty {
-            <tr><td colspan="7" class="empty">No nurses match "{{ search() }}".</td></tr>
-          }
-        </tbody>
-      </table>
+            <th>Team</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            @for (n of visibleNurses(); track n.name) {
+              <tr class="clickable" (click)="openNurse(n)">
+                <td class="strong">{{ n.name }}</td>
+                <td class="num">{{ n.active }}</td><td class="num">{{ n.pending }}</td>
+                <td class="num">{{ n.completed }}</td><td class="num">{{ n.avgTat }}</td>
+                <td><span class="mini-bar" [class.teal]="n.utilization < 80" [class.red]="n.utilization >= 90"><span [style.width.%]="n.utilization"></span></span><span class="util-pct">{{ n.utilization }}%</span></td>
+                <td><span class="tchip">{{ n.team }}</span></td>
+                <td><button class="btn outline sm" (click)="reassignTo(n); $event.stopPropagation()">Reassign</button></td>
+              </tr>
+            } @empty { <tr><td colspan="8" class="empty">No nurses match "{{ search() }}".</td></tr> }
+          </tbody>
+        </table>
+      } @else {
+        <table class="z-table">
+          <thead><tr><th>Team / Nurse</th><th>Active</th><th>Pending</th><th>Completed (MTD)</th><th>Avg TAT</th><th>Utilization</th><th>Actions</th></tr></thead>
+          <tbody>
+            @for (t of teams(); track t.name) {
+              <tr class="team-row" (click)="toggleTeam(t.name)">
+                <td class="strong"><span class="chev" [class.open]="expanded().has(t.name)">▸</span> {{ t.name }} <span class="tcount">{{ t.nurses.length }} nurses</span></td>
+                <td class="num">{{ t.active }}</td><td class="num">{{ t.pending }}</td>
+                <td class="num">{{ t.completed }}</td><td class="num">{{ t.avgTat }}</td>
+                <td><span class="mini-bar" [class.teal]="t.utilization < 80" [class.red]="t.utilization >= 90"><span [style.width.%]="t.utilization"></span></span><span class="util-pct strong">{{ t.utilization }}%</span></td>
+                <td><button class="btn outline sm" (click)="balanceTeam(t); $event.stopPropagation()">Balance</button></td>
+              </tr>
+              @if (expanded().has(t.name)) {
+                @for (n of t.nurses; track n.name) {
+                  <tr class="nurse-child clickable" (click)="openNurse(n)">
+                    <td class="child-name">{{ n.name }}</td>
+                    <td class="num">{{ n.active }}</td><td class="num">{{ n.pending }}</td>
+                    <td class="num">{{ n.completed }}</td><td class="num">{{ n.avgTat }}</td>
+                    <td><span class="mini-bar" [class.teal]="n.utilization < 80" [class.red]="n.utilization >= 90"><span [style.width.%]="n.utilization"></span></span><span class="util-pct">{{ n.utilization }}%</span></td>
+                    <td><button class="btn outline sm" (click)="reassignTo(n); $event.stopPropagation()">Reassign</button></td>
+                  </tr>
+                }
+              }
+            }
+          </tbody>
+        </table>
+      }
     </div>
   `,
   styles: [`
@@ -120,6 +145,18 @@ import { Icon } from '../shared/icon';
     .sortable { cursor: pointer; user-select: none; }
     .sortable:hover { color: var(--ink-soft); }
     .empty { text-align:center; color: var(--gray-500); padding: 22px; }
+    .flex { display:flex; } .gap-8 { gap:8px; } .center { align-items:center; }
+    .seg-toggle { display:inline-flex; border:1px solid var(--gray-300); border-radius:8px; overflow:hidden; }
+    .seg-toggle button { border:none; background:#fff; padding:7px 14px; font-size:12px; font-weight:600; color:var(--gray-500); cursor:pointer; }
+    .seg-toggle button.on { background:var(--teal-700); color:#fff; }
+    .tchip { font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; background:var(--gray-100); color:var(--gray-500); }
+    .team-row { cursor:pointer; background:var(--teal-50); }
+    .team-row:hover { background:var(--teal-100); }
+    .team-row .strong { color:var(--teal-900); }
+    .chev { display:inline-block; transition:transform .12s; color:var(--teal-700); margin-right:4px; }
+    .chev.open { transform:rotate(90deg); }
+    .tcount { font-size:11px; font-weight:600; color:var(--gray-500); background:#fff; border:1px solid var(--border); padding:1px 8px; border-radius:999px; margin-left:6px; }
+    .nurse-child td:first-child { padding-left:34px; } .child-name { color:var(--ink-soft); }
   `],
 })
 export class WorkforceTab {
@@ -131,6 +168,36 @@ export class WorkforceTab {
   readonly search = signal('');
   readonly sortKey = signal<keyof NurseRow | ''>('');
   readonly sortDir = signal<1 | -1>(1);
+
+  // ---- team rollup ----
+  readonly groupBy = signal<'nurse' | 'team'>('team');
+  readonly expanded = signal<Set<string>>(new Set());
+  readonly teams = computed(() => {
+    const groups = new Map<string, NurseRow[]>();
+    for (const n of this.data.nurses()) {
+      if (!groups.has(n.team)) groups.set(n.team, []);
+      groups.get(n.team)!.push(n);
+    }
+    return [...groups.entries()].map(([name, nurses]) => {
+      const sum = (f: (n: NurseRow) => number) => nurses.reduce((s, n) => s + f(n), 0);
+      const avgTat = nurses.reduce((s, n) => s + parseFloat(n.avgTat), 0) / nurses.length;
+      return {
+        name, nurses,
+        active: sum((n) => n.active), pending: sum((n) => n.pending), completed: sum((n) => n.completed),
+        avgTat: `${avgTat.toFixed(1)}h`,
+        utilization: Math.round(sum((n) => n.utilization) / nurses.length),
+      };
+    });
+  });
+  toggleTeam(name: string) { this.expanded.update((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
+  balanceTeam(t: { name: string; nurses: NurseRow[] }) {
+    const from = t.nurses.reduce((a, b) => (b.utilization > a.utilization ? b : a));
+    const to = t.nurses.reduce((a, b) => (b.utilization < a.utilization ? b : a));
+    if (from.name === to.name) { this.ix.toast(`${t.name} is already balanced.`); return; }
+    this.data.moveOneCase(from.name, to.name);
+    this.ix.toast(`Balanced ${t.name}: moved a case from ${from.name} to ${to.name}.`);
+    this.data.addHistory('balance', 'Team balanced', `${t.name}: ${from.name} → ${to.name}`);
+  }
 
   readonly visibleNurses = computed(() => {
     const q = this.search().trim().toLowerCase();

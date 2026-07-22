@@ -13,7 +13,7 @@ export interface HistoryEntry {
   actor: string;
 }
 
-const STORAGE_KEY = 'zyter-um-demo-v2';
+const STORAGE_KEY = 'zyter-um-demo-v3';
 
 @Injectable({ providedIn: 'root' })
 export class DashboardData {
@@ -42,12 +42,12 @@ export class DashboardData {
   ]);
 
   readonly nurses = signal<NurseRow[]>([
-    { name: 'Maria Gonzalez, RN',  active: 32, pending: 8,  completed: 145, avgTat: '1.8h', utilization: 92 },
-    { name: 'Jessica Williams, RN', active: 28, pending: 5,  completed: 132, avgTat: '2.1h', utilization: 85 },
-    { name: 'Andrew Mitchell, RN', active: 35, pending: 12, completed: 128, avgTat: '2.6h', utilization: 96 },
-    { name: 'Sarah Mitchell, RN',  active: 22, pending: 3,  completed: 156, avgTat: '1.5h', utilization: 72 },
-    { name: 'Emily Chen, RN',      active: 30, pending: 7,  completed: 141, avgTat: '2.0h', utilization: 88 },
-    { name: 'Robert Kim, RN',      active: 26, pending: 4,  completed: 138, avgTat: '1.9h', utilization: 80 },
+    { name: 'Maria Gonzalez, RN',  team: 'Inpatient Review',     active: 32, pending: 8,  completed: 145, avgTat: '1.8h', utilization: 92 },
+    { name: 'Andrew Mitchell, RN', team: 'Inpatient Review',     active: 35, pending: 12, completed: 128, avgTat: '2.6h', utilization: 96 },
+    { name: 'Jessica Williams, RN', team: 'Outpatient Review',   active: 28, pending: 5,  completed: 132, avgTat: '2.1h', utilization: 85 },
+    { name: 'Sarah Mitchell, RN',  team: 'Outpatient Review',    active: 22, pending: 3,  completed: 156, avgTat: '1.5h', utilization: 72 },
+    { name: 'Emily Chen, RN',      team: 'Complex & Concurrent', active: 30, pending: 7,  completed: 141, avgTat: '2.0h', utilization: 88 },
+    { name: 'Robert Kim, RN',      team: 'Complex & Concurrent', active: 26, pending: 4,  completed: 138, avgTat: '1.9h', utilization: 80 },
   ]);
 
   // ---------- TAT & SLA Compliance ----------

@@ -18,6 +18,7 @@ export interface QueueCard {
 
 export interface NurseRow {
   name: string;
+  team: string;
   active: number;
   pending: number;
   completed: number;
