@@ -7,6 +7,7 @@ import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
+import { Lookback } from '../shared/lookback';
 
 interface Appeal {
   appealId: string; auth: string; member: string; service: string;
@@ -22,7 +23,7 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
   standalone: true,
   imports: [KpiStrip, Ring, FormsModule],
   template: `
-    <app-kpi-strip [items]="kpis" />
+    <app-kpi-strip [items]="displayKpis()" />
 
     <nav class="subtabs">
       @for (t of tabs; track t; let i = $index) {
@@ -304,8 +305,20 @@ export class AppealsDashboard {
   private ix = inject(Interaction);
   private data = inject(DashboardData);
   private exporter = inject(Exporter);
+  private lookback = inject(Lookback);
   readonly tabs = TABS;
   readonly sel = signal(0);
+
+  private readonly PERIOD_VALUES: Record<string, string[]> = {
+    today: ['3', '1', '1', '0', '0', '60%', '5.9d', '2'],
+    '7d': ['6', '2', '1', '1', '1', '61%', '6.1d', '7'],
+    qtd: ['22', '5', '4', '2', '2', '63%', '6.8d', '58'],
+  };
+  readonly displayKpis = computed(() => {
+    const p = this.lookback.period();
+    if (p === '30d' || !this.PERIOD_VALUES[p]) return this.kpis;
+    return this.kpis.map((k, i) => ({ ...k, value: this.PERIOD_VALUES[p][i] }));
+  });
 
   readonly kpis: KpiItem[] = [
     { icon: 'balance', value: '8',  label: 'Open Appeals',       tone: 'purple' },

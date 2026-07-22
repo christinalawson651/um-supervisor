@@ -8,6 +8,7 @@ import { DashboardData } from '../data/dashboard-data';
 import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
+import { Lookback } from '../shared/lookback';
 
 interface CaseManager { name: string; discipline: string; active: number; highRisk: number; highAcuity: number; highCost: number; slaAtRisk: number; utilization: number; }
 interface CmMemberRow { name: string; risk: number; level: 'Low'|'Moderate'|'High'|'Critical'; acuity: 'Low'|'Medium'|'High'; cost: string; sla: string; slaTone: string; cm: string; dx: string; }
@@ -19,7 +20,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
   standalone: true,
   imports: [KpiStrip, Ring, FormsModule],
   template: `
-    <app-kpi-strip [items]="kpis" (drill)="onKpi($event)" />
+    <app-kpi-strip [items]="displayKpis()" (drill)="onKpi($event)" />
 
     <nav class="subtabs">
       @for (t of tabs; track t; let i = $index) {
@@ -291,8 +292,20 @@ export class CmDashboard {
   private ix = inject(Interaction);
   private data = inject(DashboardData);
   private exporter = inject(Exporter);
+  private lookback = inject(Lookback);
   readonly tabs = TABS;
   readonly sel = signal(0);
+
+  private readonly PERIOD_VALUES: Record<string, string[]> = {
+    today: ['21', '13', '8', '2', '66', '4', '126', '97%'],
+    '7d': ['22', '14', '9', '4', '67', '9', '127', '96%'],
+    qtd: ['28', '17', '12', '9', '74', '41', '132', '95%'],
+  };
+  readonly displayKpis = computed(() => {
+    const p = this.lookback.period();
+    if (p === '30d' || !this.PERIOD_VALUES[p]) return this.kpis;
+    return this.kpis.map((k, i) => ({ ...k, value: this.PERIOD_VALUES[p][i] }));
+  });
 
   readonly kpis: KpiItem[] = [
     { icon: 'alert',  value: '23',  label: 'High-Risk Members', tone: 'red' },

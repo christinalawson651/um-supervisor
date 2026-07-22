@@ -55,21 +55,22 @@
       <div class="dash-date">{{ data.today }}</div>
     </div>
 
+    @if (nav.module() !== 'overview') {
+      <div class="period-bar">
+        <span class="period-lab">Lookback</span>
+        <div class="period-seg">
+          @for (p of periods; track p.id) {
+            <button [class.on]="period() === p.id" (click)="period.set(p.id)">{{ p.label }}</button>
+          }
+        </div>
+      </div>
+    }
+
     @switch (nav.module()) {
       @case ('overview') { <section class="content"><app-overview-dashboard /></section> }
       @case ('cm') { <section class="content"><app-cm-dashboard /></section> }
       @case ('appeals') { <section class="content"><app-appeals-dashboard /></section> }
       @case ('um') {
-        <!-- Lookback period selector -->
-        <div class="period-bar">
-          <span class="period-lab">Lookback</span>
-          <div class="period-seg">
-            @for (p of periods; track p.id) {
-              <button [class.on]="period() === p.id" (click)="period.set(p.id)">{{ p.label }}</button>
-            }
-          </div>
-        </div>
-
         <!-- KPI strip -->
         <div class="kpi-strip">
           @for (k of displayKpis(); track k.label; let i = $index) {

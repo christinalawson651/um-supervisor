@@ -11,6 +11,7 @@ import { Interaction } from './shared/interaction';
 import { Metrics } from './shared/metrics';
 import { Nav, ROLES } from './shared/nav';
 import { Exporter } from './shared/exporter';
+import { Lookback } from './shared/lookback';
 import { REFERRALS } from './data/referrals';
 import { DashboardData } from './data/dashboard-data';
 
@@ -93,14 +94,10 @@ export class App {
   readonly selected = signal(0);
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
 
-  // ---- lookback period on the KPI tiles ----
-  readonly periods = [
-    { id: 'today', label: 'Today' },
-    { id: '7d', label: '7 days' },
-    { id: '30d', label: '30 days' },
-    { id: 'qtd', label: 'QTD' },
-  ];
-  readonly period = signal('30d');
+  // ---- lookback period on the KPI tiles (shared across modules) ----
+  private lookback = inject(Lookback);
+  readonly periods = this.lookback.periods;
+  readonly period = this.lookback.period;
   // value overrides per lookback (order matches the KPI strip); '30d' uses the live/current values
   private readonly PERIOD_VALUES: Record<string, string[]> = {
     today: ['38', '93.1%', '41%', '4', '2.2h', '3', '1', '89%'],
