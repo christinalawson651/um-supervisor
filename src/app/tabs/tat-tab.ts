@@ -124,8 +124,8 @@ export class TatTab {
       const onTrack = cs.filter((c) => c.tags.includes('onTrack')).length;
       const atRisk = cs.filter((c) => c.tags.includes('atRisk')).length;
       const breached = cs.filter((c) => c.tags.includes('breached')).length;
-      // compliance = decisions that met TAT (did not breach)
-      return { name, total: cs.length, onTrack, atRisk, breached, compliance: Math.round(((cs.length - breached) / cs.length) * 100) };
+      // compliance = on-track share (consistent with the headline donut)
+      return { name, total: cs.length, onTrack, atRisk, breached, compliance: Math.round((onTrack / cs.length) * 100) };
     }).sort((a, b) => b.total - a.total);
   }
   readonly byLob = computed(() => this.breakdown((c) => lobOf(c.authId)));

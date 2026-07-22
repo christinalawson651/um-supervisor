@@ -53,9 +53,9 @@ export class DashboardData {
   // ---------- TAT & SLA Compliance ----------
   readonly tatCompliance = 94;
   readonly tatBuckets: TatBucket[] = [
-    { label: 'On Track', count: 186, tone: 'green' },
-    { label: 'At Risk',  count: 42,  tone: 'amber' },
-    { label: 'Breached', count: 19,  tone: 'red' },
+    { label: 'On Track', count: 232, tone: 'green' },
+    { label: 'At Risk',  count: 12,  tone: 'amber' },
+    { label: 'Breached', count: 3,   tone: 'red' },
   ];
   readonly tatStats: TatStat[] = [
     { value: '34',   label: 'Expedited' },

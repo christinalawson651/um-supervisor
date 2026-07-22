@@ -122,9 +122,9 @@ function buildDecided(): CaseRec[] {
     if (j % 14 === 0) tags.push('p2p');       // ~17 p2p
     if (decision !== 'Approved') tags.push('appeal');
 
-    // TAT buckets across decided: 186 on track / 42 at risk / 19 breached
-    if (j < 186) tags.push('onTrack');
-    else if (j < 228) tags.push('atRisk');
+    // TAT buckets across decided: 232 on track / 12 at risk / 3 breached (matches KPI strip)
+    if (j < 232) tags.push('onTrack');
+    else if (j < 244) tags.push('atRisk');
     else { tags.push('breached'); }
 
     // review priority: 34 expedited / 213 standard
