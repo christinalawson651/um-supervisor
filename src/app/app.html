@@ -63,6 +63,12 @@
             <button [class.on]="period() === p.id" (click)="period.set(p.id)">{{ p.label }}</button>
           }
         </div>
+        <span class="period-lab lob-lab">LOB</span>
+        <div class="period-seg">
+          @for (l of lobOptions; track l.id) {
+            <button [class.on]="lob() === l.id" (click)="lob.set(l.id)">{{ l.label }}</button>
+          }
+        </div>
       </div>
     }
 

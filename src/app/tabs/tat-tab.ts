@@ -3,26 +3,10 @@ import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Ring } from '../shared/ring';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
+import { LOBS, PROGRAMS, lobOf, programOf, authTypeOf, tatStatus, urgencyOf } from '../data/case-fields';
+import { LobFilter } from '../shared/lob-filter';
 
-const LOBS = ['Medicaid', 'Medicare Advantage', 'Commercial PPO', 'ACA Exchange'];
-const PROGRAMS = ['Inpatient', 'Outpatient', 'Behavioral Health', 'Pharmacy', 'DME / Home Health'];
-type AuthType = 'all' | 'IP' | 'OP' | 'RX';
-
-function lobOf(id: string) { return LOBS[Number(id.slice(-2)) % LOBS.length]; }
-function programOf(c: CaseRec) {
-  if (c.serviceType === 'Inpatient') return 'Inpatient';
-  if (c.serviceType === 'Behavioral') return 'Behavioral Health';
-  const h = Number(c.authId.slice(-1)) % 3;
-  return h === 0 ? 'Pharmacy' : h === 1 ? 'DME / Home Health' : 'Outpatient';
-}
-function authTypeOf(c: CaseRec): 'IP' | 'OP' | 'RX' {
-  if (c.serviceType === 'Inpatient') return 'IP';
-  if (programOf(c) === 'Pharmacy') return 'RX';
-  return 'OP';
-}
-function tatStatus(c: CaseRec) {
-  return c.tags.includes('onTrack') ? 'On Track' : c.tags.includes('atRisk') ? 'At Risk' : c.tags.includes('breached') ? 'Breached' : 'On Track';
-}
+type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
 
 @Component({
   selector: 'app-tat-tab',
@@ -34,7 +18,7 @@ function tatStatus(c: CaseRec) {
       <span class="section-note">Strong compliance — your team is meeting targets</span>
     </div>
 
-    <!-- Filter bar -->
+    <!-- Filter bar (LOB is set from the top bar and applies here too) -->
     <div class="filter-bar">
       <div class="fseg">
         <span class="flab">Auth Type</span>
@@ -42,13 +26,6 @@ function tatStatus(c: CaseRec) {
           <button [class.on]="authType() === a.id" (click)="authType.set(a.id)">{{ a.label }}</button>
         }
       </div>
-      <label class="fsel">
-        <span>LOB</span>
-        <select [value]="lob()" (change)="lob.set($any($event.target).value)">
-          <option value="all">All LOBs</option>
-          @for (l of lobs; track l) { <option [value]="l">{{ l }}</option> }
-        </select>
-      </label>
       <label class="fsel">
         <span>Program</span>
         <select [value]="program()" (change)="program.set($any($event.target).value)">
@@ -284,16 +261,18 @@ export class TatTab {
   private pending = CASE_POOL.filter((c) => c.phase === 'pending');
 
   // ---- filter state ----
+  private lobFilter = inject(LobFilter);
   readonly lobs = LOBS;
   readonly programs = PROGRAMS;
-  readonly authTypes: { id: AuthType; label: string }[] = [
+  readonly authTypes: { id: AuthTypeChoice; label: string }[] = [
     { id: 'all', label: 'All' }, { id: 'IP', label: 'IP' }, { id: 'OP', label: 'OP' }, { id: 'RX', label: 'RX' },
   ];
-  readonly authType = signal<AuthType>('all');
-  readonly lob = signal<string>('all');
+  readonly authType = signal<AuthTypeChoice>('all');
+  readonly lob = this.lobFilter.value; // shared top-bar filter — same signal, so it stays in sync everywhere
   readonly program = signal<string>('all');
   readonly filterActive = computed(() => this.authType() !== 'all' || this.lob() !== 'all' || this.program() !== 'all');
-  clearFilters() { this.authType.set('all'); this.lob.set('all'); this.program.set('all'); }
+  /** Clears this tab's own filters; the LOB filter is a shell-level control, reset it from the top bar. */
+  clearFilters() { this.authType.set('all'); this.program.set('all'); }
 
   private passes(c: CaseRec, skip: { lob?: boolean; program?: boolean; auth?: boolean } = {}) {
     if (!skip.auth && this.authType() !== 'all' && authTypeOf(c) !== this.authType()) return false;
@@ -410,8 +389,8 @@ export class TatTab {
     this.ix.openExplorer({
       title: `TAT — ${value}`,
       context: `${cases.length} decisions · ${label} ${value}`,
-      columns: ['Auth ID', 'Member', 'Procedure', label, 'TAT Status', 'Est. Cost'],
-      rows: cases.map((c) => [c.authId, c.member, c.procedure, value, tatStatus(c), `$${c.cost.toLocaleString()}`]),
+      columns: ['Auth ID', 'Member', 'Procedure', label, 'Provider', 'Urgency', 'TAT Status', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.procedure, value, c.provider, urgencyOf(c), tatStatus(c), `$${c.cost.toLocaleString()}`]),
       exportName: `tat-${dim}-${value.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
       memberColumn: 1,
     });
@@ -423,8 +402,8 @@ export class TatTab {
     this.ix.openExplorer({
       title: `Regulatory TAT — ${name}`,
       context: `${cases.length} decisions in this urgency tier`,
-      columns: ['Auth ID', 'Member', 'Procedure', 'TAT Status', 'TAT (days)', 'Est. Cost'],
-      rows: cases.map((c) => [c.authId, c.member, c.procedure, tatStatus(c), c.tatH, `$${c.cost.toLocaleString()}`]),
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'TAT Status', 'TAT (days)', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, tatStatus(c), c.tatH, `$${c.cost.toLocaleString()}`]),
       exportName: `regulatory-tat-${name.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
       memberColumn: 1,
     });
@@ -439,8 +418,8 @@ export class TatTab {
     else { cases = [...n.memberLate, ...n.providerLate]; title = 'Late Notices'; context = `${cases.length} notices sent past the regulatory timeframe`; }
     this.ix.openExplorer({
       title, context,
-      columns: ['Auth ID', 'Member', 'Determination', 'Notice Status', 'Est. Cost'],
-      rows: cases.map((c) => [c.authId, c.member, c.decision, lateSet.has(c) ? 'Late' : 'On Time', `$${c.cost.toLocaleString()}`]),
+      columns: ['Auth ID', 'Member', 'Determination', 'Provider', 'Urgency', 'Notice Status', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.decision, c.provider, urgencyOf(c), lateSet.has(c) ? 'Late' : 'On Time', `$${c.cost.toLocaleString()}`]),
       exportName: `notification-${kind}_2026-07-17`,
       memberColumn: 1,
     });
@@ -451,8 +430,8 @@ export class TatTab {
     this.ix.openExplorer({
       title: 'Active Concurrent Reviews',
       context: `${cases.length} inpatient continued-stay reviews in progress`,
-      columns: ['Auth ID', 'Member', 'Procedure', 'LOB', 'Status'],
-      rows: cases.map((c) => [c.authId, c.member, c.procedure, lobOf(c.authId), c.status]),
+      columns: ['Auth ID', 'Member', 'Procedure', 'LOB', 'Provider', 'Urgency', 'Status'],
+      rows: cases.map((c) => [c.authId, c.member, c.procedure, lobOf(c.authId), c.provider, urgencyOf(c), c.status]),
       exportName: `concurrent-active_2026-07-17`,
       memberColumn: 1,
     });

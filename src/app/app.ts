@@ -12,6 +12,7 @@ import { Metrics } from './shared/metrics';
 import { Nav, ROLES } from './shared/nav';
 import { Exporter } from './shared/exporter';
 import { Lookback } from './shared/lookback';
+import { LobFilter } from './shared/lob-filter';
 import { REFERRALS } from './data/referrals';
 import { DashboardData } from './data/dashboard-data';
 
@@ -98,6 +99,11 @@ export class App {
   private lookback = inject(Lookback);
   readonly periods = this.lookback.periods;
   readonly period = this.lookback.period;
+
+  // ---- shared LOB filter (shown next to Lookback, same pattern) ----
+  private lobFilter = inject(LobFilter);
+  readonly lobOptions = this.lobFilter.options;
+  readonly lob = this.lobFilter.value;
   // value overrides per lookback (order matches the KPI strip); '30d' uses the live/current values
   private readonly PERIOD_VALUES: Record<string, string[]> = {
     today: ['38', '93.1%', '41%', '4', '2.2h', '3', '1', '89%'],

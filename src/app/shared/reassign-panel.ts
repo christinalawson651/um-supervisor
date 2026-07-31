@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Reassign, ReassignCase, ReassignNurse } from './reassign';
+import { Interaction } from './interaction';
 
 @Component({
   selector: 'app-reassign-panel',
@@ -68,7 +69,7 @@ import { Reassign, ReassignCase, ReassignNurse } from './reassign';
               @else { Select at least one case and a target }</span>
             <span class="spacer"></span>
             <button class="btn outline" (click)="rx.close()">Cancel</button>
-            <button class="btn primary" [disabled]="!selected().size || !target()" (click)="apply(c)">Reassign {{ selected().size || '' }}</button>
+            <button class="btn primary" [disabled]="!selected().size || !target()" (click)="apply()">Reassign {{ selected().size || '' }}</button>
           </div>
         </div>
       </div>
@@ -120,6 +121,7 @@ import { Reassign, ReassignCase, ReassignNurse } from './reassign';
 })
 export class ReassignPanel {
   rx = inject(Reassign);
+  private ix = inject(Interaction);
   readonly q = signal('');
   readonly queue = signal('All');
   readonly selected = signal<Set<string>>(new Set());
@@ -129,7 +131,8 @@ export class ReassignPanel {
     effect(() => {
       const c = this.rx.config();
       // reset + default target to recommended when a new reassign opens
-      this.q.set(''); this.queue.set('All'); this.selected.set(new Set());
+      this.q.set(''); this.queue.set('All');
+      this.selected.set(c?.preselectAll ? new Set(c.cases.map((x) => x.authId)) : new Set());
       const rec = c ? [...c.nurses].sort((a, b) => a.utilization - b.utilization)[0] : null;
       this.target.set(rec ? rec.name : '');
     });
@@ -148,5 +151,25 @@ export class ReassignPanel {
   toggle(id: string) { this.selected.update((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   allSel() { const f = this.filtered(); return f.length > 0 && f.every((x) => this.selected().has(x.authId)); }
   toggleAll(e: Event) { const on = (e.target as HTMLInputElement).checked; this.selected.set(on ? new Set(this.filtered().map((x) => x.authId)) : new Set()); }
-  apply(c: { apply: (ids: string[], t: string) => void }) { c.apply([...this.selected()], this.target()); this.rx.close(); }
+
+  /** Confirms before committing; if overriding the recommendation, the confirm dialog says so explicitly. */
+  apply() {
+    const c = this.rx.config();
+    if (!c) return;
+    const ids = [...this.selected()];
+    const targetName = this.target();
+    const rec = this.recommended();
+    const targetNurse = c.nurses.find((n) => n.name === targetName);
+    const isOverride = !!rec && targetName !== rec.name;
+    const overCapacity = !!targetNurse && targetNurse.utilization >= 90;
+    const warn = !isOverride ? '' : overCapacity
+      ? `⚠ Overriding the recommendation — ${targetName} is already at ${targetNurse!.utilization}% utilization. `
+      : `Overriding the recommendation (★ ${rec!.name}) — assigning to ${targetName} instead. `;
+    this.ix.ask({
+      title: `Reassign ${ids.length} case${ids.length > 1 ? 's' : ''}`,
+      body: `${warn}Move ${ids.length} case${ids.length > 1 ? 's' : ''} to ${targetName}?`,
+      confirmLabel: 'Reassign', tone: overCapacity ? 'amber' : 'teal',
+      onConfirm: () => { c.apply(ids, targetName); this.rx.close(); },
+    });
+  }
 }

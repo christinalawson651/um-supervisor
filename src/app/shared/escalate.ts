@@ -14,6 +14,12 @@ export interface EscalateConfig {
   apply: (ids: string[], target: string) => void;
 }
 
+// shared escalation targets — same roster everywhere a case can be escalated
+export const ESCALATE_TARGETS = [
+  'Dr. Patel — Medical Director', 'Dr. Nguyen — MD Review', 'Dr. Rivera — MD Review',
+  'Peer-to-Peer Review Queue', 'Supervisor — Christina Lawson',
+];
+
 @Injectable({ providedIn: 'root' })
 export class Escalate {
   readonly config = signal<EscalateConfig | null>(null);

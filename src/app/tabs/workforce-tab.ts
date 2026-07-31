@@ -3,9 +3,11 @@ import { FormsModule } from '@angular/forms';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Reassign, ReassignCase } from '../shared/reassign';
-import { Escalate } from '../shared/escalate';
+import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
+import { Balance } from '../shared/balance';
 import { NurseRow } from '../data/dashboard.models';
 import { CASE_POOL } from '../data/case-pool';
+import { urgencyOf } from '../data/case-fields';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -164,6 +166,7 @@ export class WorkforceTab {
   private ix = inject(Interaction);
   private rx = inject(Reassign);
   private esc = inject(Escalate);
+  private bal = inject(Balance);
 
   readonly search = signal('');
   readonly sortKey = signal<keyof NurseRow | ''>('');
@@ -194,9 +197,16 @@ export class WorkforceTab {
     const from = t.nurses.reduce((a, b) => (b.utilization > a.utilization ? b : a));
     const to = t.nurses.reduce((a, b) => (b.utilization < a.utilization ? b : a));
     if (from.name === to.name) { this.ix.toast(`${t.name} is already balanced.`); return; }
-    this.data.moveOneCase(from.name, to.name);
-    this.ix.toast(`Balanced ${t.name}: moved a case from ${from.name} to ${to.name}.`);
-    this.data.addHistory('balance', 'Team balanced', `${t.name}: ${from.name} → ${to.name}`);
+    this.ix.ask({
+      title: `Balance ${t.name}`,
+      body: `Move one case from ${from.name} (${from.utilization}% utilized) to ${to.name} (${to.utilization}% utilized)?`,
+      confirmLabel: 'Balance', tone: 'teal',
+      onConfirm: () => {
+        this.data.moveOneCase(from.name, to.name);
+        this.ix.toast(`Balanced ${t.name}: moved a case from ${from.name} to ${to.name}.`);
+        this.data.addHistory('balance', 'Team balanced', `${t.name}: ${from.name} → ${to.name}`);
+      },
+    });
   }
 
   readonly visibleNurses = computed(() => {
@@ -249,11 +259,6 @@ export class WorkforceTab {
     });
   }
 
-  private readonly ESCALATE_TARGETS = [
-    'Dr. Patel — Medical Director', 'Dr. Nguyen — MD Review', 'Dr. Rivera — MD Review',
-    'Peer-to-Peer Review Queue', 'Supervisor — Christina Lawson',
-  ];
-
   reassign() {
     const cases: ReassignCase[] = CASE_POOL
       .filter((c) => c.phase === 'pending')
@@ -277,26 +282,7 @@ export class WorkforceTab {
     });
   }
 
-  balance() {
-    this.ix.choose({
-      title: 'Balance workload',
-      body: 'Choose how aggressively to rebalance cases from over-utilized nurses to those with capacity.',
-      label: 'Balancing strategy',
-      options: [
-        'Light — move 1 case from the busiest nurse',
-        'Standard — rebalance 3 cases',
-        'Aggressive — rebalance 6 cases',
-        'Even out — level everyone toward the team average',
-      ],
-      confirmLabel: 'Balance', tone: 'teal',
-      onChoose: (opt) => {
-        const n = opt.startsWith('Light') ? 1 : opt.startsWith('Aggressive') ? 6 : opt.startsWith('Even') ? 5 : 3;
-        for (let i = 0; i < n; i++) this.data.reassignBusiest();
-        this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${n} case${n > 1 ? 's' : ''} moved).`);
-        this.data.addHistory('balance', 'Workload balanced', `${opt.split(' — ')[0]} · ${n} case(s) moved`);
-      },
-    });
-  }
+  balance() { this.bal.run(); }
 
   private ageH(authId: string) { return 6 + (Number(authId.slice(-2)) % 90); }
   private bandOf(authId: string, breached: boolean) {
@@ -311,11 +297,11 @@ export class WorkforceTab {
     const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const rows = CASE_POOL
       .filter((c) => c.phase === 'pending' && c.status === queue && this.bandOf(c.authId, c.tags.includes('breached')) === band)
-      .map((c) => [c.authId, c.member, c.procedure, this.ageLabel(this.ageH(c.authId)), c.nurse === '—' ? 'Unassigned' : c.nurse] as (string | number)[]);
+      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(this.ageH(c.authId)), c.nurse === '—' ? 'Unassigned' : c.nurse] as (string | number)[]);
     this.ix.openExplorer({
       title: `${queue} — ${labels[band]}`,
       context: `${rows.length} case(s) in ${queue} · ${labels[band]}`,
-      columns: ['Auth ID', 'Member', 'Procedure', 'Age in Queue', 'Owner'],
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue', 'Owner'],
       rows, exportName: `${queue.toLowerCase().replace(/\s+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
     });
   }
@@ -330,7 +316,7 @@ export class WorkforceTab {
     this.esc.open({
       title: 'Escalate cases',
       candidates,
-      targets: this.ESCALATE_TARGETS,
+      targets: ESCALATE_TARGETS,
       apply: (ids, who) => {
         ids.forEach((id) => this.data.resolveRiskCase(id));
         this.ix.toast(`${ids.length} case(s) escalated to ${who}.`, 'warn');

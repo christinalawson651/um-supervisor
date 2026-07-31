@@ -11,12 +11,20 @@ export interface CaseRec {
   decision: Decision;
   status: string;
   nurse: string;
+  provider: string;
   submitted: string;
   tatH: number;
   cost: number;
   phase: 'pending' | 'decided';
   tags: string[];
 }
+
+// same roster used on the Provider & Network Insights tab, so a case's provider
+// always matches a name a supervisor would recognize from that tab
+export const PROVIDERS = [
+  'Dr. Sarah Mitchell', 'Dr. James Parker', 'Dr. Emily Chen',
+  'Memorial Orthopedic Group', 'Regional Heart Center', 'Coastal Neurology Associates',
+];
 
 const FIRST = ['Patricia', 'Michael', 'Jennifer', 'Robert', 'Susan', 'Daniel', 'Maria', 'James', 'Sana', 'Angela',
   'Carlos', 'Nicole', 'Linda', 'Sean', 'Rina', 'Thomas', 'Katherine', 'Antonio', 'Beth', 'Hector',
@@ -85,6 +93,7 @@ function buildPending(): CaseRec[] {
       if (q.tag === 'mdReview' || q.tag === 'p2p') tags.push('mdReview');
       if (q.tag === 'intake' && k < 8) tags.push('unassigned');       // 8 unassigned
       if (i % 21 === 0 && tags.filter((t) => t === 'atRisk').length === 0) tags.push('atRisk'); // ~12 at risk
+      tags.push(i % 7 === 0 ? 'expedited' : 'standard');              // ~14% expedited, matches decided ratio
       const nurse = tags.includes('unassigned') ? '—' : NURSES[i % NURSES.length];
       out.push({
         authId: `AUTH-${4000 + i}`,
@@ -93,6 +102,7 @@ function buildPending(): CaseRec[] {
         decision: 'Pending',
         status: q.status,
         nurse,
+        provider: PROVIDERS[(i * 3 + 2) % PROVIDERS.length],
         submitted: dateFor(i),
         tatH: vary(p.tat, i, 0.3),
         cost: vary(p.cost, i, p.cost * 0.05),
@@ -138,6 +148,7 @@ function buildDecided(): CaseRec[] {
       procedure: p.name, serviceType: p.type,
       decision, status,
       nurse: tags.includes('auto') ? '—' : NURSES[j % NURSES.length],
+      provider: PROVIDERS[(j * 5 + 1) % PROVIDERS.length],
       submitted: dateFor(j),
       tatH: vary(p.tat, j, 0.4),
       cost: vary(p.cost, j, p.cost * 0.05),

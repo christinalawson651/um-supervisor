@@ -9,6 +9,8 @@ export interface ReassignConfig {
   cases: ReassignCase[];
   nurses: ReassignNurse[];
   apply: (caseIds: string[], target: string) => void;
+  /** Pre-check every case (used when the caller already selected specific cases, e.g. from a drill-down). */
+  preselectAll?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

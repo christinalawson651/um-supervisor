@@ -2,13 +2,16 @@ import { Injectable, inject } from '@angular/core';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { DashboardData } from '../data/dashboard-data';
 import { nbaFor } from '../data/um-status';
+import { lobOf, urgencyOf } from '../data/case-fields';
 import { Interaction } from './interaction';
+import { LobFilter } from './lob-filter';
 import { downloadCsv } from './export-csv';
 
-// Rich, full-width column set for the Case Explorer.
-const COLUMNS = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Status', 'Decision', 'Submitted', 'TAT (h)', 'Est. Cost'];
+// Rich, full-width column set for the Case Explorer — every drill uses the same shape
+// (Provider + Urgency included) so the explorer looks and behaves the same everywhere.
+const COLUMNS = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Status', 'Decision', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'];
 function toRow(c: CaseRec): (string | number)[] {
-  return [c.authId, c.member, c.procedure, c.serviceType, c.status, c.decision, c.submitted, c.tatH, `$${c.cost.toLocaleString()}`];
+  return [c.authId, c.member, c.procedure, c.serviceType, c.status, c.decision, c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`];
 }
 
 const pend = (fn: (c: CaseRec) => boolean = () => true) => CASE_POOL.filter((c) => c.phase === 'pending' && fn(c));
@@ -33,7 +36,7 @@ const QUEUE_TO_PEND: Record<string, string> = {
 };
 
 /** Resolve a pending case to its canonical pend reason (splits some queues for realistic variety). */
-function pendReason(c: CaseRec): string {
+export function pendReason(c: CaseRec): string {
   const even = Number(c.authId.slice(-1)) % 2 === 0;
   if (c.status === 'Clinical Review' && even) return 'Pending Determination';
   if (c.status === 'MD Review' && even) return 'Pending Notification';
@@ -104,8 +107,21 @@ const DRILLS: Record<string, Drill> = {
 export class Metrics {
   private ix = inject(Interaction);
   private data = inject(DashboardData);
+  private lobFilter = inject(LobFilter);
 
   has(key: string) { return key in DRILLS; }
+
+  /** Scope a drill's cases to the shared top-bar LOB filter (no-op when set to "All LOBs"). */
+  private byLob(cases: CaseRec[]): CaseRec[] {
+    const lob = this.lobFilter.value();
+    return lob === 'all' ? cases : cases.filter((c) => lobOf(c.authId) === lob);
+  }
+
+  /** Context line — honest about the LOB scope instead of reusing a fixed-denominator % once filtered. */
+  private ctxFor(d: Drill, cases: CaseRec[]): string {
+    const lob = this.lobFilter.value();
+    return lob === 'all' ? d.ctx(cases.length) : `${cases.length} case(s) · filtered to ${lob}`;
+  }
 
   open(key: string) {
     const d = DRILLS[key];
@@ -121,15 +137,15 @@ export class Metrics {
 
     // Pending Cases -> pending authorizations with their pend reason + NBA (from the real UM model)
     if (key === 'kpi.pending') {
-      const cases = d.pick();
-      const columns = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Pend Reason', 'Next Best Action', 'Submitted', 'Est. Cost'];
+      const cases = this.byLob(d.pick());
+      const columns = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Provider', 'Urgency', 'Pend Reason', 'Next Best Action', 'Submitted', 'Est. Cost'];
       const rows = cases.map((c) => {
         const reason = pendReason(c);
-        return [c.authId, c.member, c.procedure, c.serviceType, reason, nbaFor(reason), c.submitted, `$${c.cost.toLocaleString()}`];
+        return [c.authId, c.member, c.procedure, c.serviceType, c.provider, urgencyOf(c), reason, nbaFor(reason), c.submitted, `$${c.cost.toLocaleString()}`];
       });
       this.ix.openExplorer({
         title: 'Pending Authorizations',
-        context: `${cases.length} pending authorizations — by pend reason & next best action`,
+        context: this.ctxFor({ ...d, ctx: () => `${cases.length} pending authorizations — by pend reason & next best action` }, cases),
         columns, rows, exportName: `pending-auths_2026-07-17`, memberColumn: 1,
       });
       return;
@@ -137,22 +153,22 @@ export class Metrics {
 
     // Breached SLAs -> show how far past the deadline each auth is
     if (key === 'kpi.breached') {
-      const cases = d.pick();
+      const cases = this.byLob(d.pick());
       const overdue = (id: string) => { const h = 5 + (Number(id.slice(-2)) % 60); return h < 24 ? `${h}h past deadline` : `${Math.floor(h / 24)}d ${h % 24}h past deadline`; };
-      const rows = cases.map((c) => [c.authId, c.member, c.procedure, c.status, overdue(c.authId), `$${c.cost.toLocaleString()}`]);
+      const rows = cases.map((c) => [c.authId, c.member, c.procedure, c.status, c.provider, urgencyOf(c), overdue(c.authId), `$${c.cost.toLocaleString()}`]);
       this.ix.openExplorer({
         title: 'Breached SLAs',
-        context: `${cases.length} authorizations past their SLA deadline — time overdue shown`,
-        columns: ['Auth ID', 'Member', 'Procedure', 'Stage', 'Time Past Deadline', 'Est. Cost'],
+        context: this.ctxFor({ ...d, ctx: () => `${cases.length} authorizations past their SLA deadline — time overdue shown` }, cases),
+        columns: ['Auth ID', 'Member', 'Procedure', 'Stage', 'Provider', 'Urgency', 'Time Past Deadline', 'Est. Cost'],
         rows, exportName: 'breached-slas_2026-07-17', memberColumn: 1,
       });
       return;
     }
 
-    const cases = d.pick();
+    const cases = this.byLob(d.pick());
     this.ix.openExplorer({
       title: d.title,
-      context: d.ctx(cases.length),
+      context: this.ctxFor(d, cases),
       columns: COLUMNS,
       rows: cases.map(toRow),
       exportName: `${key.replace('.', '-')}_2026-07-17`,

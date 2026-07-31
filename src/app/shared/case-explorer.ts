@@ -2,9 +2,25 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Interaction } from './interaction';
 import { Members } from './members';
+import { Reassign, ReassignCase } from './reassign';
+import { Escalate, ESCALATE_TARGETS } from './escalate';
+import { Balance } from './balance';
 import { downloadCsv } from './export-csv';
+import { DashboardData } from '../data/dashboard-data';
+import { CASE_POOL, CaseRec } from '../data/case-pool';
+import { lobOf, programOf, tatStatus, urgencyOf } from '../data/case-fields';
+import { nbaFor } from '../data/um-status';
+import { pendReason } from './metrics';
 
 const PAGE = 12;
+
+type QuickSort = 'default' | 'urgency' | 'cost' | 'tat' | 'oldest';
+const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => number }[] = [
+  { id: 'urgency', label: 'Urgency (expedited first)', col: (c) => c.indexOf('Urgency') },
+  { id: 'cost', label: 'Cost (highest first)', col: (c) => c.findIndex((h) => /cost/i.test(h)) },
+  { id: 'tat', label: 'TAT (longest first)', col: (c) => c.findIndex((h) => /^TAT/i.test(h)) },
+  { id: 'oldest', label: 'Oldest first', col: (c) => c.indexOf('Submitted') },
+];
 
 @Component({
   selector: 'app-case-explorer',
@@ -28,7 +44,24 @@ const PAGE = 12;
             <input class="search" type="text" placeholder="Search all cases…"
               [ngModel]="q()" (ngModelChange)="setQuery($event)" />
             <span class="count">{{ filtered().length }} case{{ filtered().length === 1 ? '' : 's' }}</span>
+
+            @if (availableSorts().length) {
+              <label class="sortsel">
+                <span>Sort</span>
+                <select [value]="quickSort()" (change)="setQuickSort($any($event.target).value)">
+                  <option value="default">Default</option>
+                  @for (s of availableSorts(); track s.id) { <option [value]="s.id">{{ s.label }}</option> }
+                </select>
+              </label>
+            }
+
             <span class="spacer"></span>
+
+            @if (isCaseList()) {
+              @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
+              <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
+            }
+            <button class="btn outline sm" (click)="balance()">Balance</button>
             <button class="btn outline sm" (click)="exportAll(e)">Export all ({{ filtered().length }})</button>
           </div>
 
@@ -37,6 +70,9 @@ const PAGE = 12;
             <table class="etable">
               <thead>
                 <tr>
+                  @if (isCaseList()) {
+                    <th class="selth"><input type="checkbox" [checked]="allSelected()" (change)="toggleAllFiltered($event)" /></th>
+                  }
                   @for (c of e.columns; track c; let ci = $index) {
                     <th (click)="sortBy(ci)">{{ c }}{{ caret(ci) }}</th>
                   }
@@ -45,9 +81,12 @@ const PAGE = 12;
               <tbody>
                 @for (row of pageRows(); track $index) {
                   <tr>
+                    @if (isCaseList()) {
+                      <td class="selth"><input type="checkbox" [checked]="selected().has(rowId(row))" (change)="toggleSel(rowId(row))" /></td>
+                    }
                     @for (cell of row; track $index; let ci = $index) {
                       @if (ci === e.memberColumn) {
-                        <td><a class="mlink" (click)="members.openByName($any(cell))">{{ cell }}</a></td>
+                        <td><a class="mlink" (click)="openAuth(row, e)">{{ cell }}</a></td>
                       } @else {
                         <td>{{ cell }}</td>
                       }
@@ -55,7 +94,7 @@ const PAGE = 12;
                   </tr>
                 }
                 @empty {
-                  <tr><td [attr.colspan]="e.columns.length" class="empty">No cases match "{{ q() }}".</td></tr>
+                  <tr><td [attr.colspan]="e.columns.length + 1" class="empty">No cases match "{{ q() }}".</td></tr>
                 }
               </tbody>
             </table>
@@ -86,11 +125,16 @@ const PAGE = 12;
       background: var(--teal-50); border:1px solid var(--teal-100); border-radius:8px;
       padding: 7px 12px; display:inline-block; }
     .ex { border:none; background:none; cursor:pointer; color:var(--gray-400); font-size:24px; line-height:1; }
-    .toolbar { display:flex; align-items:center; gap:14px; padding: 14px 24px; }
+    .toolbar { display:flex; align-items:center; gap:14px; padding: 14px 24px; flex-wrap:wrap; }
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:8px 12px; font-size:13px;
-      width: 280px; outline:none; }
+      width: 240px; outline:none; }
     .search:focus { border-color: var(--teal-600); }
-    .count { font-size:12.5px; color:var(--gray-500); font-weight:600; }
+    .count { font-size:12.5px; color:var(--gray-500); font-weight:600; white-space:nowrap; }
+    .sortsel { display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:600; color:var(--gray-500);
+      text-transform:uppercase; letter-spacing:.03em; }
+    .sortsel select { font-size:12.5px; font-weight:500; color:var(--ink); text-transform:none; letter-spacing:0;
+      padding:6px 8px; border:1px solid var(--gray-300); border-radius:8px; background:#fff; cursor:pointer; }
+    .selcount { font-size:12px; font-weight:700; color:var(--teal-700); white-space:nowrap; }
     .spacer { flex:1; }
     .etable-wrap { flex:1; overflow:auto; margin: 0 24px; border:1px solid var(--gray-100); border-radius:10px; }
     .etable { width:100%; border-collapse:collapse; font-size:13px; }
@@ -99,6 +143,7 @@ const PAGE = 12;
       color:var(--gray-500); font-weight:600; white-space:nowrap; border-bottom:1px solid var(--gray-200);
       user-select:none; }
     .etable thead th:hover { color: var(--ink-soft); }
+    .etable thead th.selth, .etable tbody td.selth { cursor:default; width:1%; padding-right:4px; }
     .etable tbody td { padding:11px 14px; border-bottom:1px solid var(--gray-100); color:var(--ink-soft);
       white-space:nowrap; }
     .etable tbody tr:hover { background: var(--gray-50); }
@@ -114,11 +159,17 @@ const PAGE = 12;
 export class CaseExplorer {
   ix = inject(Interaction);
   members = inject(Members);
+  private data = inject(DashboardData);
+  private rx = inject(Reassign);
+  private esc = inject(Escalate);
+  private bal = inject(Balance);
 
   readonly q = signal('');
   readonly page = signal(0);
   readonly sortCol = signal<number>(-1);
   readonly sortDir = signal<1 | -1>(1);
+  readonly quickSort = signal<QuickSort>('default');
+  readonly selected = signal<Set<string>>(new Set());
 
   constructor() {
     // reset view state whenever a new metric is opened
@@ -128,8 +179,21 @@ export class CaseExplorer {
       this.page.set(0);
       this.sortCol.set(-1);
       this.sortDir.set(1);
+      this.quickSort.set('default');
+      this.selected.set(new Set());
     });
   }
+
+  /** Every drill in the app starts its columns with "Auth ID" except the team-utilization roster. */
+  readonly isCaseList = computed(() => this.ix.explorer()?.columns[0] === 'Auth ID');
+
+  readonly availableSorts = computed(() => {
+    const e = this.ix.explorer();
+    if (!e || !this.isCaseList()) return [];
+    return QUICK_SORTS.filter((s) => s.col(e.columns) >= 0);
+  });
+
+  rowId(row: (string | number)[]) { return String(row[0]); }
 
   readonly filtered = computed(() => {
     const e = this.ix.explorer();
@@ -138,6 +202,26 @@ export class CaseExplorer {
     let rows = query
       ? e.rows.filter((r) => r.some((c) => String(c).toLowerCase().includes(query)))
       : e.rows;
+
+    const qs = this.quickSort();
+    if (qs !== 'default') {
+      const spec = QUICK_SORTS.find((s) => s.id === qs)!;
+      const ci = spec.col(e.columns);
+      if (ci >= 0) {
+        rows = [...rows].sort((a, b) => {
+          if (qs === 'urgency') {
+            const rank = (v: unknown) => (String(v) === 'Expedited' ? 0 : 1);
+            return rank(a[ci]) - rank(b[ci]);
+          }
+          const an = parseFloat(String(a[ci]).replace(/[$,h]/gi, ''));
+          const bn = parseFloat(String(b[ci]).replace(/[$,h]/gi, ''));
+          if (qs === 'oldest') return String(a[ci]).localeCompare(String(b[ci]));
+          return bn - an; // cost / tat: highest first
+        });
+      }
+      return rows;
+    }
+
     const col = this.sortCol();
     if (col >= 0) {
       const dir = this.sortDir();
@@ -160,13 +244,125 @@ export class CaseExplorer {
   prev() { this.page.update((p) => Math.max(0, p - 1)); }
   next() { this.page.update((p) => Math.min(this.totalPages() - 1, p + 1)); }
   sortBy(ci: number) {
+    this.quickSort.set('default');
     if (this.sortCol() === ci) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
     else { this.sortCol.set(ci); this.sortDir.set(1); }
     this.page.set(0);
   }
+  setQuickSort(v: QuickSort) { this.quickSort.set(v); this.sortCol.set(-1); this.page.set(0); }
   caret(ci: number) { return this.sortCol() === ci ? (this.sortDir() === 1 ? ' ▲' : ' ▼') : ''; }
+
+  // ---- bulk selection ----
+  toggleSel(id: string) { this.selected.update((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  allSelected() { const f = this.filtered(); return f.length > 0 && f.every((r) => this.selected().has(this.rowId(r))); }
+  toggleAllFiltered(e: Event) {
+    const on = (e.target as HTMLInputElement).checked;
+    this.selected.set(on ? new Set(this.filtered().map((r) => this.rowId(r))) : new Set());
+  }
 
   exportAll(e: { columns: string[]; exportName: string }) {
     downloadCsv(e.exportName, e.columns, this.filtered());
+  }
+
+  // ---- reassign / balance directly from any drill-down ----
+  reassignSelected(e: { columns: string[]; rows: (string | number)[][]; memberColumn?: number }) {
+    const ids = [...this.selected()];
+    if (!ids.length) return;
+    const iMember = e.memberColumn ?? 1;
+    const iService = e.columns.indexOf('Service Type');
+    const iStatus = e.columns.indexOf('Status');
+    const iUrgency = e.columns.indexOf('Urgency');
+    const rowByAuth = new Map(e.rows.map((r) => [this.rowId(r), r]));
+
+    const cases: ReassignCase[] = ids.map((id) => {
+      const row = rowByAuth.get(id);
+      const rec = CASE_POOL.find((c) => c.authId === id);
+      return {
+        authId: id,
+        member: row ? String(row[iMember]) : (rec?.member ?? ''),
+        type: row && iService >= 0 ? String(row[iService]) : (rec?.serviceType ?? 'Case'),
+        queue: row && iStatus >= 0 ? String(row[iStatus]) : (rec?.status ?? 'Case'),
+        priority: row && iUrgency >= 0 ? String(row[iUrgency]) : (rec ? urgencyOf(rec) : 'Standard'),
+        owner: rec && rec.nurse !== '—' ? rec.nurse : 'Unassigned',
+      };
+    });
+    const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
+    this.rx.open({
+      title: `Reassign ${ids.length} case${ids.length > 1 ? 's' : ''}`,
+      cases, nurses, preselectAll: true,
+      apply: (assignedIds, target) => {
+        assignedIds.forEach((aid) => {
+          const cs = cases.find((x) => x.authId === aid);
+          this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);
+        });
+        this.ix.toast(`${assignedIds.length} case(s) reassigned to ${target}.`);
+        this.data.addHistory('swap', 'Cases reassigned', `${assignedIds.length} case(s) → ${target}`);
+        this.selected.set(new Set());
+      },
+    });
+  }
+
+  balance() { this.bal.run('for the cases in this view'); }
+
+  // ---- member name -> the auth in question (not straight to Member 360) ----
+  openAuth(row: (string | number)[], e: { memberColumn?: number }) {
+    const authId = this.rowId(row);
+    const rec = CASE_POOL.find((c) => c.authId === authId);
+    if (!rec) { this.members.openByName(String(row[e.memberColumn ?? 1])); return; }
+
+    const pending = rec.phase === 'pending';
+    const reason = pending ? pendReason(rec) : null;
+    this.ix.openDrawer({
+      title: rec.authId,
+      subtitle: `${rec.member} · ${rec.procedure}`,
+      badge: { text: pending ? rec.status : rec.decision, tone: rec.tags.includes('breached') ? 'red' : rec.tags.includes('atRisk') ? 'amber' : 'green' },
+      fields: [
+        { label: 'Service Type', value: rec.serviceType },
+        { label: 'Provider', value: rec.provider },
+        { label: 'Line of Business', value: lobOf(rec.authId) },
+        { label: 'Program', value: programOf(rec) },
+        { label: 'Urgency', value: urgencyOf(rec) },
+        ...(pending
+          ? [{ label: 'Pend Reason', value: reason! }, { label: 'Next Best Action', value: nbaFor(reason!) }]
+          : [{ label: 'TAT Status', value: tatStatus(rec) as string }]),
+        { label: 'Submitted', value: rec.submitted },
+        { label: 'TAT', value: `${rec.tatH}h` },
+        { label: 'Est. Cost', value: `$${rec.cost.toLocaleString()}` },
+      ],
+      actions: [
+        { label: 'Reassign this case', tone: 'teal', run: () => this.reassignOne(rec) },
+        { label: 'Escalate this case', tone: 'amber', run: () => this.escalateOne(rec) },
+        { label: 'View Member 360', tone: 'teal', run: () => this.members.openByName(rec.member) },
+      ],
+    });
+  }
+
+  private reassignOne(rec: CaseRec) {
+    const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
+    this.rx.open({
+      title: `Reassign ${rec.authId}`,
+      cases: [{ authId: rec.authId, member: rec.member, type: rec.serviceType, queue: rec.status, priority: urgencyOf(rec), owner: rec.nurse !== '—' ? rec.nurse : 'Unassigned' }],
+      nurses, preselectAll: true,
+      apply: (_ids, target) => {
+        this.data.moveOneCase(rec.nurse !== '—' ? rec.nurse : null, target);
+        this.ix.toast(`${rec.authId} reassigned to ${target}.`);
+        this.data.addHistory('swap', 'Case reassigned', `${rec.authId} → ${target}`);
+      },
+    });
+  }
+
+  private escalateOne(rec: CaseRec) {
+    this.esc.open({
+      title: `Escalate ${rec.authId}`,
+      candidates: [{
+        authId: rec.authId, member: rec.member, detail: `${rec.status} · ${rec.procedure}`,
+        riskLabel: urgencyOf(rec), risk: rec.tags.includes('breached') ? 'red' : rec.tags.includes('atRisk') ? 'amber' : 'green',
+      }],
+      targets: ESCALATE_TARGETS,
+      apply: (_ids, who) => {
+        this.ix.toast(`${rec.authId} escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Case escalated', `${rec.authId} → ${who}`);
+      },
+    });
   }
 }
