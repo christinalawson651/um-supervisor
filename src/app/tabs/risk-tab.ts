@@ -2,8 +2,12 @@ import { Component, inject, signal } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Members } from '../shared/members';
+import { Metrics } from '../shared/metrics';
 import { RiskCase } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
+
+const ACUITY_DRIVERS = ['High-acuity ICU', 'Transplant', 'Oncology'];
+const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
 
 @Component({
   selector: 'app-risk-tab',
@@ -18,8 +22,8 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="rtiles">
-      @for (t of data.riskTiles; track t.label) {
-        <div class="rtile" [attr.data-tone]="t.tone">
+      @for (t of data.riskTiles; track t.label; let i = $index) {
+        <div class="rtile clickable" [attr.data-tone]="t.tone" (click)="openTile(i)">
           <div class="rt-lab"><span class="rt-ic" [attr.data-tone]="t.tone"><z-icon [name]="t.icon" [size]="14"></z-icon></span>{{ t.label }}</div>
           <div class="rt-val">{{ t.value }}</div>
           <div class="rt-foot" [attr.data-tone]="t.footerTone || null">{{ t.footer }}</div>
@@ -42,15 +46,15 @@ import { Icon } from '../shared/icon';
         </thead>
         <tbody>
           @for (r of data.riskCases(); track r.authId) {
-            <tr>
-              <td class="chk"><input type="checkbox" [checked]="selected().has(r.authId)" (change)="toggle(r.authId)" /></td>
+            <tr class="clickable" (click)="open(r)">
+              <td class="chk" (click)="$event.stopPropagation()"><input type="checkbox" [checked]="selected().has(r.authId)" (change)="toggle(r.authId)" /></td>
               <td class="authid">{{ r.authId }}</td>
-              <td><a class="mlink" (click)="members.openByName(r.member)">{{ r.member }}</a></td>
+              <td><a class="mlink" (click)="members.openByName(r.member); $event.stopPropagation()">{{ r.member }}</a></td>
               <td><span class="chips">@for (d of r.drivers; track d) { <span class="chip">{{ d }}</span> }</span></td>
               <td class="strong">{{ r.amount }}</td>
               <td>{{ r.stage }}</td>
               <td><span class="score" [class.red]="r.risk==='red'" [class.amber]="r.risk==='amber'">{{ r.score }}</span></td>
-              <td><button class="btn outline teal sm" (click)="escalate(r)">Escalate</button></td>
+              <td><button class="btn outline teal sm" (click)="escalate(r); $event.stopPropagation()">Escalate</button></td>
             </tr>
           } @empty {
             <tr><td colspan="8" class="empty">No cases requiring attention — all clear. ✓</td></tr>
@@ -91,11 +95,14 @@ import { Icon } from '../shared/icon';
     .score.red { background:var(--red-bg); color:var(--red-fg); }
     .score.amber { background:var(--amber-bg); color:var(--amber-fg); }
     .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
+    .clickable { cursor: pointer; }
+    .rtile.clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
   `],
 })
 export class RiskTab {
   data = inject(DashboardData);
   members = inject(Members);
+  metrics = inject(Metrics);
   private ix = inject(Interaction);
 
   readonly selected = signal<Set<string>>(new Set());
@@ -141,6 +148,58 @@ export class RiskTab {
         this.data.addHistory('arrowup', 'Cases escalated', `${ids.length} cases → ${who}`);
         this.selected.set(new Set());
       },
+    });
+  }
+
+  /** Full-detail drawer for a single risk case — the row itself is now clickable, not just its buttons. */
+  open(r: RiskCase) {
+    this.ix.openDrawer({
+      title: r.authId,
+      subtitle: `${r.member} · ${r.stage}`,
+      badge: { text: `Risk ${r.score}`, tone: r.risk as any },
+      fields: [
+        { label: 'Member', value: r.member },
+        { label: 'Stage', value: r.stage },
+        { label: 'Exposure', value: r.amount },
+        { label: 'Risk Score', value: String(r.score), tone: r.risk as any },
+        { label: 'Risk Drivers', value: r.drivers.join(', ') },
+      ],
+      actions: [
+        { label: 'Escalate this case', tone: r.risk === 'red' ? 'red' : 'amber', run: () => this.escalate(r) },
+        { label: 'View Member 360', tone: 'teal', run: () => this.members.openByName(r.member) },
+      ],
+    });
+  }
+
+  /** The 4 risk tiles — SLA Breach and High-Dollar map to real KPI drills; Acuity/Escalated
+   *  surface the underlying risk-case list or activity log directly (no matching KPI key exists for those). */
+  openTile(i: number) {
+    const key = TILE_KEYS[i];
+    if (key === 'sla') { this.metrics.open('kpi.risk'); return; }
+    if (key === 'highdollar') { this.metrics.open('fin.highdollar'); return; }
+
+    if (key === 'acuity') {
+      const cases = this.data.riskCases().filter((r) => r.drivers.some((d) => ACUITY_DRIVERS.includes(d)));
+      this.ix.openExplorer({
+        title: 'High-Acuity Cases',
+        context: `${cases.length} case(s) flagged ICU, transplant, or oncology`,
+        columns: ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'],
+        rows: cases.map((r) => [r.authId, r.member, r.drivers.join(', '), r.amount, r.stage, r.score]),
+        exportName: 'risk-high-acuity_2026-07-17',
+        memberColumn: 1,
+      });
+      return;
+    }
+
+    // 'escalated' — show today's actual escalation activity from the history log
+    const escalations = this.data.history().filter((h) => h.icon === 'arrowup');
+    this.ix.openDrawer({
+      title: 'Escalated Today',
+      subtitle: `${escalations.length} escalation(s) this session`,
+      table: escalations.length
+        ? { columns: ['Time', 'Action', 'Detail'], rows: escalations.map((h) => [h.time, h.action, h.detail]) }
+        : undefined,
+      note: escalations.length ? undefined : 'No escalations yet this session — escalate a case to see it logged here.',
     });
   }
 }

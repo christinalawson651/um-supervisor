@@ -29,7 +29,7 @@ import { Ring } from '../shared/ring';
           <div class="rec" [attr.data-tone]="r.tone">
             <div class="rec-top">
               <span class="rec-ic"><z-icon [name]="r.icon" [size]="16" [stroke]="1.8"></z-icon></span>
-              <span class="conf">{{ r.confidence }}% confidence</span>
+              <span class="conf clickable" (click)="openConfidence(r)">{{ r.confidence }}% confidence</span>
             </div>
             <div class="rec-title">{{ r.title }}</div>
             <div class="rec-detail">{{ r.detail }}</div>
@@ -133,6 +133,25 @@ export class AiTab {
   metrics = inject(Metrics);
   readonly gaugeKeys = ['ai.denial', 'ai.appeal', 'ai.tatrisk'];
   readonly confKeys = ['ai.confHigh', 'ai.confMed', 'ai.confLow'];
+
+  openConfidence(r: AiRecommendation) {
+    this.ix.openDrawer({
+      title: r.title,
+      subtitle: 'AI / NextGen recommendation',
+      badge: { text: `${r.confidence}% confidence`, tone: r.confidence >= 90 ? 'green' : r.confidence >= 70 ? 'amber' : 'red' },
+      fields: [
+        { label: 'Recommendation', value: r.detail },
+        { label: 'Suggested Action', value: r.action },
+        { label: 'Confidence', value: `${r.confidence}%` },
+      ],
+      note: r.confidence >= 90
+        ? 'High confidence — this recommendation is eligible for straight-through automation.'
+        : r.confidence >= 70
+        ? 'Medium confidence — a quick supervisor review is recommended before acting.'
+        : 'Low confidence — review carefully before acting on this recommendation.',
+      actions: [{ label: r.action, tone: r.tone === 'red' ? 'red' : r.tone === 'amber' ? 'amber' : 'teal', run: () => this.act(r) }],
+    });
+  }
 
   act(r: AiRecommendation) {
     // Escalations let the supervisor pick who to assign to.

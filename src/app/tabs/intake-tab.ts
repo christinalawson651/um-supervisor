@@ -1,6 +1,8 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Metrics } from '../shared/metrics';
+import { Interaction } from '../shared/interaction';
+import { MissingField } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 
 @Component({
@@ -33,7 +35,7 @@ import { Icon } from '../shared/icon';
         </thead>
         <tbody>
           @for (f of data.missingFields; track f.field) {
-            <tr>
+            <tr class="clickable" (click)="openField(f)">
               <td class="strong">{{ f.field }}</td>
               <td class="num">{{ f.count }}</td>
               <td>
@@ -57,5 +59,20 @@ import { Icon } from '../shared/icon';
 export class IntakeTab {
   data = inject(DashboardData);
   metrics = inject(Metrics);
+  private ix = inject(Interaction);
   readonly barKeys = ['intake.complete', 'intake.auto', 'intake.rfi'];
+
+  openField(f: MissingField) {
+    this.ix.openDrawer({
+      title: f.field,
+      subtitle: 'Top missing field — submissions this month',
+      badge: { text: `${f.pct}% of submissions`, tone: f.pct >= 30 ? 'red' : f.pct >= 15 ? 'amber' : 'teal' },
+      fields: [
+        { label: 'Submissions Missing This Field', value: String(f.count) },
+        { label: '% of All Submissions', value: `${f.pct}%` },
+      ],
+      note: 'Aggregated across the month\'s intake volume — see the current RFI Pending queue for the specific open cases.',
+      actions: [{ label: 'View RFI Pending queue', tone: 'teal', run: () => this.metrics.open('intake.rfi') }],
+    });
+  }
 }
