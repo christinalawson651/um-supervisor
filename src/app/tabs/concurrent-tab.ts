@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
+import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { ConcurrentRow } from '../data/dashboard.models';
 
 @Component({
@@ -46,6 +47,7 @@ import { ConcurrentRow } from '../data/dashboard.models';
 export class ConcurrentTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  private esc = inject(Escalate);
 
   open(r: ConcurrentRow) {
     this.ix.openDrawer({
@@ -62,16 +64,31 @@ export class ConcurrentTab {
         { label: 'Additional Days Pending', value: String(Math.max(0, r.daysRequested - r.daysApproved)), tone: 'amber' },
       ],
       note: r.daysRequested > r.daysApproved
-        ? `Provider has requested ${r.daysRequested - r.daysApproved} additional day(s) beyond what is currently approved.`
+        ? `Provider has requested ${r.daysRequested - r.daysApproved} additional day(s) beyond what is currently approved. This dashboard cannot approve additional days — route to a formal reviewer.`
         : 'All requested days are approved.',
+      // No determination — including concurrent-review day extensions — is ever made from this dashboard.
+      // Additional days always route to a formal reviewer instead of being approved here.
       actions: r.daysRequested > r.daysApproved
-        ? [{ label: `Approve ${r.daysRequested - r.daysApproved} additional day(s)`, tone: 'teal',
-             run: () => {
-               this.data.approveConcurrentDays(r.member);
-               this.ix.toast(`Approved requested days for ${r.member}.`);
-               this.data.addHistory('check', 'Concurrent days approved', `${r.member} — ${r.daysRequested} days approved`);
-             } }]
+        ? [{ label: `Route ${r.daysRequested - r.daysApproved} additional day(s) to formal review`, tone: 'teal',
+             run: () => this.routeForReview(r) }]
         : [],
+    });
+  }
+
+  private routeForReview(r: ConcurrentRow) {
+    const extra = r.daysRequested - r.daysApproved;
+    this.esc.open({
+      title: `Route ${r.member} for Formal Review`,
+      candidates: [{
+        authId: r.facility, member: r.member,
+        detail: `${r.facility} · ${extra} additional day(s) requested beyond ${r.daysApproved} approved`,
+        riskLabel: r.overstayLabel, risk: r.overstayRisk as 'red' | 'amber' | 'green',
+      }],
+      targets: ESCALATE_TARGETS,
+      apply: (_ids, who) => {
+        this.ix.toast(`${r.member} routed to ${who} for formal determination — no days approved from this dashboard.`, 'warn');
+        this.data.addHistory('arrowup', 'Routed for formal review', `${r.member} — ${extra} additional day(s) requested → ${who}`);
+      },
     });
   }
 }

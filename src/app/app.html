@@ -77,18 +77,26 @@
       @case ('cm') { <section class="content"><app-cm-dashboard /></section> }
       @case ('appeals') { <section class="content"><app-appeals-dashboard /></section> }
       @case ('um') {
-        <!-- KPI strip -->
-        <div class="kpi-strip">
-          @for (k of displayKpis(); track k.label; let i = $index) {
-            <div class="kpi clickable" [attr.data-tone]="k.tone" (click)="drill(kpiKeys[i])">
-              <div class="kpi-ic"><z-icon [name]="k.icon" [size]="16" [stroke]="1.8"></z-icon></div>
-              <div class="kpi-body">
-                <div class="kpi-val">{{ k.value }}</div>
-                <div class="kpi-lab">{{ k.label }}</div>
-              </div>
-            </div>
-          }
+        <!-- KPI strip (collapsible for screen real estate) -->
+        <div class="kpi-toggle-row">
+          <button class="kpi-toggle" (click)="kpiCollapsed.set(!kpiCollapsed())">
+            <z-icon name="chevron" [size]="12" [stroke]="2.5" [class]="'chev ' + (kpiCollapsed() ? '' : 'up')"></z-icon>
+            {{ kpiCollapsed() ? 'Show KPIs' : 'Hide KPIs' }}
+          </button>
         </div>
+        @if (!kpiCollapsed()) {
+          <div class="kpi-strip">
+            @for (k of displayKpis(); track k.label; let i = $index) {
+              <div class="kpi clickable" [attr.data-tone]="k.tone" (click)="drill(kpiKeys[i])">
+                <div class="kpi-ic"><z-icon [name]="k.icon" [size]="16" [stroke]="1.8"></z-icon></div>
+                <div class="kpi-body">
+                  <div class="kpi-val">{{ k.value }}</div>
+                  <div class="kpi-lab">{{ k.label }}</div>
+                </div>
+              </div>
+            }
+          </div>
+        }
 
         <!-- Tab bar -->
         <nav class="tabbar">

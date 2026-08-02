@@ -118,32 +118,38 @@
 
 /* ---------- lookback period selector ---------- */
 .period-bar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 0 28px 10px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 28px 6px;
 }
-.period-lab { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;
+.period-lab { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase;
   color: var(--gray-500); font-weight: 700; }
-.period-lab.lob-lab { margin-left: 8px; }
-.period-seg { display: inline-flex; border: 1px solid var(--gray-300); border-radius: 8px; overflow: hidden; }
-.period-seg button { border: none; background: #fff; padding: 6px 14px; font-size: 12px;
+.period-lab.lob-lab { margin-left: 6px; }
+.period-seg { display: inline-flex; border: 1px solid var(--gray-300); border-radius: 7px; overflow: hidden; }
+.period-seg button { border: none; background: #fff; padding: 4px 10px; font-size: 11px;
   font-weight: 600; color: var(--gray-500); cursor: pointer; border-right: 1px solid var(--gray-200); }
 .period-seg button:last-child { border-right: none; }
 .period-seg button.on { background: var(--teal-700); color: #fff; }
 
 /* ---------- KPI strip ---------- */
+.kpi-toggle-row { display:flex; justify-content:flex-end; padding: 0 28px 4px; }
+.kpi-toggle { border:none; background:none; cursor:pointer; display:flex; align-items:center; gap:4px;
+  font-size:11px; font-weight:600; color:var(--gray-500); padding:2px 4px; }
+.kpi-toggle:hover { color: var(--teal-700); }
+.kpi-toggle .chev { transition: transform .15s; }
+.kpi-toggle .chev.up { transform: rotate(180deg); }
 .kpi-strip {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 12px;
-  padding: 0 28px 14px;
+  gap: 10px;
+  padding: 0 28px 12px;
 }
 .kpi {
   background: #fff;
   border: 1px solid var(--border);
   border-left: 3px solid var(--gray-300);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  display: flex; align-items: center; gap: 8px;
   box-shadow: var(--shadow);
 }
 .kpi.clickable { cursor: pointer; transition: box-shadow .12s, transform .12s; }

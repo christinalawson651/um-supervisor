@@ -34,7 +34,7 @@ import { ReferralsTab } from './tabs/referrals-tab';
 
 const TABS = [
   'Workforce & Queue Management',
-  'TAT & SLA Compliance',
+  'TAT Compliance',
   'Clinical Decision Insights',
   'Risk & Escalation Panel',
   'Concurrent Review Monitoring',
@@ -94,6 +94,7 @@ export class App {
   readonly visibleTabs = computed(() => MODULES.filter((m) => this.nav.visibleModules().includes(m.id)));
   readonly selected = signal(0);
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
+  readonly kpiCollapsed = signal(false); // collapsible for screen real estate
 
   // ---- lookback period on the KPI tiles (shared across modules) ----
   private lookback = inject(Lookback);
@@ -171,7 +172,7 @@ export class App {
     switch (this.selected()) {
       case 0: name = 'workforce-nurses'; columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
         rows = d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]); break;
-      case 1: name = 'tat-sla'; columns = ['Metric', 'Value'];
+      case 1: name = 'tat-compliance'; columns = ['Metric', 'Value'];
         rows = [...d.tatBuckets.map((b) => [b.label, b.count] as (string | number)[]), ...d.tatStats.map((s) => [s.label, s.value] as (string | number)[])]; break;
       case 2: name = 'clinical-decisions'; columns = ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'];
         rows = d.decisionRows.map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]); break;

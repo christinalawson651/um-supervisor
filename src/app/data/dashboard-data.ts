@@ -46,7 +46,7 @@ export class DashboardData {
     { icon: 'alert',    value: '12',    label: 'Authorizations at Risk', tone: 'amber' },
     { icon: 'clock',    value: '2.4h',  label: 'Avg Handle Time',   tone: 'teal' },
     { icon: 'inbox',    value: '8',     label: 'Unassigned Queue',  tone: 'amber' },
-    { icon: 'xcircle',  value: '3',     label: 'Breached SLAs',     tone: 'red' },
+    { icon: 'xcircle',  value: '3',     label: 'Breached TAT',      tone: 'red' },
     { icon: 'users',    value: '87%',   label: 'Team Utilization',  tone: 'green' },
   ]);
 
@@ -336,17 +336,6 @@ export class DashboardData {
   resolveRiskCase(authId: string) {
     this.riskCases.update((r) => r.filter((x) => x.authId !== authId));
     this.setKpi('Authorizations at Risk', (n) => Math.max(0, n - 1));
-  }
-
-  /** Approve the requested days for a concurrent-review case (clears overstay risk). */
-  approveConcurrentDays(member: string) {
-    this.concurrentRows.update((rows) =>
-      rows.map((r) =>
-        r.member === member
-          ? { ...r, daysApproved: r.daysRequested, overstayRisk: 'green', overstayLabel: 'Low', losFlag: false }
-          : r,
-      ),
-    );
   }
 
   resolveAuditFlag(id: string) {

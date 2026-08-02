@@ -14,7 +14,7 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
   imports: [Ring],
   template: `
     <div class="tab-head">
-      <h2>TAT &amp; SLA Compliance</h2>
+      <h2>TAT Compliance</h2>
       <span class="section-note">Strong compliance — your team is meeting targets</span>
     </div>
 
@@ -42,19 +42,19 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
     <div class="panel panel-pad">
       <div class="tat-grid">
         <div class="left">
-          <div class="donut">
+          <div class="donut clk" (click)="drillAllDecided()">
             <z-ring [value]="head().compliance" [size]="120" [thickness]="12" tone="teal"></z-ring>
             <div class="donut-lab">TAT Compliance</div>
           </div>
           <div class="rows">
             @for (b of buckets(); track b.label) {
-              <div class="row" [attr.data-tone]="b.tone"><span><i></i>{{ b.label }}</span><b>{{ b.count }}</b></div>
+              <div class="row clk" [attr.data-tone]="b.tone" (click)="drillBucket(b.label)"><span><i></i>{{ b.label }}</span><b>{{ b.count }}</b></div>
             }
           </div>
         </div>
         <div class="stats">
           @for (s of stats(); track s.label) {
-            <div class="stat-box"><div class="val">{{ s.value }}</div><div class="lab">{{ s.label }}</div></div>
+            <div class="stat-box clk" (click)="drillStat(s.label)"><div class="val">{{ s.value }}</div><div class="lab">{{ s.label }}</div></div>
           }
         </div>
       </div>
@@ -74,11 +74,11 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
           <div class="stat-box clk" [class.warn]="concurrent().overstay > 0" (click)="drillOverstay()">
             <div class="val">{{ concurrent().overstay }}</div><div class="lab">Overstay Risk</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box clk" (click)="drillAllConcurrent()">
             <div class="val">{{ concurrent().daysApproved }}<span class="of">/{{ concurrent().daysRequested }}</span></div>
             <div class="lab">Days Approved / Requested</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box clk" (click)="drillAllConcurrent()">
             <div class="val">{{ concurrent().avgLos }}d<span class="of">/{{ concurrent().avgExp }}d</span></div>
             <div class="lab">Avg LOS / Expected</div>
           </div>
@@ -209,6 +209,8 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
     .stats { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .pt { font-size:14px; font-weight:600; color:var(--ink); margin:0; }
     .clk { cursor:pointer; }
+    .row.clk:hover { filter:brightness(0.97); }
+    .donut.clk:hover { opacity:0.85; }
     .comp { white-space:nowrap; } .comp .rate-pill { margin-left:10px; }
     .empty-row { text-align:center; color:var(--gray-500); padding:20px; font-size:13px; }
 
@@ -382,6 +384,86 @@ export class TatTab {
   });
 
   // ---- drills ----
+
+  /** The headline donut — every decision currently in view (respects Auth Type/Program/LOB filters). */
+  drillAllDecided() {
+    const cases = this.fDecided();
+    this.ix.openExplorer({
+      title: 'TAT Compliance — All Decisions in View',
+      context: `${cases.length} decisions · ${this.head().compliance}% on track`,
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'TAT Status', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), tatStatus(c), `$${c.cost.toLocaleString()}`]),
+      exportName: 'tat-all-decided_2026-07-17',
+      memberColumn: 1,
+    });
+  }
+
+  /** On Track / At Risk / Breached bucket rows. */
+  drillBucket(label: string) {
+    const tag = label === 'On Track' ? 'onTrack' : label === 'At Risk' ? 'atRisk' : 'breached';
+    const cases = this.fDecided().filter((c) => c.tags.includes(tag));
+    this.ix.openExplorer({
+      title: `TAT — ${label}`,
+      context: `${cases.length} decisions · ${label}`,
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'TAT Status', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), tatStatus(c), `$${c.cost.toLocaleString()}`]),
+      exportName: `tat-${label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      memberColumn: 1,
+    });
+  }
+
+  /** Expedited / Standard / Paused / Avg Turnaround stat tiles. */
+  drillStat(label: string) {
+    if (label === 'Paused') {
+      const cases = this.pending.filter((c) => this.passes(c) && c.tags.includes('paused'));
+      this.ix.openExplorer({
+        title: 'Paused Authorizations',
+        context: `${cases.length} authorization(s) with the clock stopped, pending RFI response`,
+        columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Status', 'Est. Cost'],
+        rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), c.status, `$${c.cost.toLocaleString()}`]),
+        exportName: 'tat-paused_2026-07-17',
+        memberColumn: 1,
+      });
+      return;
+    }
+    if (label === 'Avg Turnaround') {
+      const cases = [...this.fDecided()].sort((a, b) => b.tatH - a.tatH);
+      this.ix.openExplorer({
+        title: 'Avg Turnaround — Completed Reviews',
+        context: `${this.stats().find((s) => s.label === 'Avg Turnaround')?.value} average across ${cases.length} completed reviews (longest first)`,
+        columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'TAT Status', 'TAT (days)', 'Est. Cost'],
+        rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), tatStatus(c), c.tatH, `$${c.cost.toLocaleString()}`]),
+        exportName: 'tat-avg-turnaround_2026-07-17',
+        memberColumn: 1,
+      });
+      return;
+    }
+    // Expedited / Standard
+    const tag = label === 'Expedited' ? 'expedited' : 'standard';
+    const cases = this.fDecided().filter((c) => c.tags.includes(tag));
+    this.ix.openExplorer({
+      title: `${label} Reviews`,
+      context: `${cases.length} ${label.toLowerCase()} review(s) in view`,
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'TAT Status', 'TAT (days)', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, tatStatus(c), c.tatH, `$${c.cost.toLocaleString()}`]),
+      exportName: `tat-${label.toLowerCase()}_2026-07-17`,
+      memberColumn: 1,
+    });
+  }
+
+  /** All 5 concurrent-review rows (not just overstay risk) — backs the Days/LOS aggregate tiles. */
+  drillAllConcurrent() {
+    const rows = this.data.concurrentRows();
+    this.ix.openExplorer({
+      title: 'Concurrent Review — All Active Reviews',
+      context: `${rows.length} inpatient continued-stay reviews`,
+      columns: ['Member', 'Facility', 'LOS', 'Expected', 'Days Approved', 'Days Requested', 'Overstay Risk'],
+      rows: rows.map((r) => [r.member, r.facility, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]),
+      exportName: 'concurrent-all_2026-07-17',
+      memberColumn: 0,
+    });
+  }
+
   drill(dim: 'lob' | 'program', value: string) {
     const keyFn = dim === 'lob' ? (c: CaseRec) => lobOf(c.authId) : (c: CaseRec) => programOf(c);
     const cases = this.decided.filter((c) => this.passes(c, dim === 'lob' ? { lob: true } : { program: true }) && keyFn(c) === value);
