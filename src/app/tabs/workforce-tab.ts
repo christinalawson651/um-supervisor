@@ -8,6 +8,7 @@ import { Balance } from '../shared/balance';
 import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL } from '../data/case-pool';
 import { urgencyOf, lobOf, LOBS } from '../data/case-fields';
+import { COLUMNS, toRow } from '../shared/metrics';
 import { Icon } from '../shared/icon';
 
 interface DisplayQueue extends QueueCard { baseName: string; lob?: string; }
@@ -340,27 +341,16 @@ export class WorkforceTab {
     return this.sortKey() === key ? (this.sortDir() === 1 ? ' ▲' : ' ▼') : '';
   }
 
+  /** Same Case Explorer used by every graph/KPI drill — consistent look, not a separate summary drawer. */
   openNurse(n: NurseRow) {
-    this.ix.openDrawer({
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name);
+    this.ix.openExplorer({
       title: n.name,
-      subtitle: 'Utilization Management · Nurse Reviewer',
-      badge: {
-        text: `${n.utilization}% utilized`,
-        tone: n.utilization >= 90 ? 'red' : n.utilization < 80 ? 'green' : 'amber',
-      },
-      fields: [
-        { label: 'Active Authorizations', value: String(n.active) },
-        { label: 'Pending', value: String(n.pending) },
-        { label: 'Completed (MTD)', value: String(n.completed) },
-        { label: 'Avg TAT', value: n.avgTat },
-        { label: 'Utilization', value: `${n.utilization}%`,
-          tone: n.utilization >= 90 ? 'red' : n.utilization < 80 ? 'green' : 'amber' },
-      ],
-      note: n.utilization >= 90
-        ? 'At or above capacity — consider reassigning authorizations to prevent TAT breaches.'
-        : 'Operating within healthy capacity.',
-      actions: [{ label: `Reassign an authorization to ${n.name.split(',')[0]}`, tone: 'teal',
-        run: () => { this.data.reassignTo(n.name); this.ix.toast(`Authorization reassigned to ${n.name}.`); } }],
+      context: `${cases.length} pending authorization(s) assigned · ${n.utilization}% utilized`,
+      columns: COLUMNS,
+      rows: cases.map(toRow),
+      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}_2026-07-17`,
+      memberColumn: 1,
     });
   }
 

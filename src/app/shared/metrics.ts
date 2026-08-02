@@ -9,8 +9,8 @@ import { downloadCsv } from './export-csv';
 
 // Rich, full-width column set for the Case Explorer — every drill uses the same shape
 // (Provider + Urgency included) so the explorer looks and behaves the same everywhere.
-const COLUMNS = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Status', 'Decision', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'];
-function toRow(c: CaseRec): (string | number)[] {
+export const COLUMNS = ['Auth ID', 'Member', 'Procedure', 'Service Type', 'Status', 'Decision', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'];
+export function toRow(c: CaseRec): (string | number)[] {
   return [c.authId, c.member, c.procedure, c.serviceType, c.status, c.decision, c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`];
 }
 
