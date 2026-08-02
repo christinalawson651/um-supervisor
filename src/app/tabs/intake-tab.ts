@@ -71,7 +71,7 @@ export class IntakeTab {
         { label: 'Submissions Missing This Field', value: String(f.count) },
         { label: '% of All Submissions', value: `${f.pct}%` },
       ],
-      note: 'Aggregated across the month\'s intake volume — see the current RFI Pending queue for the specific open cases.',
+      note: 'Aggregated across the month\'s intake volume — see the current RFI Pending queue for the specific open authorizations.',
       actions: [{ label: 'View RFI Pending queue', tone: 'teal', run: () => this.metrics.open('intake.rfi') }],
     });
   }

@@ -13,6 +13,13 @@ import { Interaction, DrawerAction } from './interaction';
         <div class="modal" (click)="$event.stopPropagation()">
           <h3>{{ c.title }}</h3>
           <p>{{ c.body }}</p>
+          @if (c.breakdown?.length) {
+            <ul class="breakdown">
+              @for (row of c.breakdown; track row.target) {
+                <li><span class="bcount">{{ row.count }}</span> {{ row.label }} <span class="barrow">→</span> <span class="btarget">{{ row.target }}</span></li>
+              }
+            </ul>
+          }
           <div class="actions">
             <button class="btn outline" (click)="ix.resolve(false)">Cancel</button>
             <button class="btn primary" [attr.data-tone]="c.tone"
@@ -145,6 +152,13 @@ import { Interaction, DrawerAction } from './interaction';
       padding: 22px 24px; box-shadow: 0 20px 40px rgba(0,0,0,.2); }
     .modal h3 { margin: 0 0 8px; font-size: 16px; color: var(--ink); }
     .modal p { margin: 0 0 20px; font-size: 13px; color: var(--gray-500); line-height: 1.55; }
+    .breakdown { list-style:none; margin:-8px 0 20px; padding:0; display:flex; flex-direction:column; gap:6px; }
+    .breakdown li { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft);
+      background:var(--gray-50); border-radius:8px; padding:9px 12px; }
+    .bcount { font-weight:700; color:var(--teal-900); background:var(--teal-100); border-radius:6px;
+      padding:1px 8px; font-size:12.5px; min-width:20px; text-align:center; }
+    .barrow { color:var(--gray-400); }
+    .btarget { font-weight:600; color:var(--ink); margin-left:auto; }
     .flabel { display:block; font-size:11px; font-weight:600; color:var(--gray-500);
       text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
     .fselect { width:100%; padding:9px 12px; border:1px solid var(--gray-300); border-radius:8px;

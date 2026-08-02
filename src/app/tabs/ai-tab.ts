@@ -175,11 +175,11 @@ export class AiTab {
       confirmLabel: r.action,
       tone: r.tone === 'red' ? 'red' : r.tone === 'amber' ? 'amber' : 'teal',
       onConfirm: () => {
-        if (r.action === 'Reassign Case') {
+        if (r.action === 'Reassign Authorization') {
           const move = this.data.reassignBusiest();
           this.data.decrementQueue('Clinical Review');
-          this.ix.toast(move ? `Case reassigned from ${move.from} to ${move.to}.` : 'Case reassigned.');
-          this.data.addHistory('swap', 'AI: case reassigned', move ? `${move.from} → ${move.to}` : r.title);
+          this.ix.toast(move ? `Authorization reassigned from ${move.from} to ${move.to}.` : 'Authorization reassigned.');
+          this.data.addHistory('swap', 'AI: authorization reassigned', move ? `${move.from} → ${move.to}` : r.title);
         } else if (r.action === 'Send RFI') {
           this.data.decrementQueue('RFI Pending');
           this.ix.toast('RFI sent to provider for AUTH-4521.', 'info');

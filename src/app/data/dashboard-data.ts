@@ -1,4 +1,4 @@
-import { Injectable, signal, effect } from '@angular/core';
+import { Injectable, signal, effect, computed } from '@angular/core';
 import {
   Kpi, QueueCard, NurseRow, TatBucket, TatStat, DecisionStat, DecisionRow,
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
@@ -21,10 +21,10 @@ export class DashboardData {
 
   // Mutable collections are signals so the UI reacts to demo actions.
   readonly kpis = signal<Kpi[]>([
-    { icon: 'folder',   value: '247',   label: 'Pending Cases',     tone: 'green' },
+    { icon: 'folder',   value: '247',   label: 'Pending Authorizations', tone: 'green' },
     { icon: 'check',    value: '94.2%', label: 'TAT Compliance',    tone: 'green' },
     { icon: 'bolt',     value: '38%',   label: 'Auto-Approval Rate', tone: 'teal' },
-    { icon: 'alert',    value: '12',    label: 'Cases at Risk',     tone: 'amber' },
+    { icon: 'alert',    value: '12',    label: 'Authorizations at Risk', tone: 'amber' },
     { icon: 'clock',    value: '2.4h',  label: 'Avg Handle Time',   tone: 'teal' },
     { icon: 'inbox',    value: '8',     label: 'Unassigned Queue',  tone: 'amber' },
     { icon: 'xcircle',  value: '3',     label: 'Breached SLAs',     tone: 'red' },
@@ -144,7 +144,7 @@ export class DashboardData {
 
   // ---------- AI / NextGen Intelligence ----------
   readonly aiRecommendations = signal<AiRecommendation[]>([
-    { icon: 'swap',   title: 'Reassign Case AUTH-4587', detail: 'Nurse Andrew Mitchell is at 96% capacity. Reassign to Sarah Mitchell (72%) to prevent TAT breach.', confidence: 94, action: 'Reassign Case', tone: 'red' },
+    { icon: 'swap',   title: 'Reassign Authorization AUTH-4587', detail: 'Nurse Andrew Mitchell is at 96% capacity. Reassign to Sarah Mitchell (72%) to prevent TAT breach.', confidence: 94, action: 'Reassign Authorization', tone: 'red' },
     { icon: 'mail',   title: 'Send RFI for AUTH-4521', detail: 'Clinical justification missing for cardiac bypass request. Provider has 24h response history.', confidence: 89, action: 'Send RFI', tone: 'amber' },
     { icon: 'arrowup', title: 'Escalate AUTH-4498 to MD', detail: 'Liver transplant evaluation exceeds nurse review scope. Dr. Patel available for immediate review.', confidence: 97, action: 'Escalate to MD', tone: 'blue' },
   ]);
@@ -178,6 +178,9 @@ export class DashboardData {
 
   // ---------- activity / reassignment history ----------
   readonly history = signal<HistoryEntry[]>([]);
+
+  /** Just the assignment-moving entries (reassign + balance) — the full activity log also includes escalations, etc. */
+  readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance'));
 
   addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson') {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -313,7 +316,7 @@ export class DashboardData {
 
   resolveRiskCase(authId: string) {
     this.riskCases.update((r) => r.filter((x) => x.authId !== authId));
-    this.setKpi('Cases at Risk', (n) => Math.max(0, n - 1));
+    this.setKpi('Authorizations at Risk', (n) => Math.max(0, n - 1));
   }
 
   /** Approve the requested days for a concurrent-review case (clears overstay risk). */

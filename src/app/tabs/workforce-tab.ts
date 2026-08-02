@@ -24,17 +24,18 @@ type QueueSort = 'volume' | 'breach' | 'name';
         <button class="btn primary" (click)="reassign()"><z-icon name="swap" [size]="14"></z-icon> Reassign</button>
         <button class="btn outline" (click)="balance()"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
         <button class="btn outline esc" (click)="escalate()"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
+        <button class="btn outline" (click)="openAssignmentHistory()"><z-icon name="clock" [size]="14"></z-icon> Assignment History</button>
       </div>
     </div>
 
-    <div class="qhint">Bars show <b>case age in queue</b> (time waiting since the request was received). Click a band to see those cases. <b>Breach</b> = past the SLA deadline.</div>
+    <div class="qhint">Bars show <b>authorization age in queue</b> (time waiting since the request was received). Click a band to see those authorizations. <b>Breach</b> = past the SLA deadline.</div>
 
     <div class="qtoolbar">
       <input class="search" type="text" placeholder="Search queues…" [ngModel]="queueSearch()" (ngModelChange)="queueSearch.set($event)" />
       <label class="sortsel">
         <span>Sort</span>
         <select [value]="queueSort()" (change)="queueSort.set($any($event.target).value)">
-          <option value="volume">Most cases</option>
+          <option value="volume">Most authorizations</option>
           <option value="breach">Highest breach %</option>
           <option value="name">Name A–Z</option>
         </select>
@@ -80,6 +81,22 @@ type QueueSort = 'volume' | 'breach' | 'name';
           </div>
           @if (groupBy() === 'nurse') {
             <input class="search" type="text" placeholder="Search nurses…" [ngModel]="search()" (ngModelChange)="search.set($event)" />
+          } @else {
+            <label class="sortsel">
+              <span>Team</span>
+              <select [value]="teamFilter()" (change)="teamFilter.set($any($event.target).value)">
+                <option value="all">All Teams</option>
+                @for (t of teams(); track t.name) { <option [value]="t.name">{{ t.name }}</option> }
+              </select>
+            </label>
+            <label class="sortsel">
+              <span>Sort</span>
+              <select [value]="teamSort()" (change)="teamSort.set($any($event.target).value)">
+                <option value="utilization">Highest utilization</option>
+                <option value="active">Most active</option>
+                <option value="name">Name A–Z</option>
+              </select>
+            </label>
           }
         </div>
       </div>
@@ -88,7 +105,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
         <table class="z-table">
           <thead><tr>
             <th class="sortable" (click)="sortBy('name')">Nurse{{ caret('name') }}</th>
-            <th class="sortable" (click)="sortBy('active')">Active Cases{{ caret('active') }}</th>
+            <th class="sortable" (click)="sortBy('active')">Active Authorizations{{ caret('active') }}</th>
             <th class="sortable" (click)="sortBy('pending')">Pending{{ caret('pending') }}</th>
             <th class="sortable" (click)="sortBy('completed')">Completed (MTD){{ caret('completed') }}</th>
             <th class="sortable" (click)="sortBy('avgTat')">Avg TAT{{ caret('avgTat') }}</th>
@@ -112,7 +129,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
         <table class="z-table">
           <thead><tr><th>Team / Nurse</th><th>Active</th><th>Pending</th><th>Completed (MTD)</th><th>Avg TAT</th><th>Utilization</th><th>Actions</th></tr></thead>
           <tbody>
-            @for (t of teams(); track t.name) {
+            @for (t of filteredTeams(); track t.name) {
               <tr class="team-row" (click)="toggleTeam(t.name)">
                 <td class="strong"><span class="chev" [class.open]="expanded().has(t.name)">▸</span> {{ t.name }} <span class="tcount">{{ t.nurses.length }} nurses</span></td>
                 <td class="num">{{ t.active }}</td><td class="num">{{ t.pending }}</td>
@@ -131,6 +148,8 @@ type QueueSort = 'volume' | 'breach' | 'name';
                   </tr>
                 }
               }
+            } @empty {
+              <tr><td colspan="7" class="empty">No teams match the current filter.</td></tr>
             }
           </tbody>
         </table>
@@ -265,17 +284,31 @@ export class WorkforceTab {
     });
   });
   toggleTeam(name: string) { this.expanded.update((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
+
+  // ---- team filter + sort dropdowns ----
+  readonly teamFilter = signal('all');
+  readonly teamSort = signal<'utilization' | 'active' | 'name'>('utilization');
+  readonly filteredTeams = computed(() => {
+    let list = this.teams();
+    if (this.teamFilter() !== 'all') list = list.filter((t) => t.name === this.teamFilter());
+    const s = this.teamSort();
+    return [...list].sort((a, b) =>
+      s === 'name' ? a.name.localeCompare(b.name)
+      : s === 'active' ? b.active - a.active
+      : b.utilization - a.utilization);
+  });
+
   balanceTeam(t: { name: string; nurses: NurseRow[] }) {
     const from = t.nurses.reduce((a, b) => (b.utilization > a.utilization ? b : a));
     const to = t.nurses.reduce((a, b) => (b.utilization < a.utilization ? b : a));
     if (from.name === to.name) { this.ix.toast(`${t.name} is already balanced.`); return; }
     this.ix.ask({
       title: `Balance ${t.name}`,
-      body: `Move one case from ${from.name} (${from.utilization}% utilized) to ${to.name} (${to.utilization}% utilized)?`,
+      body: `Move one authorization from ${from.name} (${from.utilization}% utilized) to ${to.name} (${to.utilization}% utilized)?`,
       confirmLabel: 'Balance', tone: 'teal',
       onConfirm: () => {
         this.data.moveOneCase(from.name, to.name);
-        this.ix.toast(`Balanced ${t.name}: moved a case from ${from.name} to ${to.name}.`);
+        this.ix.toast(`Balanced ${t.name}: moved an authorization from ${from.name} to ${to.name}.`);
         this.data.addHistory('balance', 'Team balanced', `${t.name}: ${from.name} → ${to.name}`);
       },
     });
@@ -316,7 +349,7 @@ export class WorkforceTab {
         tone: n.utilization >= 90 ? 'red' : n.utilization < 80 ? 'green' : 'amber',
       },
       fields: [
-        { label: 'Active Cases', value: String(n.active) },
+        { label: 'Active Authorizations', value: String(n.active) },
         { label: 'Pending', value: String(n.pending) },
         { label: 'Completed (MTD)', value: String(n.completed) },
         { label: 'Avg TAT', value: n.avgTat },
@@ -324,10 +357,10 @@ export class WorkforceTab {
           tone: n.utilization >= 90 ? 'red' : n.utilization < 80 ? 'green' : 'amber' },
       ],
       note: n.utilization >= 90
-        ? 'At or above capacity — consider reassigning cases to prevent TAT breaches.'
+        ? 'At or above capacity — consider reassigning authorizations to prevent TAT breaches.'
         : 'Operating within healthy capacity.',
-      actions: [{ label: `Reassign a case to ${n.name.split(',')[0]}`, tone: 'teal',
-        run: () => { this.data.reassignTo(n.name); this.ix.toast(`Case reassigned to ${n.name}.`); } }],
+      actions: [{ label: `Reassign an authorization to ${n.name.split(',')[0]}`, tone: 'teal',
+        run: () => { this.data.reassignTo(n.name); this.ix.toast(`Authorization reassigned to ${n.name}.`); } }],
     });
   }
 
@@ -341,15 +374,15 @@ export class WorkforceTab {
       }));
     const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
     this.rx.open({
-      title: 'Reassign cases',
+      title: 'Reassign authorizations',
       cases, nurses,
       apply: (ids, target) => {
         ids.forEach((id) => {
           const cs = cases.find((x) => x.authId === id);
           this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);
         });
-        this.ix.toast(`${ids.length} case(s) reassigned to ${target}.`);
-        this.data.addHistory('swap', 'Cases reassigned', `${ids.length} case(s) → ${target}`);
+        this.ix.toast(`${ids.length} authorization(s) reassigned to ${target}.`);
+        this.data.addHistory('swap', 'Authorizations reassigned', `${ids.length} authorization(s) → ${target}`);
       },
     });
   }
@@ -373,7 +406,7 @@ export class WorkforceTab {
     const scopeLabel = lob ? `${queue} · ${lob}` : queue;
     this.ix.openExplorer({
       title: `${scopeLabel} — ${labels[band]}`,
-      context: `${rows.length} case(s) in ${scopeLabel} · ${labels[band]}`,
+      context: `${rows.length} authorization(s) in ${scopeLabel} · ${labels[band]}`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue', 'Owner'],
       rows, exportName: `${scopeLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
     });
@@ -387,27 +420,38 @@ export class WorkforceTab {
       risk: r.risk as 'red' | 'amber' | 'green',
     }));
     this.esc.open({
-      title: 'Escalate cases',
+      title: 'Escalate authorizations',
       candidates,
       targets: ESCALATE_TARGETS,
       apply: (ids, who) => {
         ids.forEach((id) => this.data.resolveRiskCase(id));
-        this.ix.toast(`${ids.length} case(s) escalated to ${who}.`, 'warn');
-        this.data.addHistory('arrowup', 'Cases escalated', `${ids.length} case(s) → ${who}`);
+        this.ix.toast(`${ids.length} authorization(s) escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Authorizations escalated', `${ids.length} authorization(s) → ${who}`);
       },
     });
   }
 
   reassignTo(n: NurseRow) {
     this.ix.ask({
-      title: `Reassign a case to ${n.name}`,
-      body: `Move one case from the busiest nurse to ${n.name} (currently ${n.utilization}% utilized)?`,
+      title: `Reassign an authorization to ${n.name}`,
+      body: `Move one authorization from the busiest nurse to ${n.name} (currently ${n.utilization}% utilized)?`,
       confirmLabel: 'Reassign', tone: 'teal',
       onConfirm: () => {
         this.data.reassignTo(n.name);
-        this.ix.toast(`Case reassigned to ${n.name}.`);
-        this.data.addHistory('swap', 'Case reassigned', `Reassigned to ${n.name}`);
+        this.ix.toast(`Authorization reassigned to ${n.name}.`);
+        this.data.addHistory('swap', 'Authorization reassigned', `Reassigned to ${n.name}`);
       },
+    });
+  }
+
+  /** All reassign/balance activity this session — same view as the Case Explorer's, scoped separately here for convenience. */
+  openAssignmentHistory() {
+    const rows = this.data.assignmentHistory();
+    this.ix.openDrawer({
+      title: 'Assignment History',
+      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'} & balance event${rows.length === 1 ? '' : 's'} this session`,
+      table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
+      note: rows.length ? undefined : 'No authorizations have been reassigned or balanced yet this session.',
     });
   }
 }

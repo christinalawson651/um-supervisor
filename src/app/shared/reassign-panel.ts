@@ -12,15 +12,15 @@ import { Interaction } from './interaction';
       <div class="scrim" (click)="rx.close()">
         <div class="panel" (click)="$event.stopPropagation()">
           <div class="ph">
-            <div><h3>{{ c.title }}</h3><div class="psub">Select cases, review the recommendation, and reassign</div></div>
+            <div><h3>{{ c.title }}</h3><div class="psub">Select authorizations, review the recommendation, and reassign</div></div>
             <button class="x" (click)="rx.close()">×</button>
           </div>
 
           <div class="body">
-            <!-- LEFT: cases -->
+            <!-- LEFT: authorizations -->
             <div class="col cases">
               <div class="col-head">
-                <span class="ct">Cases <span class="cn">{{ selected().size }}/{{ filtered().length }}</span></span>
+                <span class="ct">Authorizations <span class="cn">{{ selected().size }}/{{ filtered().length }}</span></span>
                 <input class="search" type="text" placeholder="Search auth or member…" [ngModel]="q()" (ngModelChange)="q.set($event)" />
               </div>
               <div class="qpills">
@@ -35,7 +35,7 @@ import { Interaction } from './interaction';
                     <input type="checkbox" [checked]="selected().has(cs.authId)" (change)="toggle(cs.authId)" />
                     <div class="cmain"><b>{{ cs.authId }}</b> · {{ cs.member }}<div class="cmeta">{{ cs.queue }} · {{ cs.priority }} · {{ cs.owner }}</div></div>
                   </label>
-                } @empty { <div class="empty">No cases match.</div> }
+                } @empty { <div class="empty">No authorizations match.</div> }
               </div>
             </div>
 
@@ -65,8 +65,8 @@ import { Interaction } from './interaction';
           </div>
 
           <div class="pf">
-            <span class="fnote">@if (selected().size && target()) { Reassigning <b>{{ selected().size }}</b> case(s) → <b>{{ target() }}</b> }
-              @else { Select at least one case and a target }</span>
+            <span class="fnote">@if (selected().size && target()) { Reassigning <b>{{ selected().size }}</b> authorization(s) → <b>{{ target() }}</b> }
+              @else { Select at least one authorization and a target }</span>
             <span class="spacer"></span>
             <button class="btn outline" (click)="rx.close()">Cancel</button>
             <button class="btn primary" [disabled]="!selected().size || !target()" (click)="apply()">Reassign {{ selected().size || '' }}</button>
@@ -166,8 +166,9 @@ export class ReassignPanel {
       ? `⚠ Overriding the recommendation — ${targetName} is already at ${targetNurse!.utilization}% utilization. `
       : `Overriding the recommendation (★ ${rec!.name}) — assigning to ${targetName} instead. `;
     this.ix.ask({
-      title: `Reassign ${ids.length} case${ids.length > 1 ? 's' : ''}`,
-      body: `${warn}Move ${ids.length} case${ids.length > 1 ? 's' : ''} to ${targetName}?`,
+      title: `Reassign ${ids.length} authorization${ids.length > 1 ? 's' : ''}`,
+      body: warn || 'Move these authorizations to:',
+      breakdown: [{ count: ids.length, label: ids.length === 1 ? 'authorization' : 'authorizations', target: targetName }],
       confirmLabel: 'Reassign', tone: overCapacity ? 'amber' : 'teal',
       onConfirm: () => { c.apply(ids, targetName); this.rx.close(); },
     });

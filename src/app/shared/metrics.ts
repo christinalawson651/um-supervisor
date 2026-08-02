@@ -47,13 +47,13 @@ interface Drill { title: string; ctx: (n: number) => string; pick: () => CaseRec
 
 const DRILLS: Record<string, Drill> = {
   // ---- KPI strip ----
-  'kpi.pending':    { title: 'Pending Cases', ctx: (n) => `${n} cases pending across all queues`, pick: () => pend() },
-  'kpi.tat':        { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk — the cases threatening compliance (search/sort to review; On-Track bucket shows the compliant cases)`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
+  'kpi.pending':    { title: 'Pending Authorizations', ctx: (n) => `${n} authorizations pending across all queues`, pick: () => pend() },
+  'kpi.tat':        { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk — the authorizations threatening compliance (search/sort to review; On-Track bucket shows the compliant authorizations)`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
   'kpi.auto':       { title: 'Auto-Approval Rate', ctx: (n) => `${n} of ${DECIDED_TOTAL} decisions auto-approved by rules (${pct(n, DECIDED_TOTAL)}%)`, pick: () => deci(has('auto')) },
-  'kpi.risk':       { title: 'Cases at Risk', ctx: (n) => `${n} pending cases at risk of a TAT breach`, pick: () => pend(has('atRisk')) },
+  'kpi.risk':       { title: 'Authorizations at Risk', ctx: (n) => `${n} pending authorizations at risk of a TAT breach`, pick: () => pend(has('atRisk')) },
   'kpi.aht':        { title: 'Avg Handle Time', ctx: (n) => `Average handle time 2.4h across ${n} completed reviews (longest first)`, pick: () => byTat(deci()) },
-  'kpi.unassigned': { title: 'Unassigned Queue', ctx: (n) => `${n} pending cases waiting to be assigned`, pick: () => pend(has('unassigned')) },
-  'kpi.breached':   { title: 'Breached SLAs', ctx: (n) => `${n} pending cases past their regulatory deadline`, pick: () => pend(has('breached')) },
+  'kpi.unassigned': { title: 'Unassigned Queue', ctx: (n) => `${n} pending authorizations waiting to be assigned`, pick: () => pend(has('unassigned')) },
+  'kpi.breached':   { title: 'Breached SLAs', ctx: (n) => `${n} pending authorizations past their regulatory deadline`, pick: () => pend(has('breached')) },
   'kpi.util':       { title: 'Team Utilization', ctx: () => `Team utilization 87% (average across 6 nurses)`, pick: () => [] },
 
   // ---- Clinical Decision Insights ----
@@ -70,9 +70,9 @@ const DRILLS: Record<string, Drill> = {
   'tat.breached':   { title: 'Breached', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews breached`, pick: () => deci(has('breached')) },
   'tat.expedited':  { title: 'Expedited Reviews', ctx: (n) => `${n} expedited (72-hour) reviews`, pick: () => deci(has('expedited')) },
   'tat.standard':   { title: 'Standard Reviews', ctx: (n) => `${n} standard (14-day) reviews`, pick: () => deci(has('standard')) },
-  'tat.paused':     { title: 'Paused Cases', ctx: (n) => `${n} cases paused (clock stopped pending RFI)`, pick: () => pend(has('paused')) },
+  'tat.paused':     { title: 'Paused Authorizations', ctx: (n) => `${n} authorizations paused (clock stopped pending RFI)`, pick: () => pend(has('paused')) },
   'tat.turnaround': { title: 'Avg Turnaround', ctx: (n) => `Average turnaround 1.8 days across ${n} completed reviews`, pick: () => byTat(deci()) },
-  'tat.compliance': { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk — the cases threatening compliance (the On-Track bucket lists the compliant cases)`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
+  'tat.compliance': { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk — the authorizations threatening compliance (the On-Track bucket lists the compliant authorizations)`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
 
   // ---- Intake & Documentation ----
   'intake.complete': { title: 'Complete Submissions', ctx: (n) => `${n} of ${PENDING_TOTAL} submissions complete (${pct(n, PENDING_TOTAL)}%)`, pick: () => pend((c) => !c.tags.includes('incompleteDoc')) },
@@ -87,20 +87,20 @@ const DRILLS: Record<string, Drill> = {
   // ---- Financial ----
   'fin.pending':  { title: 'Estimated Pending Cost', ctx: (n) => `$4.3M estimated cost across ${n} pending authorizations (highest first)`, pick: () => byCost(pend()) },
   'fin.avoided':  { title: 'Cost Avoided (MTD)', ctx: (n) => `$1.8M avoided across ${n} denied & partial decisions`, pick: () => byCost(deci((c) => c.decision === 'Denied' || c.decision === 'Partial')) },
-  'fin.los':      { title: 'LOS Variance', ctx: (n) => `+1.3 days average LOS variance across ${n} inpatient cases`, pick: () => byCost(CASE_POOL.filter((c) => c.serviceType === 'Inpatient')) },
-  'fin.highdollar': { title: 'High-Dollar Exposure (>$50k)', ctx: (n) => `${n} open high-dollar cases driving cost exposure (highest first)`, pick: () => byCost(CASE_POOL.filter((c) => c.cost >= 50000)) },
+  'fin.los':      { title: 'LOS Variance', ctx: (n) => `+1.3 days average LOS variance across ${n} inpatient authorizations`, pick: () => byCost(CASE_POOL.filter((c) => c.serviceType === 'Inpatient')) },
+  'fin.highdollar': { title: 'High-Dollar Exposure (>$50k)', ctx: (n) => `${n} open high-dollar authorizations driving cost exposure (highest first)`, pick: () => byCost(CASE_POOL.filter((c) => c.cost >= 50000)) },
 
   // ---- Provider ----
   'prov.oon':     { title: 'Out-of-Network Requests', ctx: (n) => `${n} out-of-network requests under review`, pick: () => pend(has('oon')) },
 
   // ---- AI / NextGen ----
-  'ai.denial':    { title: 'Denial Likelihood', ctx: (n) => `23% predicted denial likelihood — ${n} open cases with elevated risk`, pick: () => pend(has('mdReview')) },
-  'ai.appeal':    { title: 'Appeal Likelihood', ctx: (n) => `15% predicted appeal likelihood — ${n} decided cases`, pick: () => deci((c) => c.decision === 'Denied' || c.decision === 'Partial') },
-  'ai.tatrisk':   { title: 'TAT Breach Risk', ctx: (n) => `8% predicted TAT-breach risk — ${n} open cases`, pick: () => pend(has('atRisk')) },
+  'ai.denial':    { title: 'Denial Likelihood', ctx: (n) => `23% predicted denial likelihood — ${n} open authorizations with elevated risk`, pick: () => pend(has('mdReview')) },
+  'ai.appeal':    { title: 'Appeal Likelihood', ctx: (n) => `15% predicted appeal likelihood — ${n} decided authorizations`, pick: () => deci((c) => c.decision === 'Denied' || c.decision === 'Partial') },
+  'ai.tatrisk':   { title: 'TAT Breach Risk', ctx: (n) => `8% predicted TAT-breach risk — ${n} open authorizations`, pick: () => pend(has('atRisk')) },
   'ai.auto':      { title: 'Automation Rate', ctx: (n) => `${n} of ${DECIDED_TOTAL} decisions handled by automation (${pct(n, DECIDED_TOTAL)}%)`, pick: () => deci(has('auto')) },
-  'ai.confHigh':  { title: 'High Confidence (>90%)', ctx: (n) => `72% of AI recommendations high confidence — ${n} auto-eligible cases`, pick: () => deci(has('auto')) },
-  'ai.confMed':   { title: 'Medium Confidence (70-90%)', ctx: (n) => `21% of AI recommendations medium confidence — ${n} cases`, pick: () => deci(has('atRisk')) },
-  'ai.confLow':   { title: 'Low Confidence (<70%)', ctx: (n) => `7% of AI recommendations low confidence — ${n} cases`, pick: () => deci(has('mdReview')) },
+  'ai.confHigh':  { title: 'High Confidence (>90%)', ctx: (n) => `72% of AI recommendations high confidence — ${n} auto-eligible authorizations`, pick: () => deci(has('auto')) },
+  'ai.confMed':   { title: 'Medium Confidence (70-90%)', ctx: (n) => `21% of AI recommendations medium confidence — ${n} authorizations`, pick: () => deci(has('atRisk')) },
+  'ai.confLow':   { title: 'Low Confidence (<70%)', ctx: (n) => `7% of AI recommendations low confidence — ${n} authorizations`, pick: () => deci(has('mdReview')) },
 };
 
 @Injectable({ providedIn: 'root' })
@@ -120,7 +120,7 @@ export class Metrics {
   /** Context line — honest about the LOB scope instead of reusing a fixed-denominator % once filtered. */
   private ctxFor(d: Drill, cases: CaseRec[]): string {
     const lob = this.lobFilter.value();
-    return lob === 'all' ? d.ctx(cases.length) : `${cases.length} case(s) · filtered to ${lob}`;
+    return lob === 'all' ? d.ctx(cases.length) : `${cases.length} authorization(s) · filtered to ${lob}`;
   }
 
   open(key: string) {
@@ -129,7 +129,7 @@ export class Metrics {
 
     if (key === 'kpi.util') {
       const nurses = this.data.nurses();
-      const columns = ['Nurse', 'Active Cases', 'Pending', 'Completed (MTD)', 'Avg TAT', 'Utilization'];
+      const columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed (MTD)', 'Avg TAT', 'Utilization'];
       const rows = nurses.map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, `${n.utilization}%`]);
       this.ix.openExplorer({ title: d.title, context: d.ctx(nurses.length), columns, rows, exportName: 'team-utilization_2026-07-17' });
       return;

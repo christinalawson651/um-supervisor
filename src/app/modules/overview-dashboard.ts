@@ -120,7 +120,7 @@ const KEY = 'zyter-exec-widgets-v1';
                   <button class="hero click" [attr.data-tone]="h.tone" (click)="metrics.open(h.key)">
                     <div class="h-val">{{ h.value }}</div><div class="h-lab">{{ h.label }}</div>
                     <div class="h-delta" [attr.data-dir]="h.dir">{{ h.delta }}</div>
-                    <div class="h-drill">View cases →</div>
+                    <div class="h-drill">View authorizations →</div>
                   </button>
                 }
               </div>
@@ -298,7 +298,7 @@ export class OverviewDashboard {
   readonly heroes = [
     { value: '$1.8M', label: 'Cost Avoided (MTD)', delta: '▲ 12% vs last month', dir: 'up', tone: 'green', key: 'fin.avoided' },
     { value: '$4.3M', label: 'Estimated Pending Cost', delta: '▲ 4% vs last month', dir: 'down', tone: 'red', key: 'fin.pending' },
-    { value: '$2.1M', label: 'High-Dollar Exposure (>$50k)', delta: '9 open cases', dir: 'flat', tone: 'amber', key: 'fin.highdollar' },
+    { value: '$2.1M', label: 'High-Dollar Exposure (>$50k)', delta: '9 open authorizations', dir: 'flat', tone: 'amber', key: 'fin.highdollar' },
   ];
   readonly riskDist = [
     { label: 'Low', value: 120, pct: 100, color: '#10b981' },

@@ -41,9 +41,9 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
 
           <!-- toolbar -->
           <div class="toolbar">
-            <input class="search" type="text" placeholder="Search all cases…"
+            <input class="search" type="text" placeholder="Search all authorizations…"
               [ngModel]="q()" (ngModelChange)="setQuery($event)" />
-            <span class="count">{{ filtered().length }} case{{ filtered().length === 1 ? '' : 's' }}</span>
+            <span class="count">{{ filtered().length }} authorization{{ filtered().length === 1 ? '' : 's' }}</span>
 
             @if (availableSorts().length) {
               <label class="sortsel">
@@ -62,6 +62,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
               <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
             }
             <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
+            <button class="btn outline sm" (click)="openAssignmentHistory()">Assignment History</button>
             <button class="btn outline sm" (click)="exportAll(e)">Export all ({{ filtered().length }})</button>
           </div>
 
@@ -94,7 +95,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                   </tr>
                 }
                 @empty {
-                  <tr><td [attr.colspan]="e.columns.length + 1" class="empty">No cases match "{{ q() }}".</td></tr>
+                  <tr><td [attr.colspan]="e.columns.length + 1" class="empty">No authorizations match "{{ q() }}".</td></tr>
                 }
               </tbody>
             </table>
@@ -280,30 +281,30 @@ export class CaseExplorer {
       return {
         authId: id,
         member: row ? String(row[iMember]) : (rec?.member ?? ''),
-        type: row && iService >= 0 ? String(row[iService]) : (rec?.serviceType ?? 'Case'),
-        queue: row && iStatus >= 0 ? String(row[iStatus]) : (rec?.status ?? 'Case'),
+        type: row && iService >= 0 ? String(row[iService]) : (rec?.serviceType ?? 'Authorization'),
+        queue: row && iStatus >= 0 ? String(row[iStatus]) : (rec?.status ?? 'Authorization'),
         priority: row && iUrgency >= 0 ? String(row[iUrgency]) : (rec ? urgencyOf(rec) : 'Standard'),
         owner: rec && rec.nurse !== '—' ? rec.nurse : 'Unassigned',
       };
     });
     const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
     this.rx.open({
-      title: `Reassign ${ids.length} case${ids.length > 1 ? 's' : ''}`,
+      title: `Reassign ${ids.length} authorization${ids.length > 1 ? 's' : ''}`,
       cases, nurses, preselectAll: true,
       apply: (assignedIds, target) => {
         assignedIds.forEach((aid) => {
           const cs = cases.find((x) => x.authId === aid);
           this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);
         });
-        this.ix.toast(`${assignedIds.length} case(s) reassigned to ${target}.`);
-        this.data.addHistory('swap', 'Cases reassigned', `${assignedIds.length} case(s) → ${target}`);
+        this.ix.toast(`${assignedIds.length} authorization(s) reassigned to ${target}.`);
+        this.data.addHistory('swap', 'Authorizations reassigned', `${assignedIds.length} authorization(s) → ${target}`);
         this.selected.set(new Set());
       },
     });
   }
 
   /**
-   * With cases selected, Balance spreads exactly those auths across nurses with capacity
+   * With authorizations selected, Balance spreads exactly those across nurses with capacity
    * (not a single target — that's what Reassign does). With nothing selected, it falls back
    * to the generic team-wide rebalance.
    */
@@ -316,8 +317,8 @@ export class CaseExplorer {
       return [id, rec && rec.nurse !== '—' ? rec.nurse : null] as const;
     }));
 
-    // Simulate: each case goes to whichever nurse has the least utilization *at that point*,
-    // so a run of cases spreads out instead of piling onto a single "most capacity" nurse.
+    // Simulate: each authorization goes to whichever nurse has the least utilization *at that
+    // point*, so a run of them spreads out instead of piling onto a single "most capacity" nurse.
     const sim = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization }));
     const plan = ids.map((id) => {
       sim.sort((a, b) => a.utilization - b.utilization);
@@ -327,16 +328,17 @@ export class CaseExplorer {
     });
     const byTarget = new Map<string, number>();
     plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
-    const summary = [...byTarget.entries()].map(([n, c]) => `${c} → ${n}`).join(', ');
+    const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'authorization' : 'authorizations', target }));
 
     this.ix.ask({
-      title: `Balance ${ids.length} selected case${ids.length > 1 ? 's' : ''}`,
-      body: `Distribute these ${ids.length} case(s) across nurses with the most capacity: ${summary}. Continue?`,
+      title: `Balance ${ids.length} selected authorization${ids.length > 1 ? 's' : ''}`,
+      body: 'Move these authorizations to the nurses with the most capacity:',
+      breakdown,
       confirmLabel: 'Balance', tone: 'teal',
       onConfirm: () => {
         plan.forEach((p) => this.data.moveOneCase(p.from, p.to));
-        this.ix.toast(`${ids.length} case(s) balanced across ${byTarget.size} nurse(s).`);
-        this.data.addHistory('balance', 'Selected cases balanced', `${ids.length} case(s): ${summary}`);
+        this.ix.toast(`${ids.length} authorization(s) balanced across ${byTarget.size} nurse(s).`);
+        this.data.addHistory('balance', 'Selected authorizations balanced', `${ids.length} authorization(s) across ${byTarget.size} nurse(s)`);
         this.selected.set(new Set());
       },
     });
@@ -368,8 +370,8 @@ export class CaseExplorer {
         { label: 'Est. Cost', value: `$${rec.cost.toLocaleString()}` },
       ],
       actions: [
-        { label: 'Reassign this case', tone: 'teal', run: () => this.reassignOne(rec) },
-        { label: 'Escalate this case', tone: 'amber', run: () => this.escalateOne(rec) },
+        { label: 'Reassign this authorization', tone: 'teal', run: () => this.reassignOne(rec) },
+        { label: 'Escalate this authorization', tone: 'amber', run: () => this.escalateOne(rec) },
         { label: 'View Member 360', tone: 'teal', run: () => this.members.openByName(rec.member) },
       ],
     });
@@ -384,7 +386,7 @@ export class CaseExplorer {
       apply: (_ids, target) => {
         this.data.moveOneCase(rec.nurse !== '—' ? rec.nurse : null, target);
         this.ix.toast(`${rec.authId} reassigned to ${target}.`);
-        this.data.addHistory('swap', 'Case reassigned', `${rec.authId} → ${target}`);
+        this.data.addHistory('swap', 'Authorization reassigned', `${rec.authId} → ${target}`);
       },
     });
   }
@@ -399,8 +401,19 @@ export class CaseExplorer {
       targets: ESCALATE_TARGETS,
       apply: (_ids, who) => {
         this.ix.toast(`${rec.authId} escalated to ${who}.`, 'warn');
-        this.data.addHistory('arrowup', 'Case escalated', `${rec.authId} → ${who}`);
+        this.data.addHistory('arrowup', 'Authorization escalated', `${rec.authId} → ${who}`);
       },
+    });
+  }
+
+  /** All reassign/balance activity this session — separate from the fuller Activity History (which also has escalations). */
+  openAssignmentHistory() {
+    const rows = this.data.assignmentHistory();
+    this.ix.openDrawer({
+      title: 'Assignment History',
+      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'} & balance event${rows.length === 1 ? '' : 's'} this session`,
+      table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
+      note: rows.length ? undefined : 'No authorizations have been reassigned or balanced yet this session.',
     });
   }
 }

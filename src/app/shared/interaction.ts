@@ -6,9 +6,13 @@ export interface Toast {
   tone: 'success' | 'info' | 'warn';
 }
 
+export interface ConfirmBreakdownRow { count: number; label: string; target: string; }
 export interface ConfirmRequest {
   title: string;
   body: string;
+  /** Optional clean list of what's about to happen (e.g. "2 authorizations → Sarah Mitchell, RN"),
+   *  rendered instead of cramming counts into the body sentence. */
+  breakdown?: ConfirmBreakdownRow[];
   confirmLabel: string;
   tone: 'teal' | 'red' | 'amber';
   onConfirm: () => void;

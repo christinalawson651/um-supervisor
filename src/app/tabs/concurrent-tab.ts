@@ -9,7 +9,7 @@ import { ConcurrentRow } from '../data/dashboard.models';
   template: `
     <div class="tab-head">
       <h2>Concurrent Review Monitoring</h2>
-      <span class="section-note">Active inpatient cases under review</span>
+      <span class="section-note">Active inpatient authorizations under review</span>
     </div>
 
     <div class="panel">

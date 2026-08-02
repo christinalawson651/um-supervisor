@@ -13,7 +13,7 @@ import { Icon } from '../shared/icon';
   template: `
     <div class="tab-head">
       <h2>Financial / Cost Indicators</h2>
-      <span class="section-note">Cost management and high-dollar case tracking</span>
+      <span class="section-note">Cost management and high-dollar authorization tracking</span>
     </div>
 
     <div class="grid-3">
@@ -27,7 +27,7 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="panel mt-6">
-      <div class="panel-pad"><h3 class="panel-title">High-Dollar Cases</h3></div>
+      <div class="panel-pad"><h3 class="panel-title">High-Dollar Authorizations</h3></div>
       <table class="z-table">
         <thead>
           <tr><th>Auth ID</th><th>Member</th><th>Procedure</th><th>Estimated Cost</th><th>Status</th><th>Next Best Action</th></tr>
@@ -71,7 +71,7 @@ export class FinancialTab {
         { label: 'Next Best Action', value: this.nba(c.status), tone: 'teal' },
         { label: 'Review Track', value: 'High-dollar / MD oversight' },
       ],
-      note: 'High-dollar case flagged for supervisor visibility. Confirm medical necessity documentation before final determination.',
+      note: 'High-dollar authorization flagged for supervisor visibility. Confirm medical necessity documentation before final determination.',
       actions: [
         { label: 'Assign to MD review', tone: 'teal',
           run: () => this.ix.toast(`${c.authId} routed to MD review.`, 'info') },

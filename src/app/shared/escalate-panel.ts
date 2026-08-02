@@ -11,7 +11,7 @@ import { Escalate, EscalateCandidate } from './escalate';
       <div class="scrim" (click)="ex.close()">
         <div class="modal" (click)="$event.stopPropagation()">
           <div class="mh">
-            <div><h3>{{ c.title }}</h3><div class="sub">Designate the cases to escalate, then choose who to assign them to.</div></div>
+            <div><h3>{{ c.title }}</h3><div class="sub">Designate the authorizations to escalate, then choose who to assign them to.</div></div>
             <button class="x" (click)="ex.close()">×</button>
           </div>
 
@@ -32,7 +32,7 @@ import { Escalate, EscalateCandidate } from './escalate';
                 <span class="main"><b>{{ cand.authId }}</b> · {{ cand.member }}<div class="det">{{ cand.detail }}</div></span>
                 <span class="rl" [attr.data-r]="cand.risk">{{ cand.riskLabel }}</span>
               </label>
-            } @empty { <div class="empty">No cases match this filter.</div> }
+            } @empty { <div class="empty">No authorizations match this filter.</div> }
           </div>
 
           <label class="tlab">Escalate to</label>
@@ -41,8 +41,8 @@ import { Escalate, EscalateCandidate } from './escalate';
           </select>
 
           <div class="mf">
-            <span class="note">@if (selected().size) { Escalating <b>{{ selected().size }}</b> case(s) → <b>{{ target() }}</b> }
-              @else { Select at least one case }</span>
+            <span class="note">@if (selected().size) { Escalating <b>{{ selected().size }}</b> authorization(s) → <b>{{ target() }}</b> }
+              @else { Select at least one authorization }</span>
             <span class="spacer"></span>
             <button class="btn outline" (click)="ex.close()">Cancel</button>
             <button class="btn primary" [attr.data-tone]="'amber'" [disabled]="!selected().size || !target()" (click)="apply(c)">Escalate {{ selected().size || '' }}</button>

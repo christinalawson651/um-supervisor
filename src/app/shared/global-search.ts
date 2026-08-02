@@ -7,7 +7,7 @@ import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL } from '../data/case-pool';
 import { Icon } from './icon';
 
-interface Hit { type: 'Member' | 'Case' | 'Provider' | 'Nurse'; label: string; sub: string; member?: string; }
+interface Hit { type: 'Member' | 'Authorization' | 'Case' | 'Provider' | 'Nurse'; label: string; sub: string; member?: string; }
 
 @Component({
   selector: 'app-global-search',
@@ -16,7 +16,7 @@ interface Hit { type: 'Member' | 'Case' | 'Provider' | 'Nurse'; label: string; s
   template: `
     <div class="gs" (focusout)="onBlur($event)">
       <span class="gs-ic"><z-icon name="folder" [size]="14" [stroke]="1.8"></z-icon></span>
-      <input class="gs-in" type="text" placeholder="Search members, cases, providers, nurses…"
+      <input class="gs-in" type="text" placeholder="Search members, authorizations, appeals, providers, nurses…"
         [ngModel]="q()" (ngModelChange)="q.set($event)" (focus)="open.set(true)" />
       @if (open() && q().trim().length >= 2) {
         <div class="gs-drop">
@@ -41,7 +41,8 @@ interface Hit { type: 'Member' | 'Case' | 'Provider' | 'Nurse'; label: string; s
     .gs-hit:hover { background:var(--gray-50); }
     .gs-type { flex:0 0 66px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; padding:2px 0; text-align:center; border-radius:5px; }
     .gs-type[data-t="Member"]{ background:var(--blue-bg); color:var(--blue-fg); }
-    .gs-type[data-t="Case"]{ background:var(--teal-100); color:var(--teal-900); }
+    .gs-type[data-t="Authorization"]{ background:var(--teal-100); color:var(--teal-900); }
+    .gs-type[data-t="Case"]{ background:var(--amber-bg); color:var(--amber-fg); }
     .gs-type[data-t="Provider"]{ background:#ede9fe; color:var(--purple); }
     .gs-type[data-t="Nurse"]{ background:var(--green-bg); color:var(--green-fg); }
     .gs-main { font-size:12.5px; color:var(--ink); } .gs-main b { font-weight:600; }
@@ -65,12 +66,12 @@ export class GlobalSearch {
     const seen = new Set<string>();
     for (const c of CASE_POOL) {
       if (!seen.has(c.member)) { seen.add(c.member); out.push({ type: 'Member', label: c.member, sub: '' }); }
-      out.push({ type: 'Case', label: c.authId, sub: c.member, member: c.member });
+      out.push({ type: 'Authorization', label: c.authId, sub: c.member, member: c.member });
     }
-    // risk / appeal ids + members
+    // risk authorizations + genuine appeal cases + their members
     [['IP542119', 'Karen Wells'], ['IP543902', 'Robert Hayes'], ['IP540088', 'George Pike'],
      ['AP-2026-0112', 'Maria Benitez'], ['AP-2025-0891', 'Sheryl Leonard'], ['AP-2026-0088', 'Shannon Wright']]
-      .forEach(([id, m]) => { out.push({ type: 'Case', label: id, sub: m, member: m });
+      .forEach(([id, m]) => { out.push({ type: id.startsWith('AP-') ? 'Case' : 'Authorization', label: id, sub: m, member: m });
         if (!seen.has(m)) { seen.add(m); out.push({ type: 'Member', label: m, sub: '' }); } });
     for (const p of this.data.providers) out.push({ type: 'Provider', label: p.provider, sub: `NPI ${p.npi}` });
     for (const n of this.data.nurses()) out.push({ type: 'Nurse', label: n.name, sub: `${n.utilization}% utilized` });
@@ -90,7 +91,7 @@ export class GlobalSearch {
   pick(h: Hit) {
     this.q.set(''); this.open.set(false);
     if (h.type === 'Member') this.members.openByName(h.label);
-    else if (h.type === 'Case') { if (h.member) this.members.openByName(h.member); else this.ix.toast(`Opening ${h.label}…`, 'info'); }
+    else if (h.type === 'Authorization' || h.type === 'Case') { if (h.member) this.members.openByName(h.member); else this.ix.toast(`Opening ${h.label}…`, 'info'); }
     else if (h.type === 'Provider') this.ix.toast(`Opening provider ${h.label}…`, 'info');
     else this.ix.toast(`Opening ${h.label}'s workload…`, 'info');
   }

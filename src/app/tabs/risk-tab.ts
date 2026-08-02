@@ -33,7 +33,7 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
 
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
-        <h3 class="panel-title"><z-icon name="alert" [size]="14"></z-icon> Cases Requiring Attention</h3>
+        <h3 class="panel-title"><z-icon name="alert" [size]="14"></z-icon> Authorizations Requiring Attention</h3>
         <span class="note">Prioritized by risk score</span>
       </div>
       <table class="z-table">
@@ -57,7 +57,7 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
               <td><button class="btn outline teal sm" (click)="escalate(r); $event.stopPropagation()">Escalate</button></td>
             </tr>
           } @empty {
-            <tr><td colspan="8" class="empty">No cases requiring attention — all clear. ✓</td></tr>
+            <tr><td colspan="8" class="empty">No authorizations requiring attention — all clear. ✓</td></tr>
           }
         </tbody>
       </table>
@@ -122,14 +122,14 @@ export class RiskTab {
   escalate(r: RiskCase) {
     this.ix.choose({
       title: `Escalate ${r.authId}`,
-      body: `Escalate this case (${r.member}, risk ${r.score}) for expedited review. Drivers: ${r.drivers.join(', ')}.`,
+      body: `Escalate this authorization (${r.member}, risk ${r.score}) for expedited review. Drivers: ${r.drivers.join(', ')}.`,
       label: 'Escalate to', options: this.TARGETS,
       confirmLabel: 'Escalate', tone: r.risk === 'red' ? 'red' : 'amber',
       onChoose: (who) => {
         this.data.resolveRiskCase(r.authId);
         this.selected.update((s) => { const n = new Set(s); n.delete(r.authId); return n; });
         this.ix.toast(`${r.authId} escalated to ${who}.`, 'warn');
-        this.data.addHistory('arrowup', 'Case escalated', `${r.authId} (${r.member}) → ${who}`);
+        this.data.addHistory('arrowup', 'Authorization escalated', `${r.authId} (${r.member}) → ${who}`);
       },
     });
   }
@@ -138,14 +138,14 @@ export class RiskTab {
     const ids = [...this.selected()];
     if (!ids.length) return;
     this.ix.choose({
-      title: `Escalate ${ids.length} case(s)`,
-      body: `Escalate the ${ids.length} selected case(s) for expedited review. Choose who to assign them to.`,
+      title: `Escalate ${ids.length} authorization(s)`,
+      body: `Escalate the ${ids.length} selected authorization(s) for expedited review. Choose who to assign them to.`,
       label: 'Escalate to', options: this.TARGETS,
       confirmLabel: 'Escalate', tone: 'red',
       onChoose: (who) => {
         ids.forEach((id) => this.data.resolveRiskCase(id));
-        this.ix.toast(`${ids.length} case(s) escalated to ${who}.`, 'warn');
-        this.data.addHistory('arrowup', 'Cases escalated', `${ids.length} cases → ${who}`);
+        this.ix.toast(`${ids.length} authorization(s) escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Authorizations escalated', `${ids.length} authorization(s) → ${who}`);
         this.selected.set(new Set());
       },
     });
@@ -165,7 +165,7 @@ export class RiskTab {
         { label: 'Risk Drivers', value: r.drivers.join(', ') },
       ],
       actions: [
-        { label: 'Escalate this case', tone: r.risk === 'red' ? 'red' : 'amber', run: () => this.escalate(r) },
+        { label: 'Escalate this authorization', tone: r.risk === 'red' ? 'red' : 'amber', run: () => this.escalate(r) },
         { label: 'View Member 360', tone: 'teal', run: () => this.members.openByName(r.member) },
       ],
     });
@@ -181,8 +181,8 @@ export class RiskTab {
     if (key === 'acuity') {
       const cases = this.data.riskCases().filter((r) => r.drivers.some((d) => ACUITY_DRIVERS.includes(d)));
       this.ix.openExplorer({
-        title: 'High-Acuity Cases',
-        context: `${cases.length} case(s) flagged ICU, transplant, or oncology`,
+        title: 'High-Acuity Authorizations',
+        context: `${cases.length} authorization(s) flagged ICU, transplant, or oncology`,
         columns: ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'],
         rows: cases.map((r) => [r.authId, r.member, r.drivers.join(', '), r.amount, r.stage, r.score]),
         exportName: 'risk-high-acuity_2026-07-17',
@@ -199,7 +199,7 @@ export class RiskTab {
       table: escalations.length
         ? { columns: ['Time', 'Action', 'Detail'], rows: escalations.map((h) => [h.time, h.action, h.detail]) }
         : undefined,
-      note: escalations.length ? undefined : 'No escalations yet this session — escalate a case to see it logged here.',
+      note: escalations.length ? undefined : 'No escalations yet this session — escalate an authorization to see it logged here.',
     });
   }
 }

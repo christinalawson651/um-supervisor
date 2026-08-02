@@ -128,7 +128,7 @@ export class App {
       table: h.length
         ? { columns: ['Time', 'Action', 'Detail'], rows: h.map((e) => [e.time, e.action, e.detail]) }
         : undefined,
-      note: h.length ? undefined : 'No actions yet — reassign a case or escalate one to see the log here.',
+      note: h.length ? undefined : 'No actions yet — reassign an authorization or escalate one to see the log here.',
       actions: [{ label: 'Reset demo data', tone: 'red', run: () => this.resetDemo() }],
     });
   }
@@ -136,7 +136,7 @@ export class App {
   resetDemo() {
     this.ix.ask({
       title: 'Reset demo data',
-      body: 'Restore all cases, queues, nurses, and history to their original state? Any changes made during the demo will be cleared.',
+      body: 'Restore all authorizations, queues, nurses, and history to their original state? Any changes made during the demo will be cleared.',
       confirmLabel: 'Reset', tone: 'red',
       onConfirm: () => { this.data.resetDemo(); this.ix.toast('Demo data reset to defaults.', 'info'); },
     });
@@ -169,7 +169,7 @@ export class App {
     const d = this.data;
     let name = 'export', columns: string[] = [], rows: (string | number)[][] = [];
     switch (this.selected()) {
-      case 0: name = 'workforce-nurses'; columns = ['Nurse', 'Active Cases', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
+      case 0: name = 'workforce-nurses'; columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
         rows = d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]); break;
       case 1: name = 'tat-sla'; columns = ['Metric', 'Value'];
         rows = [...d.tatBuckets.map((b) => [b.label, b.count] as (string | number)[]), ...d.tatStats.map((s) => [s.label, s.value] as (string | number)[])]; break;
@@ -183,7 +183,7 @@ export class App {
         rows = d.missingFields.map((f) => [f.field, f.count, f.pct]); break;
       case 6: name = 'providers'; columns = ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'];
         rows = d.providers.map((p) => [p.provider, p.npi, p.requests, p.approvalRate, p.rfiRate]); break;
-      case 7: name = 'high-dollar-cases'; columns = ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'];
+      case 7: name = 'high-dollar-authorizations'; columns = ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'];
         rows = d.highDollarCases.map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]); break;
       case 8: name = 'audit-flags'; columns = ['ID', 'Type', 'Description', 'Date', 'Severity'];
         rows = d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]); break;
