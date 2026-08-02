@@ -117,8 +117,10 @@ type QueueSort = 'volume' | 'breach' | 'name';
             @for (n of visibleNurses(); track n.name) {
               <tr class="clickable" (click)="openNurse(n)">
                 <td class="strong">{{ n.name }}</td>
-                <td class="num">{{ n.active }}</td><td class="num">{{ n.pending }}</td>
-                <td class="num">{{ n.completed }}</td><td class="num">{{ n.avgTat }}</td>
+                <td class="num clk" (click)="openNurse(n); $event.stopPropagation()">{{ n.active }}</td>
+                <td class="num clk" (click)="openNursePending(n); $event.stopPropagation()">{{ n.pending }}</td>
+                <td class="num clk" (click)="openNurseCompleted(n); $event.stopPropagation()">{{ n.completed }}</td>
+                <td class="clk" (click)="openNurseCompleted(n); $event.stopPropagation()">{{ n.avgTat }}</td>
                 <td><span class="mini-bar" [class.teal]="n.utilization < 80" [class.red]="n.utilization >= 90"><span [style.width.%]="n.utilization"></span></span><span class="util-pct">{{ n.utilization }}%</span></td>
                 <td><span class="tchip">{{ n.team }}</span></td>
                 <td><button class="btn outline sm" (click)="reassignTo(n); $event.stopPropagation()">Reassign</button></td>
@@ -142,8 +144,10 @@ type QueueSort = 'volume' | 'breach' | 'name';
                 @for (n of t.nurses; track n.name) {
                   <tr class="nurse-child clickable" (click)="openNurse(n)">
                     <td class="child-name">{{ n.name }}</td>
-                    <td class="num">{{ n.active }}</td><td class="num">{{ n.pending }}</td>
-                    <td class="num">{{ n.completed }}</td><td class="num">{{ n.avgTat }}</td>
+                    <td class="num clk" (click)="openNurse(n); $event.stopPropagation()">{{ n.active }}</td>
+                    <td class="num clk" (click)="openNursePending(n); $event.stopPropagation()">{{ n.pending }}</td>
+                    <td class="num clk" (click)="openNurseCompleted(n); $event.stopPropagation()">{{ n.completed }}</td>
+                    <td class="clk" (click)="openNurseCompleted(n); $event.stopPropagation()">{{ n.avgTat }}</td>
                     <td><span class="mini-bar" [class.teal]="n.utilization < 80" [class.red]="n.utilization >= 90"><span [style.width.%]="n.utilization"></span></span><span class="util-pct">{{ n.utilization }}%</span></td>
                     <td><button class="btn outline sm" (click)="reassignTo(n); $event.stopPropagation()">Reassign</button></td>
                   </tr>
@@ -192,6 +196,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
     .util-pct { margin-left: 10px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
       font-variant-numeric: tabular-nums; }
     .clickable { cursor: pointer; }
+    .num.clk:hover, td.clk:hover { text-decoration: underline; }
     .tbl-head { display:flex; align-items:center; justify-content:space-between; }
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px;
       width: 220px; outline:none; }
@@ -350,6 +355,32 @@ export class WorkforceTab {
       columns: COLUMNS,
       rows: cases.map(toRow),
       exportName: `nurse-${n.name.split(',')[0].toLowerCase()}_2026-07-17`,
+      memberColumn: 1,
+    });
+  }
+
+  /** The "Pending" column — the subset of this nurse's active work awaiting an external response. */
+  openNursePending(n: NurseRow) {
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (c.tags.includes('rfi') || c.tags.includes('p2p')));
+    this.ix.openExplorer({
+      title: `${n.name} — Pending External Response`,
+      context: `${cases.length} authorization(s) awaiting RFI or peer-to-peer response`,
+      columns: COLUMNS,
+      rows: cases.map(toRow),
+      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-pending_2026-07-17`,
+      memberColumn: 1,
+    });
+  }
+
+  /** The "Completed (MTD)" and "Avg TAT" columns — this nurse's decided authorizations. */
+  openNurseCompleted(n: NurseRow) {
+    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === n.name);
+    this.ix.openExplorer({
+      title: `${n.name} — Completed (MTD)`,
+      context: `${cases.length} authorization(s) decided this month`,
+      columns: COLUMNS,
+      rows: cases.map(toRow),
+      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-completed_2026-07-17`,
       memberColumn: 1,
     });
   }

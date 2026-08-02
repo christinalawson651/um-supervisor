@@ -4,6 +4,25 @@ import {
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
+import { CASE_POOL } from './case-pool';
+
+/**
+ * Active / Pending / Completed / Avg TAT are real counts from the case pool (not placeholder
+ * flavor text) so each Workload column means something distinct and its drill-down matches it:
+ *  - active    = every pending authorization currently assigned to this nurse
+ *  - pending   = the subset of those awaiting an external response (RFI / peer-to-peer)
+ *  - completed = decided authorizations this nurse has closed
+ * Utilization stays an independently-curated capacity indicator (real UM workload reflects case
+ * complexity, not just raw count) — that's what gives Balance/Reassign a busiest-vs-most-capacity
+ * spread to work with, rather than everyone landing at a near-identical case count.
+ */
+function nurseStats(name: string) {
+  const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name);
+  const pending = active.filter((c) => c.tags.includes('rfi') || c.tags.includes('p2p'));
+  const completed = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === name);
+  const avgTatH = completed.length ? completed.reduce((s, c) => s + c.tatH, 0) / completed.length : 0;
+  return { active: active.length, pending: pending.length, completed: completed.length, avgTat: `${avgTatH.toFixed(1)}h` };
+}
 
 export interface HistoryEntry {
   time: string;
@@ -42,12 +61,12 @@ export class DashboardData {
   ]);
 
   readonly nurses = signal<NurseRow[]>([
-    { name: 'Maria Gonzalez, RN',  team: 'Inpatient Review',     active: 32, pending: 8,  completed: 145, avgTat: '1.8h', utilization: 92 },
-    { name: 'Andrew Mitchell, RN', team: 'Inpatient Review',     active: 35, pending: 12, completed: 128, avgTat: '2.6h', utilization: 96 },
-    { name: 'Jessica Williams, RN', team: 'Outpatient Review',   active: 28, pending: 5,  completed: 132, avgTat: '2.1h', utilization: 85 },
-    { name: 'Sarah Mitchell, RN',  team: 'Outpatient Review',    active: 22, pending: 3,  completed: 156, avgTat: '1.5h', utilization: 72 },
-    { name: 'Emily Chen, RN',      team: 'Complex & Concurrent', active: 30, pending: 7,  completed: 141, avgTat: '2.0h', utilization: 88 },
-    { name: 'Robert Kim, RN',      team: 'Complex & Concurrent', active: 26, pending: 4,  completed: 138, avgTat: '1.9h', utilization: 80 },
+    { name: 'Maria Gonzalez, RN',  team: 'Inpatient Review',     ...nurseStats('Maria Gonzalez, RN'),  utilization: 92 },
+    { name: 'Andrew Mitchell, RN', team: 'Inpatient Review',     ...nurseStats('Andrew Mitchell, RN'), utilization: 96 },
+    { name: 'Jessica Williams, RN', team: 'Outpatient Review',   ...nurseStats('Jessica Williams, RN'), utilization: 85 },
+    { name: 'Sarah Mitchell, RN',  team: 'Outpatient Review',    ...nurseStats('Sarah Mitchell, RN'),  utilization: 72 },
+    { name: 'Emily Chen, RN',      team: 'Complex & Concurrent', ...nurseStats('Emily Chen, RN'),      utilization: 88 },
+    { name: 'Robert Kim, RN',      team: 'Complex & Concurrent', ...nurseStats('Robert Kim, RN'),      utilization: 80 },
   ]);
 
   // ---------- TAT & SLA Compliance ----------
