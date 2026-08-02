@@ -32,6 +32,9 @@ import { AuditTab } from './tabs/audit-tab';
 import { AiTab } from './tabs/ai-tab';
 import { ReferralsTab } from './tabs/referrals-tab';
 
+// AI / NextGen Intelligence is temporarily hidden — not deleted, just not listed/switched to.
+// To bring it back: add 'AI / NextGen Intelligence' before 'CM Referrals' here, and restore its
+// @case (9) in app.html (bumping CM Referrals back to @case (10)) and in exportCsv() below.
 const TABS = [
   'Workforce & Queue Management',
   'TAT Compliance',
@@ -42,7 +45,6 @@ const TABS = [
   'Provider & Network Insights',
   'Financial / Cost Indicators',
   'Audit & Compliance',
-  'AI / NextGen Intelligence',
   'CM Referrals',
 ] as const;
 
@@ -188,9 +190,7 @@ export class App {
         rows = d.highDollarCases.map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]); break;
       case 8: name = 'audit-flags'; columns = ['ID', 'Type', 'Description', 'Date', 'Severity'];
         rows = d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]); break;
-      case 9: name = 'ai-recommendations'; columns = ['Title', 'Detail', 'Confidence %', 'Action'];
-        rows = d.aiRecommendations().map((r) => [r.title, r.detail, r.confidence, r.action]); break;
-      case 10: name = 'cm-referrals'; columns = ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'Status'];
+      case 9: name = 'cm-referrals'; columns = ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'Status'];
         rows = REFERRALS.map((r) => [r.authId, r.member, r.reason, r.fromStage, r.received, r.status]); break;
     }
     this.exporter.open({ title: this.tabs[this.selected()], name: `${name}_2026-07-17`, columns, rows });
