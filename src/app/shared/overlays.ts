@@ -107,7 +107,7 @@ import { Interaction, DrawerAction } from './interaction';
   `,
   styles: [`
     .scrim { position: fixed; inset: 0; background: rgba(17,24,39,.45);
-      display: flex; align-items: center; justify-content: center; z-index: 100; }
+      display: flex; align-items: center; justify-content: center; z-index: 200; }
     .scrim.right { justify-content: flex-end; align-items: stretch; }
 
     .drawer { width: 420px; max-width: 92vw; background:#fff; height:100%; overflow-y:auto;
@@ -155,7 +155,7 @@ import { Interaction, DrawerAction } from './interaction';
     .btn.primary[data-tone="red"]:hover { background: #dc2626; }
     .btn.primary[data-tone="amber"] { background: var(--amber); border-color: var(--amber); color:#3d2c00; }
 
-    .toasts { position: fixed; bottom: 22px; right: 22px; z-index: 110;
+    .toasts { position: fixed; bottom: 22px; right: 22px; z-index: 210;
       display: flex; flex-direction: column; gap: 10px; }
     .toast { display: flex; align-items: center; gap: 10px; min-width: 280px; max-width: 380px;
       background:#fff; border:1px solid var(--border); border-left: 4px solid var(--teal-700);
