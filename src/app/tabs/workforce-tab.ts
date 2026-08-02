@@ -5,10 +5,13 @@ import { Interaction } from '../shared/interaction';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Balance } from '../shared/balance';
-import { NurseRow } from '../data/dashboard.models';
+import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL } from '../data/case-pool';
-import { urgencyOf } from '../data/case-fields';
+import { urgencyOf, lobOf, LOBS } from '../data/case-fields';
 import { Icon } from '../shared/icon';
+
+interface DisplayQueue extends QueueCard { baseName: string; lob?: string; }
+type QueueSort = 'volume' | 'breach' | 'name';
 
 @Component({
   selector: 'app-workforce-tab',
@@ -25,26 +28,45 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="qhint">Bars show <b>case age in queue</b> (time waiting since the request was received). Click a band to see those cases. <b>Breach</b> = past the SLA deadline.</div>
+
+    <div class="qtoolbar">
+      <input class="search" type="text" placeholder="Search queues…" [ngModel]="queueSearch()" (ngModelChange)="queueSearch.set($event)" />
+      <label class="sortsel">
+        <span>Sort</span>
+        <select [value]="queueSort()" (change)="queueSort.set($any($event.target).value)">
+          <option value="volume">Most cases</option>
+          <option value="breach">Highest breach %</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </label>
+      <button class="btn outline sm" [class.on]="splitByLob()" (click)="splitByLob.set(!splitByLob())">
+        {{ splitByLob() ? 'Split by LOB ✓' : 'Split by LOB' }}
+      </button>
+      <span class="qtotal">{{ displayQueues().length }} queue{{ displayQueues().length === 1 ? '' : 's' }}</span>
+    </div>
+
     <div class="queues">
-      @for (q of data.queues(); track q.name) {
+      @for (q of displayQueues(); track q.name) {
         <div class="qcard">
           <div class="qtop">
             <span class="qname">{{ q.name }}</span>
             <span class="qcount">{{ q.count }}</span>
           </div>
           <div class="seg">
-            <span class="s-fresh"  [style.width.%]="q.buckets.fresh"  title="0–24h in queue" (click)="openBucket(q.name, 'fresh')"></span>
-            <span class="s-day2"   [style.width.%]="q.buckets.day2"   title="24–48h in queue" (click)="openBucket(q.name, 'day2')"></span>
-            <span class="s-over48" [style.width.%]="q.buckets.over48" title="Over 48h in queue" (click)="openBucket(q.name, 'over48')"></span>
-            <span class="s-breach" [style.width.%]="q.buckets.breach" title="Past SLA deadline" (click)="openBucket(q.name, 'breach')"></span>
+            <span class="s-fresh"  [style.width.%]="q.buckets.fresh"  title="0–24h in queue" (click)="openBucket(q.baseName, 'fresh', q.lob)"></span>
+            <span class="s-day2"   [style.width.%]="q.buckets.day2"   title="24–48h in queue" (click)="openBucket(q.baseName, 'day2', q.lob)"></span>
+            <span class="s-over48" [style.width.%]="q.buckets.over48" title="Over 48h in queue" (click)="openBucket(q.baseName, 'over48', q.lob)"></span>
+            <span class="s-breach" [style.width.%]="q.buckets.breach" title="Past SLA deadline" (click)="openBucket(q.baseName, 'breach', q.lob)"></span>
           </div>
           <div class="legend">
-            <span (click)="openBucket(q.name, 'fresh')"><i class="d-fresh"></i>0-24h</span>
-            <span (click)="openBucket(q.name, 'day2')"><i class="d-day2"></i>24-48h</span>
-            <span (click)="openBucket(q.name, 'over48')"><i class="d-over48"></i>&gt;48h</span>
-            <span (click)="openBucket(q.name, 'breach')"><i class="d-breach"></i>Breach</span>
+            <span (click)="openBucket(q.baseName, 'fresh', q.lob)"><i class="d-fresh"></i>0-24h</span>
+            <span (click)="openBucket(q.baseName, 'day2', q.lob)"><i class="d-day2"></i>24-48h</span>
+            <span (click)="openBucket(q.baseName, 'over48', q.lob)"><i class="d-over48"></i>&gt;48h</span>
+            <span (click)="openBucket(q.baseName, 'breach', q.lob)"><i class="d-breach"></i>Breach</span>
           </div>
         </div>
+      } @empty {
+        <div class="qempty">No queues match "{{ queueSearch() }}".</div>
       }
     </div>
 
@@ -120,7 +142,17 @@ import { Icon } from '../shared/icon';
     .qhint { font-size: 12px; color: var(--gray-500); margin-bottom: 12px; } .qhint b { color: var(--ink-soft); }
     .seg > span { cursor: pointer; }
     .legend span { cursor: pointer; } .legend span:hover { color: var(--ink-soft); }
-    .queues { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    /* auto-fill instead of a fixed column count so this scales to any number of queues
+       (a supervisor's queue count grows with LOB/specialty segmentation, not headcount) */
+    .queues { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+    .qtoolbar { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+    .qtoolbar .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:200px; outline:none; }
+    .qtoolbar .search:focus { border-color: var(--teal-600); }
+    .sortsel { display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:600; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; }
+    .sortsel select { font-size:12.5px; font-weight:500; color:var(--ink); text-transform:none; letter-spacing:0; padding:6px 8px; border:1px solid var(--gray-300); border-radius:8px; background:#fff; cursor:pointer; }
+    .qtoolbar .btn.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; }
+    .qtotal { margin-left:auto; font-size:12px; font-weight:600; color:var(--gray-500); }
+    .qempty { grid-column:1/-1; text-align:center; padding:24px; color:var(--gray-500); font-size:13px; }
     .qcard { background:#fff; border:1px solid var(--border); border-radius: var(--radius);
       box-shadow: var(--shadow); padding: 16px 18px; }
     .qtop { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; }
@@ -171,6 +203,46 @@ export class WorkforceTab {
   readonly search = signal('');
   readonly sortKey = signal<keyof NurseRow | ''>('');
   readonly sortDir = signal<1 | -1>(1);
+
+  // ---- queue scaling: search/sort/split so this holds up regardless of queue count.
+  // A supervisor's team stays small (3-10 direct reports is the effective span-of-control
+  // range) but their queue count grows independently once queues are segmented by LOB or
+  // specialty — so the queue section, not headcount, is what has to scale. ----
+  readonly queueSearch = signal('');
+  readonly queueSort = signal<QueueSort>('volume');
+  readonly splitByLob = signal(false);
+
+  /** Real per-LOB breakdown of one queue, computed live from the case pool (not fabricated). */
+  private lobSplit(q: QueueCard): DisplayQueue[] {
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === q.name);
+    const byLob = new Map<string, typeof cases>();
+    for (const c of cases) { const l = lobOf(c.authId); if (!byLob.has(l)) byLob.set(l, []); byLob.get(l)!.push(c); }
+    return LOBS.map((l) => {
+      const cs = byLob.get(l) ?? [];
+      const total = cs.length || 1;
+      const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
+      cs.forEach((c) => { bands[this.bandOf(c.authId, c.tags.includes('breached'))]++; });
+      return {
+        name: `${q.name} · ${l}`, baseName: q.name, lob: l, count: cs.length,
+        buckets: {
+          fresh: Math.round((bands.fresh / total) * 100), day2: Math.round((bands.day2 / total) * 100),
+          over48: Math.round((bands.over48 / total) * 100), breach: Math.round((bands.breach / total) * 100),
+        },
+      };
+    }).filter((dq) => dq.count > 0); // skip LOBs with no cases in this queue — no empty noise
+  }
+
+  readonly displayQueues = computed((): DisplayQueue[] => {
+    const base: DisplayQueue[] = this.data.queues().map((q) => ({ ...q, baseName: q.name }));
+    let list = this.splitByLob() ? base.flatMap((q) => this.lobSplit(q)) : base;
+    const q = this.queueSearch().trim().toLowerCase();
+    if (q) list = list.filter((x) => x.name.toLowerCase().includes(q));
+    const sort = this.queueSort();
+    return [...list].sort((a, b) =>
+      sort === 'name' ? a.name.localeCompare(b.name)
+      : sort === 'breach' ? b.buckets.breach - a.buckets.breach
+      : b.count - a.count);
+  });
 
   // ---- team rollup ----
   readonly groupBy = signal<'nurse' | 'team'>('team');
@@ -292,17 +364,18 @@ export class WorkforceTab {
   }
   private ageLabel(h: number) { return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d ${h % 24}h`; }
 
-  /** Drill a queue's age band -> Case Explorer of those cases. */
-  openBucket(queue: string, band: string) {
+  /** Drill a queue's age band -> Case Explorer of those cases (optionally scoped to one LOB). */
+  openBucket(queue: string, band: string, lob?: string) {
     const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const rows = CASE_POOL
-      .filter((c) => c.phase === 'pending' && c.status === queue && this.bandOf(c.authId, c.tags.includes('breached')) === band)
+      .filter((c) => c.phase === 'pending' && c.status === queue && (!lob || lobOf(c.authId) === lob) && this.bandOf(c.authId, c.tags.includes('breached')) === band)
       .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(this.ageH(c.authId)), c.nurse === '—' ? 'Unassigned' : c.nurse] as (string | number)[]);
+    const scopeLabel = lob ? `${queue} · ${lob}` : queue;
     this.ix.openExplorer({
-      title: `${queue} — ${labels[band]}`,
-      context: `${rows.length} case(s) in ${queue} · ${labels[band]}`,
+      title: `${scopeLabel} — ${labels[band]}`,
+      context: `${rows.length} case(s) in ${scopeLabel} · ${labels[band]}`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue', 'Owner'],
-      rows, exportName: `${queue.toLowerCase().replace(/\s+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
+      rows, exportName: `${scopeLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
     });
   }
 

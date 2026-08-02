@@ -38,7 +38,7 @@ export class DashboardData {
     { name: 'MD Review',       count: 23, buckets: { fresh: 40, day2: 32, over48: 20, breach: 8 } },
     { name: 'RFI Pending',     count: 31, buckets: { fresh: 30, day2: 35, over48: 25, breach: 10 } },
     { name: 'OON Review',      count: 15, buckets: { fresh: 50, day2: 30, over48: 14, breach: 6 } },
-    { name: 'Concurrent',      count: 38, buckets: { fresh: 52, day2: 30, over48: 13, breach: 5 } },
+    { name: 'Concurrent Review', count: 38, buckets: { fresh: 52, day2: 30, over48: 13, breach: 5 } },
   ]);
 
   readonly nurses = signal<NurseRow[]>([

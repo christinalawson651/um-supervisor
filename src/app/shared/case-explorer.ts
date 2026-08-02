@@ -61,7 +61,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
               @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
               <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
             }
-            <button class="btn outline sm" (click)="balance()">Balance</button>
+            <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
             <button class="btn outline sm" (click)="exportAll(e)">Export all ({{ filtered().length }})</button>
           </div>
 
@@ -302,7 +302,45 @@ export class CaseExplorer {
     });
   }
 
-  balance() { this.bal.run('for the cases in this view'); }
+  /**
+   * With cases selected, Balance spreads exactly those auths across nurses with capacity
+   * (not a single target — that's what Reassign does). With nothing selected, it falls back
+   * to the generic team-wide rebalance.
+   */
+  balance(_e: { columns: string[]; rows: (string | number)[][]; memberColumn?: number }) {
+    const ids = [...this.selected()];
+    if (!ids.length) { this.bal.run(); return; }
+
+    const owners = new Map(ids.map((id) => {
+      const rec = CASE_POOL.find((c) => c.authId === id);
+      return [id, rec && rec.nurse !== '—' ? rec.nurse : null] as const;
+    }));
+
+    // Simulate: each case goes to whichever nurse has the least utilization *at that point*,
+    // so a run of cases spreads out instead of piling onto a single "most capacity" nurse.
+    const sim = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization }));
+    const plan = ids.map((id) => {
+      sim.sort((a, b) => a.utilization - b.utilization);
+      const target = sim[0];
+      target.utilization = Math.min(100, target.utilization + 4); // rough capacity nudge for ordering only
+      return { authId: id, from: owners.get(id) ?? null, to: target.name };
+    });
+    const byTarget = new Map<string, number>();
+    plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
+    const summary = [...byTarget.entries()].map(([n, c]) => `${c} → ${n}`).join(', ');
+
+    this.ix.ask({
+      title: `Balance ${ids.length} selected case${ids.length > 1 ? 's' : ''}`,
+      body: `Distribute these ${ids.length} case(s) across nurses with the most capacity: ${summary}. Continue?`,
+      confirmLabel: 'Balance', tone: 'teal',
+      onConfirm: () => {
+        plan.forEach((p) => this.data.moveOneCase(p.from, p.to));
+        this.ix.toast(`${ids.length} case(s) balanced across ${byTarget.size} nurse(s).`);
+        this.data.addHistory('balance', 'Selected cases balanced', `${ids.length} case(s): ${summary}`);
+        this.selected.set(new Set());
+      },
+    });
+  }
 
   // ---- member name -> the auth in question (not straight to Member 360) ----
   openAuth(row: (string | number)[], e: { memberColumn?: number }) {
