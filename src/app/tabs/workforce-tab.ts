@@ -75,7 +75,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
 
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
-        <h3 class="panel-title">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Nurse' }}</h3>
+        <h3 class="panel-title">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Nurse' }}{{ lob() === 'all' ? '' : ' · ' + lob() }}</h3>
         <div class="flex gap-8 center">
           <div class="seg-toggle">
             <button [class.on]="groupBy() === 'nurse'" (click)="groupBy.set('nurse')">By Nurse</button>
@@ -238,6 +238,7 @@ export class WorkforceTab {
   readonly queueSort = signal<QueueSort>('volume');
   readonly splitByLob = signal(false);
   private lobFilter = inject(LobFilter); // the shared top-bar LOB control — scopes these cards too
+  readonly lob = this.lobFilter.value; // exposed for the Workload panel title
 
   /** Real per-LOB breakdown of one queue's unclaimed pool, computed live from the case pool. */
   private lobSplit(q: QueueCard): DisplayQueue[] {
@@ -284,12 +285,25 @@ export class WorkforceTab {
       : b.count - a.count);
   });
 
+  /**
+   * Active/Pending/Completed/Avg TAT recomputed live from the case pool for the selected LOB —
+   * same real-count-not-flavor-text principle as the queue cards. Utilization stays whatever the
+   * base row holds (including any session reassign/balance moves) since it's a whole-caseload
+   * capacity indicator, not something that splits meaningfully per LOB.
+   */
+  readonly effectiveNurses = computed((): NurseRow[] => {
+    const lob = this.lobFilter.value();
+    const rows = this.data.nurses();
+    if (lob === 'all') return rows;
+    return rows.map((n) => ({ ...n, ...this.data.nurseStatsForLob(n.name, lob) }));
+  });
+
   // ---- team rollup ----
   readonly groupBy = signal<'nurse' | 'team'>('team');
   readonly expanded = signal<Set<string>>(new Set());
   readonly teams = computed(() => {
     const groups = new Map<string, NurseRow[]>();
-    for (const n of this.data.nurses()) {
+    for (const n of this.effectiveNurses()) {
       if (!groups.has(n.team)) groups.set(n.team, []);
       groups.get(n.team)!.push(n);
     }
@@ -337,7 +351,7 @@ export class WorkforceTab {
 
   readonly visibleNurses = computed(() => {
     const q = this.search().trim().toLowerCase();
-    let rows = this.data.nurses().filter((n) => !q || n.name.toLowerCase().includes(q));
+    let rows = this.effectiveNurses().filter((n) => !q || n.name.toLowerCase().includes(q));
     const key = this.sortKey();
     if (key) {
       const dir = this.sortDir();
@@ -363,10 +377,12 @@ export class WorkforceTab {
 
   /** Same Case Explorer used by every graph/KPI drill — consistent look, not a separate summary drawer. */
   openNurse(n: NurseRow) {
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name);
+    const lob = this.lobFilter.value();
+    const scope = lob === 'all' ? '' : ` · ${lob}`;
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (lob === 'all' || lobOf(c.authId) === lob));
     this.ix.openExplorer({
-      title: n.name,
-      context: `${cases.length} pending authorization(s) assigned · ${n.utilization}% utilized`,
+      title: `${n.name}${scope}`,
+      context: `${cases.length} pending authorization(s) assigned${scope} · ${n.utilization}% utilized`,
       columns: COLUMNS,
       rows: cases.map(toRow),
       exportName: `nurse-${n.name.split(',')[0].toLowerCase()}_2026-07-17`,
@@ -376,10 +392,12 @@ export class WorkforceTab {
 
   /** The "Pending" column — the subset of this nurse's active work awaiting an external response. */
   openNursePending(n: NurseRow) {
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (c.tags.includes('rfi') || c.tags.includes('p2p')));
+    const lob = this.lobFilter.value();
+    const scope = lob === 'all' ? '' : ` · ${lob}`;
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (c.tags.includes('rfi') || c.tags.includes('p2p')) && (lob === 'all' || lobOf(c.authId) === lob));
     this.ix.openExplorer({
-      title: `${n.name} — Pending External Response`,
-      context: `${cases.length} authorization(s) awaiting RFI or peer-to-peer response`,
+      title: `${n.name} — Pending External Response${scope}`,
+      context: `${cases.length} authorization(s) awaiting RFI or peer-to-peer response${scope}`,
       columns: COLUMNS,
       rows: cases.map(toRow),
       exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-pending_2026-07-17`,
@@ -389,10 +407,12 @@ export class WorkforceTab {
 
   /** The "Completed (MTD)" and "Avg TAT" columns — this nurse's decided authorizations. */
   openNurseCompleted(n: NurseRow) {
-    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === n.name);
+    const lob = this.lobFilter.value();
+    const scope = lob === 'all' ? '' : ` · ${lob}`;
+    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === n.name && (lob === 'all' || lobOf(c.authId) === lob));
     this.ix.openExplorer({
-      title: `${n.name} — Completed (MTD)`,
-      context: `${cases.length} authorization(s) decided this month`,
+      title: `${n.name} — Completed (MTD)${scope}`,
+      context: `${cases.length} authorization(s) decided this month${scope}`,
       columns: COLUMNS,
       rows: cases.map(toRow),
       exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-completed_2026-07-17`,

@@ -5,7 +5,7 @@ import {
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
 import { CASE_POOL, NURSES } from './case-pool';
-import { ageH, bandOf } from './case-fields';
+import { ageH, bandOf, lobOf } from './case-fields';
 
 /**
  * Active / Pending / Completed / Avg TAT are real counts from the case pool (not placeholder
@@ -38,10 +38,11 @@ function queueStats(statusName: string) {
   };
 }
 
-function nurseStats(name: string) {
-  const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name);
+function nurseStats(name: string, lob?: string) {
+  const inLob = (c: { authId: string }) => !lob || lob === 'all' || lobOf(c.authId) === lob;
+  const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name && inLob(c));
   const pending = active.filter((c) => c.tags.includes('rfi') || c.tags.includes('p2p'));
-  const completed = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === name);
+  const completed = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === name && inLob(c));
   const avgTatH = completed.length ? completed.reduce((s, c) => s + c.tatH, 0) / completed.length : 0;
   return { active: active.length, pending: pending.length, completed: completed.length, avgTat: `${avgTatH.toFixed(1)}h` };
 }
@@ -390,5 +391,15 @@ export class DashboardData {
 
   resolveAuditFlag(id: string) {
     this.auditFlags.update((f) => f.filter((x) => x.id !== id));
+  }
+
+  /**
+   * Active/Pending/Completed/Avg TAT for one nurse, scoped to a single LOB — recomputed live from
+   * the case pool so the Workload table reacts to the shared top-bar LOB filter the same way the
+   * queue cards do. Utilization is left untouched: it's the nurse's overall capacity indicator
+   * (and reflects any session reassign/balance moves), not a value that splits meaningfully by LOB.
+   */
+  nurseStatsForLob(name: string, lob: string) {
+    return nurseStats(name, lob);
   }
 }
