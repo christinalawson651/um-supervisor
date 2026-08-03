@@ -7,8 +7,9 @@ import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Balance } from '../shared/balance';
 import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL } from '../data/case-pool';
-import { urgencyOf, lobOf, LOBS, ageH, bandOf, queueStatusOf } from '../data/case-fields';
+import { urgencyOf, lobOf, LOBS, ageH, bandOf } from '../data/case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
+import { LobFilter } from '../shared/lob-filter';
 import { Icon } from '../shared/icon';
 
 interface DisplayQueue extends QueueCard { baseName: string; lob?: string; }
@@ -236,6 +237,7 @@ export class WorkforceTab {
   readonly queueSearch = signal('');
   readonly queueSort = signal<QueueSort>('volume');
   readonly splitByLob = signal(false);
+  private lobFilter = inject(LobFilter); // the shared top-bar LOB control — scopes these cards too
 
   /** Real per-LOB breakdown of one queue's unclaimed pool, computed live from the case pool. */
   private lobSplit(q: QueueCard): DisplayQueue[] {
@@ -258,8 +260,21 @@ export class WorkforceTab {
   }
 
   readonly displayQueues = computed((): DisplayQueue[] => {
+    const topLob = this.lobFilter.value();
     const base: DisplayQueue[] = this.data.queues().map((q) => ({ ...q, baseName: q.name }));
-    let list = this.splitByLob() ? base.flatMap((q) => this.lobSplit(q)) : base;
+    let list: DisplayQueue[];
+    if (this.splitByLob()) {
+      // full per-LOB breakdown, narrowed further if a specific LOB is also selected up top
+      list = base.flatMap((q) => this.lobSplit(q)).filter((s) => topLob === 'all' || s.lob === topLob);
+    } else if (topLob !== 'all') {
+      // collapse each card down to just the selected LOB's slice (0-count if none in that queue)
+      list = base.map((q) => this.lobSplit(q).find((s) => s.lob === topLob) ?? {
+        ...q, name: `${q.name} · ${topLob}`, baseName: q.name, lob: topLob,
+        count: 0, buckets: { fresh: 0, day2: 0, over48: 0, breach: 0 },
+      });
+    } else {
+      list = base;
+    }
     const q = this.queueSearch().trim().toLowerCase();
     if (q) list = list.filter((x) => x.name.toLowerCase().includes(q));
     const sort = this.queueSort();
@@ -417,12 +432,12 @@ export class WorkforceTab {
     const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const rows = CASE_POOL
       .filter((c) => c.phase === 'pending' && c.status === queue && c.nurse === '—' && (!lob || lobOf(c.authId) === lob) && bandOf(c.authId, c.tags.includes('breached')) === band)
-      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(ageH(c.authId)), queueStatusOf(c) ?? 'New'] as (string | number)[]);
+      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(ageH(c.authId))] as (string | number)[]);
     const scopeLabel = lob ? `${queue} · ${lob}` : queue;
     this.ix.openExplorer({
       title: `${scopeLabel} — ${labels[band]}`,
       context: `${rows.length} unclaimed authorization(s) in ${scopeLabel} · ${labels[band]}`,
-      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue', 'Queue Status'],
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue'],
       rows, exportName: `${scopeLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
     });
   }

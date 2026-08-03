@@ -1,5 +1,6 @@
 // A generated pool of authorization records that backs every metric drill-down.
 // Deterministic (no RNG) so the demo shows the same data on every load.
+import { ageH } from './case-fields';
 
 export type Decision = 'Approved' | 'Denied' | 'Partial' | 'Pending';
 
@@ -55,7 +56,7 @@ const PROCS: Proc[] = [
   { name: 'Behavioral Health IOP',   type: 'Behavioral', cost: 9600,   tat: 2.2 },
   { name: 'Behavioral Health PHP',   type: 'Behavioral', cost: 14500,  tat: 2.5 },
 ];
-const NURSES = ['Maria Gonzalez, RN', 'Jessica Williams, RN', 'Andrew Mitchell, RN',
+export const NURSES = ['Maria Gonzalez, RN', 'Jessica Williams, RN', 'Andrew Mitchell, RN',
   'Sarah Mitchell, RN', 'Emily Chen, RN', 'Robert Kim, RN'];
 
 // simple deterministic date within July 2026
@@ -86,6 +87,23 @@ function buildPending(): CaseRec[] {
   const out: CaseRec[] = [];
   let i = 0;
   for (const q of PENDING_QUEUES) {
+    const startI = i;
+
+    // Precompute which k-indices in this queue are unclaimed (available to pull), sampled evenly
+    // across the queue's age range — not picked by arithmetic coincidence — so every queue shows a
+    // believable spread across the age bars instead of a small sample landing 100% in one band.
+    // Paused RFI cases are excluded (blocked on the provider, not up for grabs).
+    const returnedKs = new Set<number>();
+    if (q.tag !== 'intake') {
+      const eligible: number[] = [];
+      for (let k = 0; k < q.count; k++) { if (!(q.tag === 'rfi' && k < 8)) eligible.push(k); }
+      const byAge = [...eligible].sort((a, b) => ageH(`AUTH-${4000 + startI + a}`) - ageH(`AUTH-${4000 + startI + b}`));
+      const target = Math.max(1, Math.round(q.count * 0.15));
+      for (let n = 0; n < target && byAge.length; n++) {
+        returnedKs.add(byAge[Math.floor((n * byAge.length) / target)]);
+      }
+    }
+
     for (let k = 0; k < q.count; k++, i++) {
       const p = PROCS[(i * 3 + 1) % PROCS.length];
       const tags = ['pending', q.tag];
@@ -94,11 +112,9 @@ function buildPending(): CaseRec[] {
 
       // Every queue holds some unclaimed work available for any nurse to pull next: brand-new
       // submissions (Intake only) or authorizations returned to the queue — either the nurse sent
-      // it back, or it auto-returned after sitting too long without action. Paused cases (clock
-      // stopped, awaiting the provider) are excluded — they're blocked on someone else, not up for grabs.
-      const isPaused = tags.includes('paused');
+      // it back, or it auto-returned after sitting too long without action.
       if (q.tag === 'intake' && k < 8) tags.push('unassigned');              // never claimed yet
-      else if (q.tag !== 'intake' && !isPaused && k % 7 === 0) tags.push('returned'); // returned to queue
+      else if (returnedKs.has(k)) tags.push('returned');                    // returned to queue
 
       if (i % 21 === 0 && tags.filter((t) => t === 'atRisk').length === 0) tags.push('atRisk'); // ~12 at risk
       tags.push(i % 7 === 0 ? 'expedited' : 'standard');              // ~14% expedited, matches decided ratio

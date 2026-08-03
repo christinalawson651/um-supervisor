@@ -4,7 +4,7 @@ import {
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
-import { CASE_POOL } from './case-pool';
+import { CASE_POOL, NURSES } from './case-pool';
 import { ageH, bandOf } from './case-fields';
 
 /**
@@ -52,6 +52,30 @@ export interface HistoryEntry {
   action: string;
   detail: string;
   actor: string;
+}
+
+/**
+ * Every authorization currently sitting unclaimed because it was returned (not the never-touched
+ * Intake ones) gets a real history entry explaining why — either the nurse sent it back, or the
+ * system auto-returned it after the SLA window passed without action.
+ */
+function seedReturnHistory(): HistoryEntry[] {
+  const returned = CASE_POOL.filter((c) => c.phase === 'pending' && c.tags.includes('returned'));
+  return returned.map((c, idx) => {
+    const prevOwner = NURSES[idx % NURSES.length];
+    const auto = idx % 3 !== 0; // most returns are SLA timeouts; some are nurse-initiated
+    const hh = 8 + (idx % 4);
+    const mm = (idx * 11) % 60;
+    return {
+      time: `${hh}:${mm < 10 ? '0' : ''}${mm} AM`,
+      icon: 'inbox',
+      action: auto ? 'Auto-returned to queue' : 'Returned to queue',
+      detail: auto
+        ? `${c.authId} (${c.member}) — not worked within the SLA window; returned from ${prevOwner}`
+        : `${c.authId} (${c.member}) — sent back to the queue by ${prevOwner}`,
+      actor: auto ? 'System' : prevOwner,
+    } as HistoryEntry;
+  });
 }
 
 const STORAGE_KEY = 'zyter-um-demo-v3';
@@ -222,7 +246,7 @@ export class DashboardData {
   ]);
 
   // ---------- activity / reassignment history ----------
-  readonly history = signal<HistoryEntry[]>([]);
+  readonly history = signal<HistoryEntry[]>(seedReturnHistory());
 
   /** Just the assignment-moving entries (reassign + balance) — the full activity log also includes escalations, etc. */
   readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance'));
@@ -277,7 +301,7 @@ export class DashboardData {
     this.kpis.set(d.kpis); this.queues.set(d.queues); this.nurses.set(d.nurses);
     this.aiRecommendations.set(d.aiRecommendations); this.riskCases.set(d.riskCases);
     this.concurrentRows.set(d.concurrentRows); this.auditFlags.set(d.auditFlags);
-    this.history.set([]);
+    this.history.set(d.history); // restores the seeded return-to-queue entries, clears session actions
   }
 
   // ---------- demo actions (mutate signal-backed state) ----------

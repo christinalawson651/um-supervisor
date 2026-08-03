@@ -45,12 +45,3 @@ export function bandOf(authId: string, breached: boolean): 'fresh' | 'day2' | 'o
   const h = ageH(authId);
   return h < 24 ? 'fresh' : h < 48 ? 'day2' : 'over48';
 }
-
-/** Is this authorization sitting in the shared queue right now (not claimed by a nurse)? */
-export function isInQueue(c: CaseRec): boolean { return c.nurse === '—'; }
-
-/** Why it's unclaimed: never picked up yet, vs. picked up and returned (nurse-initiated or SLA timeout). */
-export function queueStatusOf(c: CaseRec): 'New' | 'Returned' | null {
-  if (!isInQueue(c)) return null;
-  return c.tags.includes('returned') ? 'Returned' : 'New';
-}
