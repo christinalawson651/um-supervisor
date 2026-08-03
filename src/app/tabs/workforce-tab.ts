@@ -7,7 +7,7 @@ import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Balance } from '../shared/balance';
 import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL } from '../data/case-pool';
-import { urgencyOf, lobOf, LOBS } from '../data/case-fields';
+import { urgencyOf, lobOf, LOBS, ageH, bandOf, queueStatusOf } from '../data/case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { Icon } from '../shared/icon';
 
@@ -29,7 +29,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
       </div>
     </div>
 
-    <div class="qhint">Bars show <b>authorization age in queue</b> (time waiting since the request was received). Click a band to see those authorizations. <b>Breach</b> = past the SLA deadline.</div>
+    <div class="qhint">Cards show <b>unclaimed authorizations available to pull next</b> — work already claimed by a nurse shows in Workload below. Bars show how long each has been waiting. Click a band to see those authorizations. <b>Breach</b> = past the SLA deadline.</div>
 
     <div class="qtoolbar">
       <input class="search" type="text" placeholder="Search queues…" [ngModel]="queueSearch()" (ngModelChange)="queueSearch.set($event)" />
@@ -237,16 +237,16 @@ export class WorkforceTab {
   readonly queueSort = signal<QueueSort>('volume');
   readonly splitByLob = signal(false);
 
-  /** Real per-LOB breakdown of one queue, computed live from the case pool (not fabricated). */
+  /** Real per-LOB breakdown of one queue's unclaimed pool, computed live from the case pool. */
   private lobSplit(q: QueueCard): DisplayQueue[] {
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === q.name);
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === q.name && c.nurse === '—');
     const byLob = new Map<string, typeof cases>();
     for (const c of cases) { const l = lobOf(c.authId); if (!byLob.has(l)) byLob.set(l, []); byLob.get(l)!.push(c); }
     return LOBS.map((l) => {
       const cs = byLob.get(l) ?? [];
       const total = cs.length || 1;
       const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
-      cs.forEach((c) => { bands[this.bandOf(c.authId, c.tags.includes('breached'))]++; });
+      cs.forEach((c) => { bands[bandOf(c.authId, c.tags.includes('breached'))]++; });
       return {
         name: `${q.name} · ${l}`, baseName: q.name, lob: l, count: cs.length,
         buckets: {
@@ -410,25 +410,19 @@ export class WorkforceTab {
 
   balance() { this.bal.run(); }
 
-  private ageH(authId: string) { return 6 + (Number(authId.slice(-2)) % 90); }
-  private bandOf(authId: string, breached: boolean) {
-    if (breached) return 'breach';
-    const h = this.ageH(authId);
-    return h < 24 ? 'fresh' : h < 48 ? 'day2' : 'over48';
-  }
   private ageLabel(h: number) { return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d ${h % 24}h`; }
 
-  /** Drill a queue's age band -> Case Explorer of those cases (optionally scoped to one LOB). */
+  /** Drill a queue's age band -> Case Explorer of the unclaimed authorizations in it (optionally scoped to one LOB). */
   openBucket(queue: string, band: string, lob?: string) {
     const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const rows = CASE_POOL
-      .filter((c) => c.phase === 'pending' && c.status === queue && (!lob || lobOf(c.authId) === lob) && this.bandOf(c.authId, c.tags.includes('breached')) === band)
-      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(this.ageH(c.authId)), c.nurse === '—' ? 'Unassigned' : c.nurse] as (string | number)[]);
+      .filter((c) => c.phase === 'pending' && c.status === queue && c.nurse === '—' && (!lob || lobOf(c.authId) === lob) && bandOf(c.authId, c.tags.includes('breached')) === band)
+      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(ageH(c.authId)), queueStatusOf(c) ?? 'New'] as (string | number)[]);
     const scopeLabel = lob ? `${queue} · ${lob}` : queue;
     this.ix.openExplorer({
       title: `${scopeLabel} — ${labels[band]}`,
-      context: `${rows.length} authorization(s) in ${scopeLabel} · ${labels[band]}`,
-      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue', 'Owner'],
+      context: `${rows.length} unclaimed authorization(s) in ${scopeLabel} · ${labels[band]}`,
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue', 'Queue Status'],
       rows, exportName: `${scopeLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
     });
   }

@@ -5,6 +5,7 @@ import {
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
 import { CASE_POOL } from './case-pool';
+import { ageH, bandOf } from './case-fields';
 
 /**
  * Active / Pending / Completed / Avg TAT are real counts from the case pool (not placeholder
@@ -16,6 +17,27 @@ import { CASE_POOL } from './case-pool';
  * complexity, not just raw count) — that's what gives Balance/Reassign a busiest-vs-most-capacity
  * spread to work with, rather than everyone landing at a near-identical case count.
  */
+/**
+ * A "queue" is the pool of authorizations available for any nurse to pull next — not every
+ * authorization currently sitting at that stage. Most authorizations at a stage are already
+ * claimed by a nurse (see nurseStats above); only the unclaimed ones (nurse === '—') belong to
+ * the shared queue. Count and age bars are both computed from that unclaimed subset only, so a
+ * queue card's bars describe exactly the cases its count refers to.
+ */
+function queueStats(statusName: string) {
+  const unclaimed = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === statusName && c.nurse === '—');
+  const total = unclaimed.length || 1;
+  const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
+  unclaimed.forEach((c) => { bands[bandOf(c.authId, c.tags.includes('breached'))]++; });
+  return {
+    count: unclaimed.length,
+    buckets: {
+      fresh: Math.round((bands.fresh / total) * 100), day2: Math.round((bands.day2 / total) * 100),
+      over48: Math.round((bands.over48 / total) * 100), breach: Math.round((bands.breach / total) * 100),
+    },
+  };
+}
+
 function nurseStats(name: string) {
   const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name);
   const pending = active.filter((c) => c.tags.includes('rfi') || c.tags.includes('p2p'));
@@ -45,19 +67,23 @@ export class DashboardData {
     { icon: 'bolt',     value: '38%',   label: 'Auto-Approval Rate', tone: 'teal' },
     { icon: 'alert',    value: '12',    label: 'Authorizations at Risk', tone: 'amber' },
     { icon: 'clock',    value: '2.4h',  label: 'Avg Handle Time',   tone: 'teal' },
-    { icon: 'inbox',    value: '8',     label: 'Unassigned Queue',  tone: 'amber' },
+    { icon: 'inbox',    value: '39',    label: 'Unassigned Queue',  tone: 'amber' },
     { icon: 'xcircle',  value: '3',     label: 'Breached TAT',      tone: 'red' },
     { icon: 'users',    value: '87%',   label: 'Team Utilization',  tone: 'green' },
   ]);
 
   // ---------- Workforce & Queue Management ----------
+  // Each card is the unclaimed pool for that stage — not everything currently at that stage (most
+  // of which is already claimed by a nurse; see the Workload table). Count + age bars are both
+  // computed live from the case pool via queueStats(), so they always describe the same set.
   readonly queues = signal<QueueCard[]>([
-    { name: 'Intake',          count: 42, buckets: { fresh: 45, day2: 30, over48: 18, breach: 7 } },
-    { name: 'Clinical Review', count: 68, buckets: { fresh: 55, day2: 28, over48: 12, breach: 5 } },
-    { name: 'MD Review',       count: 23, buckets: { fresh: 40, day2: 32, over48: 20, breach: 8 } },
-    { name: 'RFI Pending',     count: 31, buckets: { fresh: 30, day2: 35, over48: 25, breach: 10 } },
-    { name: 'OON Review',      count: 15, buckets: { fresh: 50, day2: 30, over48: 14, breach: 6 } },
-    { name: 'Concurrent Review', count: 38, buckets: { fresh: 52, day2: 30, over48: 13, breach: 5 } },
+    { name: 'Intake', ...queueStats('Intake') },
+    { name: 'Clinical Review', ...queueStats('Clinical Review') },
+    { name: 'MD Review', ...queueStats('MD Review') },
+    { name: 'RFI Pending', ...queueStats('RFI Pending') },
+    { name: 'OON Review', ...queueStats('OON Review') },
+    { name: 'Concurrent Review', ...queueStats('Concurrent Review') },
+    { name: 'Pending P2P', ...queueStats('Pending P2P') },
   ]);
 
   readonly nurses = signal<NurseRow[]>([

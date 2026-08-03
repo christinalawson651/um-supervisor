@@ -52,7 +52,7 @@ const DRILLS: Record<string, Drill> = {
   'kpi.auto':       { title: 'Auto-Approval Rate', ctx: (n) => `${n} of ${DECIDED_TOTAL} decisions auto-approved by rules (${pct(n, DECIDED_TOTAL)}%)`, pick: () => deci(has('auto')) },
   'kpi.risk':       { title: 'Authorizations at Risk', ctx: (n) => `${n} pending authorizations at risk of a TAT breach`, pick: () => pend(has('atRisk')) },
   'kpi.aht':        { title: 'Avg Handle Time', ctx: (n) => `Average handle time 2.4h across ${n} completed reviews (longest first)`, pick: () => byTat(deci()) },
-  'kpi.unassigned': { title: 'Unassigned Queue', ctx: (n) => `${n} pending authorizations waiting to be assigned`, pick: () => pend(has('unassigned')) },
+  'kpi.unassigned': { title: 'Unassigned Queue', ctx: (n) => `${n} pending authorizations sitting in a queue, available to pull`, pick: () => pend((c) => c.nurse === '—') },
   'kpi.breached':   { title: 'Breached TAT', ctx: (n) => `${n} pending authorizations past their regulatory deadline`, pick: () => pend(has('breached')) },
   'kpi.util':       { title: 'Team Utilization', ctx: () => `Team utilization 87% (average across 6 nurses)`, pick: () => [] },
 

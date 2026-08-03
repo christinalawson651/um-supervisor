@@ -91,10 +91,19 @@ function buildPending(): CaseRec[] {
       const tags = ['pending', q.tag];
       if (q.tag === 'rfi') { tags.push('incompleteDoc'); if (k < 8) tags.push('paused'); }
       if (q.tag === 'mdReview' || q.tag === 'p2p') tags.push('mdReview');
-      if (q.tag === 'intake' && k < 8) tags.push('unassigned');       // 8 unassigned
+
+      // Every queue holds some unclaimed work available for any nurse to pull next: brand-new
+      // submissions (Intake only) or authorizations returned to the queue — either the nurse sent
+      // it back, or it auto-returned after sitting too long without action. Paused cases (clock
+      // stopped, awaiting the provider) are excluded — they're blocked on someone else, not up for grabs.
+      const isPaused = tags.includes('paused');
+      if (q.tag === 'intake' && k < 8) tags.push('unassigned');              // never claimed yet
+      else if (q.tag !== 'intake' && !isPaused && k % 7 === 0) tags.push('returned'); // returned to queue
+
       if (i % 21 === 0 && tags.filter((t) => t === 'atRisk').length === 0) tags.push('atRisk'); // ~12 at risk
       tags.push(i % 7 === 0 ? 'expedited' : 'standard');              // ~14% expedited, matches decided ratio
-      const nurse = tags.includes('unassigned') ? '—' : NURSES[i % NURSES.length];
+      const inQueue = tags.includes('unassigned') || tags.includes('returned');
+      const nurse = inQueue ? '—' : NURSES[i % NURSES.length];
       out.push({
         authId: `AUTH-${4000 + i}`,
         member: member(i),
