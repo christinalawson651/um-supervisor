@@ -61,6 +61,16 @@ const PROCS: Proc[] = [
   { name: 'Behavioral Health PHP',   type: 'Behavioral', cost: 14500,  tat: 2.5, guideline: 'LOCUS Criteria' },
 ];
 export const GUIDELINE_BY_PROCEDURE: Record<string, string> = Object.fromEntries(PROCS.map((p) => [p.name, p.guideline]));
+
+// Fuller description behind each short guideline code — shown as hover detail wherever the terse
+// code (e.g. "XYZ 2024") is displayed on its own without room for the full name.
+export const GUIDELINE_DETAIL: Record<string, string> = {
+  'XYZ 2024': 'XYZ Medical Necessity Criteria, 2024 Edition — inpatient surgical & procedural admission criteria',
+  'ABCD A-0420': 'ABCD Clinical Guideline A-0420 — spinal & orthopedic surgical medical necessity criteria',
+  'ABCD A-0103': 'ABCD Clinical Guideline A-0103 — outpatient procedural medical necessity criteria',
+  'AIM Guidelines': 'AIM Specialty Health Guidelines — advanced imaging & diagnostic appropriateness criteria',
+  'LOCUS Criteria': 'LOCUS (Level of Care Utilization System) — behavioral health level-of-care criteria',
+};
 export const NURSES = ['Maria Gonzalez, RN', 'Jessica Williams, RN', 'Andrew Mitchell, RN',
   'Sarah Mitchell, RN', 'Emily Chen, RN', 'Robert Kim, RN'];
 

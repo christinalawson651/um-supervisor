@@ -3,7 +3,7 @@ import {
   DashboardData, liveDecisionStats, liveDecisionRows, inScope,
   liveDeterminationMix, liveDeterminationCases, DeterminationMixRow, DeterminationOutcome,
 } from '../data/dashboard-data';
-import { CASE_POOL } from '../data/case-pool';
+import { CASE_POOL, GUIDELINE_DETAIL } from '../data/case-pool';
 import { urgencyOf, mdReviewerOf, determinationReasonOf, criteriaStatusOf } from '../data/case-fields';
 import { Interaction } from '../shared/interaction';
 import { Metrics, COLUMNS, toRow } from '../shared/metrics';
@@ -128,7 +128,9 @@ const CLINICAL_WIDGETS = [
             <tr class="clickable" (click)="open(r)">
               <td class="strong">{{ r.procedure }}</td>
               <td><span class="stype" [attr.data-t]="r.serviceType">{{ r.serviceType }}</span></td>
-              <td class="gl">{{ r.guideline }}</td>
+              <td class="gl has-tip">{{ r.guideline }}
+                @if (guidelineDetail(r.guideline); as detail) { <span class="tip">{{ detail }}</span> }
+              </td>
               <td><span class="rate-pill" [class.good]="r.approvalRate >= 80"
                     [class.mid]="r.approvalRate < 80">{{ r.approvalRate }}%</span></td>
               <td class="num"><span class="vol-link" (click)="openDecisionLog(r); $event.stopPropagation()">{{ r.volume }}</span></td>
@@ -159,6 +161,11 @@ const CLINICAL_WIDGETS = [
     .dstat[data-tone="blue"] { border-top-color: var(--blue); }  .dstat[data-tone="blue"] .dic{ color: var(--blue); }
     .dstat[data-tone="purple"]{ border-top-color: var(--purple);} .dstat[data-tone="purple"] .dic{ color: var(--purple); }
     .gl { font-style: italic; color: var(--gray-500); }
+    .has-tip { position: relative; cursor: help; text-decoration: underline dotted var(--gray-400); text-underline-offset: 3px; }
+    .has-tip .tip { visibility: hidden; opacity: 0; position: absolute; top: 100%; left: 0; margin-top: 6px;
+      background: var(--ink); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      font-style: normal; white-space: normal; width: 260px; line-height: 1.4; z-index: 30; transition: opacity .1s; pointer-events: none; }
+    .has-tip:hover .tip { visibility: visible; opacity: 1; }
     .stype { font-weight:600; font-size:12.5px; padding:3px 10px; border-radius:6px; }
     .stype[data-t="Inpatient"]  { background: var(--teal-100); color: var(--teal-900); }
     .stype[data-t="Outpatient"] { background: var(--green-bg); color: var(--green-fg); }
@@ -314,6 +321,7 @@ export class ClinicalTab {
     else { this.sortKey.set(k); this.sortDir.set(1); }
   }
   caret(k: keyof DecisionRow) { return caretFor(this.sortKey(), k, this.sortDir()); }
+  guidelineDetail(guideline: string): string { return GUIDELINE_DETAIL[guideline] ?? ''; }
 
   open(r: DecisionRow) {
     this.ix.openDrawer({
