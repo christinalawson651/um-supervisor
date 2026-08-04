@@ -178,16 +178,17 @@ export class ClinicalTab {
     });
   }
 
-  /** Every decided case for this procedure, with the MD reviewer tied to each determination
-   *  (only populated for cases that actually required MD/peer-to-peer review). */
+  /** Every decided case for this procedure, with the nurse reviewer who handled it and the MD
+   *  reviewer tied to the determination (MD Reviewer only populated for cases that actually
+   *  required MD/peer-to-peer review; Reviewer is '—' for auto-approved cases — no nurse touched them). */
   openDecisionLog(r: DecisionRow) {
     const [lob, days] = this.scopeArgs();
     const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.procedure === r.procedure && inScope(c, lob, days));
     this.ix.openExplorer({
       title: `${r.procedure} — Decision Log`,
       context: `${cases.length} decision(s) for ${r.procedure} · ${r.approvalRate}% approval rate`,
-      columns: ['Auth ID', 'Member', 'Decision', 'MD Reviewer', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'],
-      rows: cases.map((c) => [c.authId, c.member, c.decision, mdReviewerOf(c) ?? '—', c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`]),
+      columns: ['Auth ID', 'Member', 'Decision', 'Reviewer', 'MD Reviewer', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.decision, c.nurse, mdReviewerOf(c) ?? '—', c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`]),
       exportName: `decision-log-${r.procedure.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`,
       memberColumn: 1,
     });
