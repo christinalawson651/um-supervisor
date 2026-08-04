@@ -333,20 +333,9 @@ export class WorkforceTab {
       : b.utilization - a.utilization);
   });
 
+  /** Same strategy-picker Balance flow as the global Balance button, just restricted to this team's nurses. */
   balanceTeam(t: { name: string; nurses: NurseRow[] }) {
-    const from = t.nurses.reduce((a, b) => (b.utilization > a.utilization ? b : a));
-    const to = t.nurses.reduce((a, b) => (b.utilization < a.utilization ? b : a));
-    if (from.name === to.name) { this.ix.toast(`${t.name} is already balanced.`); return; }
-    this.ix.ask({
-      title: `Balance ${t.name}`,
-      body: `Move one authorization from ${from.name} (${from.utilization}% utilized) to ${to.name} (${to.utilization}% utilized)?`,
-      confirmLabel: 'Balance', tone: 'teal',
-      onConfirm: () => {
-        this.data.moveOneCase(from.name, to.name);
-        this.ix.toast(`Balanced ${t.name}: moved an authorization from ${from.name} to ${to.name}.`);
-        this.data.addHistory('balance', 'Team balanced', `${t.name}: ${from.name} → ${to.name}`);
-      },
-    });
+    this.bal.run(`within ${t.name}`, t.nurses.map((n) => n.name));
   }
 
   readonly visibleNurses = computed(() => {

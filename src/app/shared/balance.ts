@@ -18,7 +18,8 @@ export class Balance {
   private ix = inject(Interaction);
   private data = inject(DashboardData);
 
-  run(scopeNote = 'across the team') {
+  /** @param nurseScope restrict the rebalance pool to these nurse names (e.g. one team) — omit to consider everyone. */
+  run(scopeNote = 'across the team', nurseScope?: string[]) {
     this.ix.choose({
       title: 'Balance workload',
       body: `Choose how aggressively to rebalance authorizations from over-utilized nurses to those with capacity (${scopeNote}).`,
@@ -27,7 +28,7 @@ export class Balance {
       confirmLabel: 'Continue', tone: 'teal',
       onChoose: (opt) => {
         const strat = BALANCE_STRATEGIES.find((s) => s.label === opt)!;
-        const plan = this.simulate(strat.n);
+        const plan = this.simulate(strat.n, nurseScope);
         if (!plan.length) { this.ix.toast('Workload is already balanced — nothing to move.', 'info'); return; }
         this.ix.ask({
           title: `Balance ${plan.length} authorization${plan.length > 1 ? 's' : ''}`,
@@ -35,9 +36,9 @@ export class Balance {
           breakdown: this.summarize(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
-            plan.forEach(() => this.data.reassignBusiest());
+            plan.forEach(() => this.data.reassignBusiest(nurseScope));
             this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${plan.length} authorization${plan.length > 1 ? 's' : ''} moved).`);
-            this.data.addHistory('balance', 'Workload balanced', `${opt.split(' — ')[0]} · ${plan.length} authorization(s) moved`);
+            this.data.addHistory('balance', 'Workload balanced', `${opt.split(' — ')[0]} · ${plan.length} authorization(s) moved (${scopeNote})`);
           },
         });
       },
@@ -45,8 +46,10 @@ export class Balance {
   }
 
   /** Mirrors reassignBusiest()'s own logic (busiest -> least-utilized) so the preview matches what actually happens. */
-  private simulate(n: number): { from: string; to: string }[] {
-    const sim = this.data.nurses().map((x) => ({ name: x.name, utilization: x.utilization }));
+  private simulate(n: number, nurseScope?: string[]): { from: string; to: string }[] {
+    const sim = this.data.nurses()
+      .filter((x) => !nurseScope || nurseScope.includes(x.name))
+      .map((x) => ({ name: x.name, utilization: x.utilization }));
     const plan: { from: string; to: string }[] = [];
     for (let i = 0; i < n && sim.length > 1; i++) {
       const from = [...sim].sort((a, b) => b.utilization - a.utilization)[0];

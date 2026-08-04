@@ -327,9 +327,9 @@ export class DashboardData {
     return { ...n, active, pending: Math.max(0, n.pending + pendingDelta), utilization };
   }
 
-  /** Move one case from the busiest nurse to the one with most headroom. */
-  reassignBusiest(): { from: string; to: string } | null {
-    const list = [...this.nurses()];
+  /** Move one case from the busiest nurse to the one with most headroom — optionally restricted to a subset of nurse names (e.g. one team). */
+  reassignBusiest(nurseScope?: string[]): { from: string; to: string } | null {
+    const list = this.nurses().filter((n) => !nurseScope || nurseScope.includes(n.name));
     if (list.length < 2) return null;
     const from = list.reduce((a, b) => (b.utilization > a.utilization ? b : a));
     const to = list.reduce((a, b) => (b.utilization < a.utilization ? b : a));
