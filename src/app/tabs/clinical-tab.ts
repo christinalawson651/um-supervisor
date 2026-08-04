@@ -1,7 +1,9 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DashboardData, liveDecisionStats, liveDecisionRows } from '../data/dashboard-data';
+import { DashboardData, liveDecisionStats, liveDecisionRows, inScope } from '../data/dashboard-data';
+import { CASE_POOL } from '../data/case-pool';
+import { urgencyOf, mdReviewerOf } from '../data/case-fields';
 import { Interaction } from '../shared/interaction';
-import { Metrics } from '../shared/metrics';
+import { Metrics, COLUMNS, toRow } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
 import { DecisionRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
@@ -35,7 +37,7 @@ const CLINICAL_WIDGETS = [
       @for (s of decisionStats(); track s.label; let i = $index) {
         @if (!isHidden(s.label)) {
           <div class="dstat clickable" [attr.data-tone]="s.tone" (click)="metrics.open(decKeys[i])">
-            <z-widget-actions (exportClick)="exportStat(s)" (removeClick)="hide(s.label)"></z-widget-actions>
+            <z-widget-actions (exportClick)="exportStat(s, decKeys[i])" (removeClick)="hide(s.label)"></z-widget-actions>
             <div class="dic"><z-icon [name]="s.icon" [size]="20" [stroke]="1.8"></z-icon></div>
             <div class="dval">{{ s.value }}</div>
             <div class="dlab">{{ s.label }}</div>
@@ -115,8 +117,14 @@ export class ClinicalTab {
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
 
-  exportStat(s: { label: string; value: string }) {
-    this.exporter.open({ title: s.label, name: `clinical-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[s.label, s.value]] });
+  /** Exports the real cases behind the tile's percentage (same set its own click-through drilldown
+   *  shows) — not just the single headline number. */
+  exportStat(s: { label: string; value: string }, key: string) {
+    const cases = this.metrics.cases(key);
+    this.exporter.open({
+      title: s.label, name: `clinical-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      columns: COLUMNS, rows: cases.map(toRow),
+    });
   }
   exportDrilldown() {
     this.exporter.open({
@@ -166,7 +174,22 @@ export class ClinicalTab {
         ? 'Approval rate is below the service-line benchmark. Review recent denials for guideline-application consistency.'
         : 'Approval rate is tracking in line with the service-line benchmark.',
       actions: [{ label: 'View decision log', tone: 'teal',
-        run: () => this.ix.toast(`Opening decision log for ${r.procedure}…`, 'info') }],
+        run: () => this.openDecisionLog(r) }],
+    });
+  }
+
+  /** Every decided case for this procedure, with the MD reviewer tied to each determination
+   *  (only populated for cases that actually required MD/peer-to-peer review). */
+  openDecisionLog(r: DecisionRow) {
+    const [lob, days] = this.scopeArgs();
+    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.procedure === r.procedure && inScope(c, lob, days));
+    this.ix.openExplorer({
+      title: `${r.procedure} — Decision Log`,
+      context: `${cases.length} decision(s) for ${r.procedure} · ${r.approvalRate}% approval rate`,
+      columns: ['Auth ID', 'Member', 'Decision', 'MD Reviewer', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, c.decision, mdReviewerOf(c) ?? '—', c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`]),
+      exportName: `decision-log-${r.procedure.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`,
+      memberColumn: 1,
     });
   }
 }

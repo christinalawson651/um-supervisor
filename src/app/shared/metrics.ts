@@ -120,6 +120,13 @@ export class Metrics {
     return d ? this.byLob(d.pick()).length : 0;
   }
 
+  /** Live case list for a drill key, scoped by the shared LOB + Lookback filters — lets a widget's
+   *  own export button pull the exact same underlying cases its tile's drilldown shows. */
+  cases(key: string): CaseRec[] {
+    const d = DRILLS[key];
+    return d ? this.byLob(d.pick()) : [];
+  }
+
   /** True when neither shared filter is actively narrowing anything — the original, unfiltered baseline. */
   private isDefaultScope(): boolean {
     return this.lobFilter.value() === 'all' && this.lookback.period() === '30d';

@@ -30,6 +30,14 @@ export function urgencyOf(c: CaseRec): 'Expedited' | 'Standard' {
   return c.tags.includes('expedited') ? 'Expedited' : 'Standard';
 }
 
+// ---- MD Reviewer — the internal medical director who handled a decision requiring MD/peer-to-peer
+// review. Distinct from `c.provider` (the ordering/treating provider who submitted the request). ----
+export const MD_REVIEWERS = ['Dr. Patel', 'Dr. Nguyen', 'Dr. Rivera'];
+export function mdReviewerOf(c: CaseRec): string | null {
+  if (!c.tags.includes('mdReview') && !c.tags.includes('p2p')) return null;
+  return MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length];
+}
+
 /** Composite score for the Case Explorer's "Sort: Urgency" control — expedited & SLA-risk float to the top. */
 export function urgencyScore(c: CaseRec): number {
   let score = 0;

@@ -411,7 +411,7 @@ export class DashboardData {
 // drift apart the way separately hand-typed static arrays used to.
 // ---------------------------------------------------------------------------------------------
 
-function inScope(c: CaseRec, lob?: string, withinDays?: number): boolean {
+export function inScope(c: CaseRec, lob?: string, withinDays?: number): boolean {
   return (!lob || lob === 'all' || lobOf(c.authId) === lob)
     && (withinDays === undefined || daysAgo(c.submitted) <= withinDays);
 }
