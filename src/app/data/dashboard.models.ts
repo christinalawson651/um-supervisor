@@ -55,6 +55,7 @@ export interface ConcurrentRow {
   reviewer: string;
   expectedDischarge: string;
   nextAction: string;
+  nextActionShort: string;     // compact grid label; nextAction (full sentence) shows on hover
   expectedLos: string;         // internal — not its own grid column (superseded by Expected Discharge), kept for aggregation
   overstayRisk: Tone;          // green/amber/red — LOS vs. expected-LOS risk (kept for internal styling)
   overstayLabel: string;

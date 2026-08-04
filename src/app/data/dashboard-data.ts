@@ -46,19 +46,23 @@ function concurrentRowFor(c: CaseRec): ConcurrentRow {
   const overstayRisk = diff >= 3 ? 'red' : diff >= 1 ? 'amber' : 'green';
   const overstayLabel = diff >= 3 ? 'High' : diff >= 1 ? 'Medium' : 'Low';
 
-  let status: string; let statusTone: 'green' | 'amber' | 'red'; let nextAction: string;
+  let status: string; let statusTone: 'green' | 'amber' | 'red'; let nextAction: string; let nextActionShort: string;
   if (uncertifiedDays > 0) {
     status = 'Uncertified Days'; statusTone = 'red';
     nextAction = `Certify ${uncertifiedDays} outstanding day(s) or request a retro review`;
+    nextActionShort = `Certify ${uncertifiedDays}d gap`;
   } else if (daysRequested > totalCertifiedDays) {
     status = 'Extension Requested'; statusTone = 'amber';
     nextAction = `Route ${daysRequested - totalCertifiedDays} additional day(s) to formal review`;
+    nextActionShort = 'Route extension';
   } else if (daysRemaining <= 1) {
     status = 'Recert Due'; statusTone = 'amber';
     nextAction = 'Submit continued-stay review before certification lapses';
+    nextActionShort = 'Recertify';
   } else {
     status = 'Certified'; statusTone = 'green';
     nextAction = 'Continue monitoring — no action needed';
+    nextActionShort = 'Monitor';
   }
 
   return {
@@ -73,7 +77,7 @@ function concurrentRowFor(c: CaseRec): ConcurrentRow {
     status, statusTone,
     reviewer: c.nurse,
     expectedDischarge: expectedDischargeDate.toISOString().slice(0, 10),
-    nextAction,
+    nextAction, nextActionShort,
     expectedLos: `${expectedLos}d`,
     overstayRisk, overstayLabel,
   };

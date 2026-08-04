@@ -4,18 +4,28 @@ import { Interaction } from '../shared/interaction';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Exporter } from '../shared/exporter';
 import { ConcurrentRow } from '../data/dashboard.models';
+import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
-const CONCURRENT_WIDGETS = [{ id: 'table', title: 'Concurrent Review Monitoring' }];
+const CONCURRENT_WIDGETS = [{ id: 'stats', title: 'Concurrent Review Stats' }, { id: 'table', title: 'Concurrent Review Monitoring' }];
+const STATUS_ORDER = ['Uncertified Days', 'Extension Requested', 'Recert Due', 'Certified'] as const;
+type StatusFilter = 'all' | (typeof STATUS_ORDER)[number];
+
+const TABLE_COLUMNS = ['Member', 'Facility', 'LOS', 'Total Certified Days', 'Certified Through', 'Days Remaining',
+  'Uncertified Days', 'Next Review Due', 'Requested/Approved', 'Status', 'Reviewer', 'Expected Discharge', 'Next Action'];
+function toTableRow(r: ConcurrentRow): (string | number)[] {
+  return [r.member, r.facility, r.los, r.totalCertifiedDays, r.certifiedThrough, r.daysRemaining, r.uncertifiedDays,
+    r.nextReview, `${r.daysRequested} / ${r.totalCertifiedDays}`, r.status, r.reviewer, r.expectedDischarge, r.nextAction];
+}
 
 @Component({
   selector: 'app-concurrent-tab',
   standalone: true,
-  imports: [WidgetActions, WidgetCustomize],
+  imports: [Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Concurrent Review Monitoring</h2>
@@ -25,37 +35,63 @@ const CONCURRENT_WIDGETS = [{ id: 'table', title: 'Concurrent Review Monitoring'
 
     <z-widget-customize [vis]="vis"></z-widget-customize>
 
+    @if (!isHidden('stats')) {
+    <div class="dstats">
+      @for (s of stats(); track s.label) {
+        <div class="dstat clickable" [attr.data-tone]="s.tone" (click)="drillStatus(s.filter)">
+          <z-widget-actions (exportClick)="exportStat(s)" (removeClick)="hide('stats')"></z-widget-actions>
+          <div class="dic"><z-icon [name]="s.icon" [size]="20" [stroke]="1.8"></z-icon></div>
+          <div class="dval">{{ s.value }}</div>
+          <div class="dlab">{{ s.label }}</div>
+        </div>
+      }
+    </div>
+    }
+
     @if (!isHidden('table')) {
-    <div class="panel">
-      <z-widget-actions (exportClick)="exportTable()" (removeClick)="hide('table')"></z-widget-actions>
-      <table class="z-table">
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head">
+        <h3 class="panel-title">All Concurrent Reviews</h3>
+        <select class="svc-filter" [value]="statusFilter()" (change)="statusFilter.set($any($event.target).value)">
+          <option value="all">All Statuses</option>
+          @for (s of statusOptions; track s) { <option [value]="s">{{ s }}</option> }
+        </select>
+        <z-widget-actions (exportClick)="exportTable()" (removeClick)="hide('table')"></z-widget-actions>
+      </div>
+      <table class="z-table compact">
         <thead>
           <tr>
             <th>Member</th><th>Facility</th><th>LOS</th>
-            <th>Total Certified Days</th><th>Certified Through</th><th>Days Remaining</th><th>Uncertified Days</th>
-            <th>Next Review Due</th><th>Requested/Approved</th><th>Status</th><th>Reviewer</th>
+            <th>Certified Through</th><th>Uncertified Days</th>
+            <th>Next Review Due</th><th>Req./Approved</th><th>Status</th><th>Reviewer</th>
             <th>Expected Discharge</th><th>Next Action</th>
           </tr>
         </thead>
         <tbody>
-          @for (r of concurrentRows(); track r.member) {
+          @for (r of filteredRows(); track r.member) {
             <tr class="clickable" (click)="open(r)">
               <td class="strong">{{ r.member }}</td>
               <td>{{ r.facility }}</td>
               <td [class.danger]="r.losFlag">{{ r.los }}</td>
-              <td class="num">{{ r.totalCertifiedDays }}</td>
-              <td>{{ r.certifiedThrough }}</td>
-              <td class="num" [class.danger]="r.daysRemaining <= 1" [class.warn]="r.daysRemaining > 1 && r.daysRemaining <= 3">{{ r.daysRemaining }}</td>
+              <td>
+                <div>{{ r.certifiedThrough }}</div>
+                <div class="sub" [class.danger]="r.daysRemaining <= 1" [class.warn]="r.daysRemaining > 1 && r.daysRemaining <= 3">
+                  {{ r.daysRemaining < 0 ? (-r.daysRemaining) + 'd overdue' : r.daysRemaining + 'd left' }}
+                </div>
+              </td>
               <td class="num" [class.danger]="r.uncertifiedDays > 0">{{ r.uncertifiedDays }}</td>
               <td>{{ r.nextReview }}</td>
-              <td class="num">{{ r.daysRequested }} / {{ r.totalCertifiedDays }}</td>
+              <td class="num">{{ r.daysRequested }}/{{ r.totalCertifiedDays }}</td>
               <td><span class="badge" [class.red]="r.statusTone==='red'"
                     [class.amber]="r.statusTone==='amber'"
                     [class.green]="r.statusTone==='green'">{{ r.status }}</span></td>
               <td>{{ r.reviewer }}</td>
               <td>{{ r.expectedDischarge }}</td>
-              <td class="na">{{ r.nextAction }}</td>
+              <td class="na has-tip">{{ r.nextActionShort }}<span class="tip">{{ r.nextAction }}</span></td>
             </tr>
+          }
+          @if (!filteredRows().length) {
+            <tr><td colspan="11" class="empty-row">No reviews match this filter.</td></tr>
           }
         </tbody>
       </table>
@@ -68,8 +104,31 @@ const CONCURRENT_WIDGETS = [{ id: 'table', title: 'Concurrent Review Monitoring'
     .panel:hover z-widget-actions { opacity: 1; }
     .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
     .cz-btn { margin-left: auto; flex-shrink: 0; }
-    .warn { color: var(--amber-fg); font-weight: 600; }
-    .na { color: var(--ink-soft); font-size: 12.5px; white-space: normal; min-width: 220px; }
+    .compact.z-table thead th, .compact.z-table tbody td { padding: 9px 12px; font-size: 12.5px; }
+    .sub { font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+    .sub.warn { color: var(--amber-fg); font-weight: 600; }
+    .sub.danger { color: var(--red); font-weight: 600; }
+    .na { color: var(--ink-soft); font-weight: 600; }
+    .has-tip { position: relative; cursor: help; text-decoration: underline dotted var(--gray-400); text-underline-offset: 3px; }
+    .has-tip .tip { visibility: hidden; opacity: 0; position: absolute; top: 100%; left: 0; margin-top: 6px;
+      background: var(--ink); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      white-space: normal; width: 240px; line-height: 1.4; z-index: 30; transition: opacity .1s; pointer-events: none; }
+    .has-tip:hover .tip { visibility: visible; opacity: 1; }
+    .dstats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+    .dstat { position: relative; background: #fff; border: 1px solid var(--border); border-top: 3px solid var(--gray-300);
+      border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 12px; text-align: center; }
+    .dstat:hover z-widget-actions { opacity: 1; }
+    .dic { display: flex; justify-content: center; margin-bottom: 10px; }
+    .dval { font-size: 26px; font-weight: 700; color: var(--ink); }
+    .dlab { font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--gray-500); font-weight: 600; margin-top: 4px; }
+    .dstat[data-tone="green"] { border-top-color: var(--green); } .dstat[data-tone="green"] .dic { color: var(--green); }
+    .dstat[data-tone="red"]   { border-top-color: var(--red); }   .dstat[data-tone="red"] .dic { color: var(--red); }
+    .dstat[data-tone="amber"] { border-top-color: var(--amber); } .dstat[data-tone="amber"] .dic { color: var(--amber); }
+    .dstat[data-tone="teal"]  { border-top-color: var(--teal-600); } .dstat[data-tone="teal"] .dic { color: var(--teal-700); }
+    .tbl-head { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px 16px; padding-right: 44px; }
+    .svc-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
+      font-size: 12.5px; color: var(--ink-soft); margin-left: auto; margin-right: 12px; }
+    .empty-row { text-align: center; color: var(--gray-500); padding: 20px; }
   `],
 })
 export class ConcurrentTab {
@@ -80,20 +139,12 @@ export class ConcurrentTab {
   private lookback = inject(Lookback);
   private exporter = inject(Exporter);
 
+  readonly statusOptions = STATUS_ORDER;
+
   // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or the panel's × ----
-  readonly vis = new WidgetVisibility('zyter-um-concurrent-widgets-v1', CONCURRENT_WIDGETS);
+  readonly vis = new WidgetVisibility('zyter-um-concurrent-widgets-v2', CONCURRENT_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
-
-  exportTable() {
-    this.exporter.open({
-      title: 'Concurrent Review Monitoring', name: 'concurrent-review_2026-07-17',
-      columns: ['Member', 'Facility', 'LOS', 'Total Certified Days', 'Certified Through', 'Days Remaining',
-        'Uncertified Days', 'Next Review Due', 'Requested/Approved', 'Status', 'Reviewer', 'Expected Discharge', 'Next Action'],
-      rows: this.concurrentRows().map((r) => [r.member, r.facility, r.los, r.totalCertifiedDays, r.certifiedThrough,
-        r.daysRemaining, r.uncertifiedDays, r.nextReview, `${r.daysRequested} / ${r.totalCertifiedDays}`, r.status, r.reviewer, r.expectedDischarge, r.nextAction]),
-    });
-  }
 
   /** Real concurrent-review rows derived from the case pool, scoped by the shared LOB + Lookback filters. */
   readonly concurrentRows = computed(() => {
@@ -101,6 +152,47 @@ export class ConcurrentTab {
     const period = this.lookback.period();
     return liveConcurrentRows(lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays());
   });
+
+  /** Headline stats — the same status buckets that drive the table's Status column and filter, so a
+   *  tile's count, its drill-down, and the table's own filter can never drift apart. */
+  readonly stats = computed(() => {
+    const rows = this.concurrentRows();
+    const of = (status: string) => rows.filter((r) => r.status === status).length;
+    return [
+      { label: 'Active Reviews', value: String(rows.length), icon: 'folder', tone: 'teal', filter: 'all' as StatusFilter },
+      { label: 'Uncertified Days', value: String(of('Uncertified Days')), icon: 'xcircle', tone: 'red', filter: 'Uncertified Days' as StatusFilter },
+      { label: 'Extension Requested', value: String(of('Extension Requested')), icon: 'clock', tone: 'amber', filter: 'Extension Requested' as StatusFilter },
+      { label: 'Recert Due', value: String(of('Recert Due')), icon: 'alert', tone: 'amber', filter: 'Recert Due' as StatusFilter },
+      { label: 'Certified', value: String(of('Certified')), icon: 'check', tone: 'green', filter: 'Certified' as StatusFilter },
+    ];
+  });
+
+  readonly statusFilter = signal<StatusFilter>('all');
+  readonly filteredRows = computed(() => {
+    const f = this.statusFilter();
+    const rows = this.concurrentRows();
+    return f === 'all' ? rows : rows.filter((r) => r.status === f);
+  });
+
+  /** A tile sets the same filter the table uses, so drilling in stays on this page instead of a modal. */
+  drillStatus(filter: StatusFilter) {
+    this.statusFilter.set(filter);
+  }
+
+  exportStat(s: { label: string; filter: StatusFilter }) {
+    const rows = s.filter === 'all' ? this.concurrentRows() : this.concurrentRows().filter((r) => r.status === s.filter);
+    this.exporter.open({
+      title: s.label, name: `concurrent-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      columns: TABLE_COLUMNS, rows: rows.map(toTableRow),
+    });
+  }
+
+  exportTable() {
+    this.exporter.open({
+      title: 'Concurrent Review Monitoring', name: 'concurrent-review_2026-07-17',
+      columns: TABLE_COLUMNS, rows: this.filteredRows().map(toTableRow),
+    });
+  }
 
   open(r: ConcurrentRow) {
     this.ix.openDrawer({
