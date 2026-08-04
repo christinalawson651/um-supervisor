@@ -4,6 +4,7 @@ import { Interaction } from '../shared/interaction';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Exporter } from '../shared/exporter';
 import { ConcurrentRow } from '../data/dashboard.models';
+import { Members } from '../shared/members';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
@@ -51,7 +52,7 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
     @if (!isHidden('table')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
-        <h3 class="panel-title">All Concurrent Reviews</h3>
+        <h3 class="panel-title">Active Concurrent Reviews</h3>
         <select class="svc-filter" [value]="statusFilter()" (change)="statusFilter.set($any($event.target).value)">
           <option value="all">All Statuses</option>
           @for (s of statusOptions; track s) { <option [value]="s">{{ s }}</option> }
@@ -69,8 +70,8 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
         </thead>
         <tbody>
           @for (r of filteredRows(); track r.member) {
-            <tr class="clickable" (click)="open(r)">
-              <td class="strong">{{ r.member }}</td>
+            <tr>
+              <td><a class="mlink" (click)="openMember(r)">{{ r.member }}</a></td>
               <td>{{ r.facility }}</td>
               <td [class.danger]="r.losFlag">{{ r.los }}</td>
               <td>
@@ -87,7 +88,7 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
                     [class.green]="r.statusTone==='green'">{{ r.status }}</span></td>
               <td>{{ r.reviewer }}</td>
               <td>{{ r.expectedDischarge }}</td>
-              <td class="na has-tip">{{ r.nextActionShort }}<span class="tip">{{ r.nextAction }}</span></td>
+              <td class="na has-tip clickable" (click)="open(r)">{{ r.nextActionShort }}<span class="tip">{{ r.nextAction }}</span></td>
             </tr>
           }
           @if (!filteredRows().length) {
@@ -109,6 +110,9 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
     .sub.warn { color: var(--amber-fg); font-weight: 600; }
     .sub.danger { color: var(--red); font-weight: 600; }
     .na { color: var(--ink-soft); font-weight: 600; }
+    .na.has-tip { cursor: pointer; }
+    .mlink { color: #2563eb; font-weight: 600; cursor: pointer; }
+    .mlink:hover { text-decoration: underline; }
     .has-tip { position: relative; cursor: help; text-decoration: underline dotted var(--gray-400); text-underline-offset: 3px; }
     .has-tip .tip { visibility: hidden; opacity: 0; position: absolute; top: 100%; left: 0; margin-top: 6px;
       background: var(--ink); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
@@ -138,6 +142,7 @@ export class ConcurrentTab {
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
   private exporter = inject(Exporter);
+  private members = inject(Members);
 
   readonly statusOptions = STATUS_ORDER;
 
@@ -192,6 +197,10 @@ export class ConcurrentTab {
       title: 'Concurrent Review Monitoring', name: 'concurrent-review_2026-07-17',
       columns: TABLE_COLUMNS, rows: this.filteredRows().map(toTableRow),
     });
+  }
+
+  openMember(r: ConcurrentRow) {
+    this.members.openByName(r.member);
   }
 
   open(r: ConcurrentRow) {
