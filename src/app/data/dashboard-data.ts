@@ -159,18 +159,7 @@ export class DashboardData {
   // button in app.ts — always reads the exact same live, LOB/Lookback-scoped values.
 
   // ---------- Intake & Documentation Quality ----------
-  readonly qualityBars: QualityBar[] = [
-    { label: 'Complete Submissions', pct: 87, tone: 'green', icon: 'check' },
-    { label: 'Auto-Approved',        pct: 38, tone: 'teal',  icon: 'bolt' },
-    { label: 'Needing RFI',          pct: 15, tone: 'amber', icon: 'mail' },
-  ];
-  readonly missingFields: MissingField[] = [
-    { field: 'Clinical Justification',   count: 23, pct: 42 },
-    { field: 'Provider NPI',             count: 18, pct: 33 },
-    { field: 'Diagnosis Code (ICD-10)',  count: 14, pct: 25 },
-    { field: 'Procedure Code (CPT)',     count: 11, pct: 20 },
-    { field: 'Supporting Documentation', count: 9,  pct: 16 },
-  ];
+  // liveQualityBars()/liveMissingFields() (below the class) are the real source now.
 
   // ---------- Provider & Network Insights ----------
   readonly oonRequests = 47;
@@ -500,4 +489,30 @@ export function liveConcurrentRows(lob?: string, withinDays?: number): Concurren
   return CASE_POOL
     .filter((c) => c.phase === 'pending' && c.tags.includes('concurrent') && inScope(c, lob, withinDays))
     .map(concurrentRowFor);
+}
+
+export function liveQualityBars(lob?: string, withinDays?: number): QualityBar[] {
+  const pendingCs = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
+  const decidedCs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
+  return [
+    { label: 'Complete Submissions', pct: pctOf(pendingCs.filter((c) => !c.tags.includes('incompleteDoc')).length, pendingCs.length), tone: 'green', icon: 'check' },
+    { label: 'Auto-Approved', pct: pctOf(decidedCs.filter((c) => c.tags.includes('auto')).length, decidedCs.length), tone: 'teal', icon: 'bolt' },
+    { label: 'Needing RFI', pct: pctOf(pendingCs.filter((c) => c.tags.includes('rfi')).length, pendingCs.length), tone: 'amber', icon: 'mail' },
+  ];
+}
+
+const MISSING_FIELDS = ['Clinical Justification', 'Provider NPI', 'Diagnosis Code (ICD-10)', 'Procedure Code (CPT)', 'Supporting Documentation'];
+/** Deterministic primary missing field per incomplete case (not randomized — stable per authId). */
+function missingFieldOf(c: CaseRec): string {
+  return MISSING_FIELDS[Number(c.authId.slice(-2)) % MISSING_FIELDS.length];
+}
+
+export function liveMissingFields(lob?: string, withinDays?: number): MissingField[] {
+  const pendingCs = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
+  const incomplete = pendingCs.filter((c) => c.tags.includes('incompleteDoc'));
+  const counts = new Map<string, number>();
+  for (const c of incomplete) { const f = missingFieldOf(c); counts.set(f, (counts.get(f) ?? 0) + 1); }
+  return MISSING_FIELDS
+    .map((field) => ({ field, count: counts.get(field) ?? 0, pct: pctOf(counts.get(field) ?? 0, pendingCs.length) }))
+    .sort((a, b) => b.count - a.count);
 }

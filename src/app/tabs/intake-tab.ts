@@ -1,9 +1,11 @@
-import { Component, inject } from '@angular/core';
-import { DashboardData } from '../data/dashboard-data';
+import { Component, computed, inject } from '@angular/core';
+import { DashboardData, liveQualityBars, liveMissingFields } from '../data/dashboard-data';
 import { Metrics } from '../shared/metrics';
 import { Interaction } from '../shared/interaction';
 import { MissingField } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
+import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-intake-tab',
@@ -16,7 +18,7 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="grid-3">
-      @for (b of data.qualityBars; track b.label; let i = $index) {
+      @for (b of qualityBars(); track b.label; let i = $index) {
         <div class="panel panel-pad bar-block clickable" (click)="metrics.open(barKeys[i])">
           <div class="bar-top"><z-icon [name]="b.icon" [size]="15" [stroke]="1.8"></z-icon>{{ b.label }}</div>
           <div class="bar-val" [class.amber]="b.tone==='amber'">{{ b.pct }}%</div>
@@ -34,7 +36,7 @@ import { Icon } from '../shared/icon';
           <tr><th>Field</th><th>Missing Count</th><th>% of Submissions</th></tr>
         </thead>
         <tbody>
-          @for (f of data.missingFields; track f.field) {
+          @for (f of missingFields(); track f.field) {
             <tr class="clickable" (click)="openField(f)">
               <td class="strong">{{ f.field }}</td>
               <td class="num">{{ f.count }}</td>
@@ -61,6 +63,16 @@ export class IntakeTab {
   metrics = inject(Metrics);
   private ix = inject(Interaction);
   readonly barKeys = ['intake.complete', 'intake.auto', 'intake.rfi'];
+
+  private lobFilter = inject(LobFilter);
+  private lookback = inject(Lookback);
+  private scopeArgs(): [string | undefined, number | undefined] {
+    const lob = this.lobFilter.value();
+    const period = this.lookback.period();
+    return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];
+  }
+  readonly qualityBars = computed(() => liveQualityBars(...this.scopeArgs()));
+  readonly missingFields = computed(() => liveMissingFields(...this.scopeArgs()));
 
   openField(f: MissingField) {
     this.ix.openDrawer({

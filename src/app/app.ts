@@ -14,7 +14,7 @@ import { Exporter } from './shared/exporter';
 import { Lookback } from './shared/lookback';
 import { LobFilter } from './shared/lob-filter';
 import { REFERRALS } from './data/referrals';
-import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows } from './data/dashboard-data';
+import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows, liveMissingFields } from './data/dashboard-data';
 
 import { OverviewDashboard } from './modules/overview-dashboard';
 import { CmDashboard } from './modules/cm-dashboard';
@@ -181,7 +181,7 @@ export class App {
       case 4: name = 'concurrent-review'; columns = ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'];
         rows = liveConcurrentRows(lob, days).map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]); break;
       case 5: name = 'intake-missing-fields'; columns = ['Field', 'Missing Count', '% of Submissions'];
-        rows = d.missingFields.map((f) => [f.field, f.count, f.pct]); break;
+        rows = liveMissingFields(lob, days).map((f) => [f.field, f.count, f.pct]); break;
       case 6: name = 'providers'; columns = ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'];
         rows = d.providers.map((p) => [p.provider, p.npi, p.requests, p.approvalRate, p.rfiRate]); break;
       case 7: name = 'high-dollar-authorizations'; columns = ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'];
