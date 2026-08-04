@@ -13,6 +13,7 @@ import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
+import { caretFor, SortDir } from '../shared/sort';
 
 const CONCURRENT_WIDGETS = [{ id: 'stats', title: 'Concurrent Review Stats' }, { id: 'table', title: 'Concurrent Review Monitoring' }];
 const STATUS_ORDER = ['Uncertified Days', 'Extension Requested', 'Recert Due', 'Certified'] as const;
@@ -55,6 +56,8 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
         <h3 class="panel-title">Active Concurrent Reviews</h3>
+        <input class="search-box" type="text" placeholder="Search member, facility, reviewer…"
+          [value]="search()" (input)="search.set($any($event.target).value)" />
         <select class="svc-filter" [value]="statusFilter()" (change)="statusFilter.set($any($event.target).value)">
           <option value="all">All Statuses</option>
           @for (s of statusOptions; track s) { <option [value]="s">{{ s }}</option> }
@@ -72,9 +75,15 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
         <thead>
           <tr>
             <th class="selth"><input type="checkbox" [checked]="allSelected()" (change)="toggleAllFiltered($event)" /></th>
-            <th>Member</th><th>Facility</th><th>LOS</th>
-            <th>Stay Timeline</th><th>Uncert.</th>
-            <th>Next Review</th><th>Req./Appr.</th><th>Status</th><th>Reviewer</th>
+            <th class="sortable" (click)="sortBy('member')">Member{{ caret('member') }}</th>
+            <th class="sortable" (click)="sortBy('facility')">Facility{{ caret('facility') }}</th>
+            <th class="sortable" (click)="sortBy('los')">LOS{{ caret('los') }}</th>
+            <th class="sortable" (click)="sortBy('daysRemaining')">Stay Timeline{{ caret('daysRemaining') }}</th>
+            <th class="sortable" (click)="sortBy('uncertifiedDays')">Uncert.{{ caret('uncertifiedDays') }}</th>
+            <th class="sortable" (click)="sortBy('nextReview')">Next Review{{ caret('nextReview') }}</th>
+            <th class="sortable" (click)="sortBy('daysRequested')">Req./Appr.{{ caret('daysRequested') }}</th>
+            <th class="sortable" (click)="sortBy('status')">Status{{ caret('status') }}</th>
+            <th class="sortable" (click)="sortBy('reviewer')">Reviewer{{ caret('reviewer') }}</th>
             <th>Next Action</th>
           </tr>
         </thead>
@@ -155,7 +164,12 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
     .dstat[data-tone="teal"]  { border-top-color: var(--teal-600); } .dstat[data-tone="teal"] .dic { color: var(--teal-700); }
     .tbl-head { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px 16px; padding-right: 44px; }
     .svc-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
-      font-size: 12.5px; color: var(--ink-soft); margin-left: auto; margin-right: 12px; }
+      font-size: 12.5px; color: var(--ink-soft); margin-right: 12px; }
+    .search-box { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12.5px;
+      width: 200px; margin-left: auto; outline: none; }
+    .search-box:focus { border-color: var(--teal-600); }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { color: var(--ink-soft); }
     .empty-row { text-align: center; color: var(--gray-500); padding: 20px; }
     .sel-toolbar { display: flex; align-items: center; gap: 12px; padding: 0 16px 12px; flex-wrap: wrap; }
     .selcount { font-size: 12px; font-weight: 700; color: var(--teal-700); white-space: nowrap; }
@@ -219,11 +233,37 @@ export class ConcurrentTab {
   });
 
   readonly statusFilter = signal<StatusFilter>('all');
+  readonly search = signal('');
+  readonly sortKey = signal<keyof ConcurrentRow | ''>('');
+  readonly sortDir = signal<SortDir>(1);
   readonly filteredRows = computed(() => {
     const f = this.statusFilter();
-    const rows = this.concurrentRows();
-    return f === 'all' ? rows : rows.filter((r) => r.status === f);
+    const q = this.search().trim().toLowerCase();
+    let rows = this.concurrentRows();
+    if (f !== 'all') rows = rows.filter((r) => r.status === f);
+    if (q) rows = rows.filter((r) => r.member.toLowerCase().includes(q) || r.facility.toLowerCase().includes(q) || r.reviewer.toLowerCase().includes(q));
+    const key = this.sortKey();
+    if (!key) return rows;
+    const dir = this.sortDir();
+    return [...rows].sort((a, b) => this.compareByKey(a, b, key) * dir);
   });
+
+  sortBy(k: keyof ConcurrentRow) {
+    if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
+    else { this.sortKey.set(k); this.sortDir.set(1); }
+  }
+  caret(k: keyof ConcurrentRow) { return caretFor(this.sortKey(), k, this.sortDir()); }
+
+  /** A local comparator (not the generic shared one) because this row mixes real numbers
+   *  (daysRemaining, uncertifiedDays, daysRequested), a day-count string ("12d"), and ISO date
+   *  strings ("2026-07-23") — a generic parseFloat-based sort mis-parses ISO dates (it reads only
+   *  the leading "2026" and stops, so two different dates in the same year compare as equal). */
+  private compareByKey(a: ConcurrentRow, b: ConcurrentRow, key: keyof ConcurrentRow): number {
+    const raw = (r: ConcurrentRow) => (key === 'los' ? parseInt(r.los, 10) : r[key]);
+    const av = raw(a), bv = raw(b);
+    if (typeof av === 'number' && typeof bv === 'number') return av - bv;
+    return String(av).localeCompare(String(bv));
+  }
 
   /** A tile sets the same filter the table uses, so drilling in stays on this page instead of a modal. */
   drillStatus(filter: StatusFilter) {
