@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import {
   DashboardData, liveDecisionStats, liveDecisionRows, inScope,
-  liveDeterminationMix, liveDeterminationCases, DeterminationMixRow,
+  liveDeterminationMix, liveDeterminationCases, DeterminationMixRow, DeterminationOutcome,
 } from '../data/dashboard-data';
 import { CASE_POOL } from '../data/case-pool';
 import { urgencyOf, mdReviewerOf, determinationReasonOf, criteriaStatusOf } from '../data/case-fields';
@@ -76,7 +76,8 @@ const CLINICAL_WIDGETS = [
       <div class="panel-pad tbl-head">
         <h3 class="panel-title">Determination Reason Mix</h3>
         <div class="mix-toggle">
-          <button class="seg-btn" [class.active]="mixOutcome()==='Denied'" (click)="mixOutcome.set('Denied')">Denied / Partial</button>
+          <button class="seg-btn" [class.active]="mixOutcome()==='Denied'" (click)="mixOutcome.set('Denied')">Denied</button>
+          <button class="seg-btn" [class.active]="mixOutcome()==='Partial'" (click)="mixOutcome.set('Partial')">Partial</button>
           <button class="seg-btn" [class.active]="mixOutcome()==='Approved'" (click)="mixOutcome.set('Approved')">Approved</button>
         </div>
         <z-widget-actions (exportClick)="exportReasonMix()" (removeClick)="hide('reason-mix')"></z-widget-actions>
@@ -94,7 +95,7 @@ const CLINICAL_WIDGETS = [
           </div>
         }
         @if (!reasonMix().length) {
-          <div class="reason-empty">No {{ mixOutcome() === 'Approved' ? 'approved' : 'denied/partial' }} decisions in the current scope.</div>
+          <div class="reason-empty">No {{ mixOutcome().toLowerCase() }} decisions in the current scope.</div>
         }
       </div>
     </div>
@@ -130,7 +131,7 @@ const CLINICAL_WIDGETS = [
               <td class="gl">{{ r.guideline }}</td>
               <td><span class="rate-pill" [class.good]="r.approvalRate >= 80"
                     [class.mid]="r.approvalRate < 80">{{ r.approvalRate }}%</span></td>
-              <td class="num">{{ r.volume }}</td>
+              <td class="num"><span class="vol-link" (click)="openDecisionLog(r); $event.stopPropagation()">{{ r.volume }}</span></td>
             </tr>
           }
           @if (!sortedRows().length) {
@@ -204,6 +205,8 @@ const CLINICAL_WIDGETS = [
     .svc-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
       font-size: 12.5px; color: var(--ink-soft); margin-left: auto; margin-right: 12px; }
     .empty-row { text-align: center; color: var(--gray-500); padding: 20px; }
+    .vol-link { color: var(--teal-700); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+    .vol-link:hover { color: var(--teal-900); }
   `],
 })
 export class ClinicalTab {
@@ -267,9 +270,10 @@ export class ClinicalTab {
     this.exporter.open({ title: 'Decision Mix', name: 'clinical-decision-mix_2026-07-17', columns: COLUMNS, rows: cases.map(toRow) });
   }
 
-  /** Determination Reason Mix — real reason-code breakdown behind Approved or Denied/Partial
-   *  decisions, matching the real UM workflow where every determination requires a reason code. */
-  readonly mixOutcome = signal<'Approved' | 'Denied'>('Denied');
+  /** Determination Reason Mix — real reason-code breakdown behind Approved, Denied, or Partial
+   *  decisions (tracked separately), matching the real UM workflow where every determination
+   *  requires a reason code. */
+  readonly mixOutcome = signal<DeterminationOutcome>('Denied');
   readonly reasonMix = computed(() => liveDeterminationMix(this.mixOutcome(), ...this.scopeArgs()));
   drillReason(row: DeterminationMixRow) {
     const [lob, days] = this.scopeArgs();
@@ -284,8 +288,7 @@ export class ClinicalTab {
   exportReasonMix() {
     const [lob, days] = this.scopeArgs();
     const outcome = this.mixOutcome();
-    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, days)
-      && (outcome === 'Approved' ? c.decision === 'Approved' : c.decision === 'Denied' || c.decision === 'Partial'));
+    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.decision === outcome && inScope(c, lob, days));
     this.exporter.open({
       title: `Determination Reason Mix — ${outcome}`, name: `determination-mix-${outcome.toLowerCase()}_2026-07-17`,
       columns: [...COLUMNS, 'Reason Code'],

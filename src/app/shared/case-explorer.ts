@@ -7,7 +7,7 @@ import { Escalate, ESCALATE_TARGETS } from './escalate';
 import { Balance } from './balance';
 import { downloadCsv } from './export-csv';
 import { DashboardData } from '../data/dashboard-data';
-import { CASE_POOL, CaseRec } from '../data/case-pool';
+import { CASE_POOL, CaseRec, GUIDELINE_BY_PROCEDURE } from '../data/case-pool';
 import { lobOf, serviceCategoryOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { nbaFor } from '../data/um-status';
 import { pendReason } from './metrics';
@@ -88,6 +88,8 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                     @for (cell of row; track $index; let ci = $index) {
                       @if (ci === e.memberColumn) {
                         <td><a class="mlink" (click)="openAuth(row, e)">{{ cell }}</a></td>
+                      } @else if (e.columns[ci] === 'Procedure' && guidelineFor(cell)) {
+                        <td class="has-tip" [title]="'Guideline: ' + guidelineFor(cell)">{{ cell }}</td>
                       } @else {
                         <td>{{ cell }}</td>
                       }
@@ -150,6 +152,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
     .etable tbody tr:hover { background: var(--gray-50); }
     .mlink { color:#2563eb; font-weight:600; cursor:pointer; }
     .mlink:hover { text-decoration:underline; }
+    .has-tip { cursor: help; text-decoration: underline dotted var(--gray-400); text-underline-offset: 3px; }
     .empty { text-align:center; color:var(--gray-500); padding: 28px; }
     .pager { display:flex; align-items:center; gap:12px; padding: 14px 24px; font-size:12.5px;
       color: var(--gray-500); }
@@ -195,6 +198,10 @@ export class CaseExplorer {
   });
 
   rowId(row: (string | number)[]) { return String(row[0]); }
+
+  /** The clinical guideline behind a procedure — shown as a hover tooltip on the Procedure cell
+   *  (every explorer using the standard columns has one, not just Clinical Decision Insights'). */
+  guidelineFor(procedure: string | number): string { return GUIDELINE_BY_PROCEDURE[String(procedure)] ?? ''; }
 
   readonly filtered = computed(() => {
     const e = this.ix.explorer();

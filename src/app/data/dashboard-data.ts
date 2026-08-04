@@ -466,12 +466,13 @@ export function liveDecisionRows(lob?: string, withinDays?: number): DecisionRow
 }
 
 export interface DeterminationMixRow { code: string; label: string; category: string; count: number; pct: number; }
+export type DeterminationOutcome = 'Approved' | 'Denied' | 'Partial';
 
-/** Breakdown of the reason codes behind Approved (or Denied+Partial) determinations — the real UM
- *  workflow requires one of these codes on every determination, not just denials. */
-export function liveDeterminationMix(outcome: 'Approved' | 'Denied', lob?: string, withinDays?: number): DeterminationMixRow[] {
-  const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays)
-    && (outcome === 'Approved' ? c.decision === 'Approved' : c.decision === 'Denied' || c.decision === 'Partial'));
+/** Breakdown of the reason codes behind one outcome's determinations — the real UM workflow
+ *  requires one of these codes on every determination, not just denials. Denied and Partial are
+ *  tracked separately (Partial still uses denial-style codes for why the cut portion was reduced). */
+export function liveDeterminationMix(outcome: DeterminationOutcome, lob?: string, withinDays?: number): DeterminationMixRow[] {
+  const cs = CASE_POOL.filter((c) => c.phase === 'decided' && c.decision === outcome && inScope(c, lob, withinDays));
   const total = cs.length || 1;
   const codes = outcome === 'Approved' ? APPROVAL_CODES : DENIAL_CODES;
   return codes
@@ -484,9 +485,8 @@ export function liveDeterminationMix(outcome: 'Approved' | 'Denied', lob?: strin
 }
 
 /** The real cases behind one reason code — backs both the mix row's click-through and its export. */
-export function liveDeterminationCases(outcome: 'Approved' | 'Denied', code: string, lob?: string, withinDays?: number): CaseRec[] {
-  return CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays)
-    && (outcome === 'Approved' ? c.decision === 'Approved' : c.decision === 'Denied' || c.decision === 'Partial')
+export function liveDeterminationCases(outcome: DeterminationOutcome, code: string, lob?: string, withinDays?: number): CaseRec[] {
+  return CASE_POOL.filter((c) => c.phase === 'decided' && c.decision === outcome && inScope(c, lob, withinDays)
     && determinationReasonOf(c)?.code === code);
 }
 
