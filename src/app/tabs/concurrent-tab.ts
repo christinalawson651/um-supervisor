@@ -1,8 +1,10 @@
-import { Component, inject } from '@angular/core';
-import { DashboardData } from '../data/dashboard-data';
+import { Component, computed, inject } from '@angular/core';
+import { DashboardData, liveConcurrentRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { ConcurrentRow } from '../data/dashboard.models';
+import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-concurrent-tab',
@@ -23,7 +25,7 @@ import { ConcurrentRow } from '../data/dashboard.models';
           </tr>
         </thead>
         <tbody>
-          @for (r of data.concurrentRows(); track r.member) {
+          @for (r of concurrentRows(); track r.member) {
             <tr class="clickable" (click)="open(r)">
               <td class="strong">{{ r.member }}</td>
               <td>{{ r.facility }}</td>
@@ -48,6 +50,15 @@ export class ConcurrentTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
   private esc = inject(Escalate);
+  private lobFilter = inject(LobFilter);
+  private lookback = inject(Lookback);
+
+  /** Real concurrent-review rows derived from the case pool, scoped by the shared LOB + Lookback filters. */
+  readonly concurrentRows = computed(() => {
+    const lob = this.lobFilter.value();
+    const period = this.lookback.period();
+    return liveConcurrentRows(lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays());
+  });
 
   open(r: ConcurrentRow) {
     this.ix.openDrawer({

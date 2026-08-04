@@ -14,7 +14,7 @@ import { Exporter } from './shared/exporter';
 import { Lookback } from './shared/lookback';
 import { LobFilter } from './shared/lob-filter';
 import { REFERRALS } from './data/referrals';
-import { DashboardData } from './data/dashboard-data';
+import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows } from './data/dashboard-data';
 
 import { OverviewDashboard } from './modules/overview-dashboard';
 import { CmDashboard } from './modules/cm-dashboard';
@@ -166,18 +166,20 @@ export class App {
       return;
     }
     const d = this.data;
+    const lob = this.lob() === 'all' ? undefined : this.lob();
+    const days = this.period() === '30d' ? undefined : this.lookback.windowDays();
     let name = 'export', columns: string[] = [], rows: (string | number)[][] = [];
     switch (this.selected()) {
       case 0: name = 'workforce-nurses'; columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
         rows = d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]); break;
       case 1: name = 'tat-compliance'; columns = ['Metric', 'Value'];
-        rows = [...d.tatBuckets.map((b) => [b.label, b.count] as (string | number)[]), ...d.tatStats.map((s) => [s.label, s.value] as (string | number)[])]; break;
+        rows = [...liveTatBuckets(lob, days).map((b) => [b.label, b.count] as (string | number)[]), ...liveTatStats(lob, days).map((s) => [s.label, s.value] as (string | number)[])]; break;
       case 2: name = 'clinical-decisions'; columns = ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'];
-        rows = d.decisionRows.map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]); break;
+        rows = liveDecisionRows(lob, days).map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]); break;
       case 3: name = 'risk-escalation'; columns = ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'];
         rows = d.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]); break;
       case 4: name = 'concurrent-review'; columns = ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'];
-        rows = d.concurrentRows().map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]); break;
+        rows = liveConcurrentRows(lob, days).map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]); break;
       case 5: name = 'intake-missing-fields'; columns = ['Field', 'Missing Count', '% of Submissions'];
         rows = d.missingFields.map((f) => [f.field, f.count, f.pct]); break;
       case 6: name = 'providers'; columns = ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'];

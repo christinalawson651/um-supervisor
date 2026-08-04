@@ -1,12 +1,10 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DashboardData } from '../data/dashboard-data';
+import { DashboardData, liveDecisionStats, liveDecisionRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
-import { DecisionRow, DecisionStat } from '../data/dashboard.models';
+import { DecisionRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
-import { CASE_POOL, CaseRec, GUIDELINE_BY_PROCEDURE } from '../data/case-pool';
-import { lobOf } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
@@ -90,41 +88,17 @@ export class ClinicalTab {
   // ---- shared top-bar filters — same treatment as every other converted tab ----
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
-  private passes(c: CaseRec): boolean {
-    return (this.lobFilter.value() === 'all' || lobOf(c.authId) === this.lobFilter.value())
-      && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted));
+  private scopeArgs(): [string | undefined, number | undefined] {
+    const lob = this.lobFilter.value();
+    const period = this.lookback.period();
+    return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];
   }
-  private decided = CASE_POOL.filter((c) => c.phase === 'decided');
-  private fDecided = computed(() => this.decided.filter((c) => this.passes(c)));
 
-  /** The 6 headline tiles, recomputed live from the case pool (real counts, reactive to LOB + Lookback). */
-  readonly decisionStats = computed((): DecisionStat[] => {
-    const cs = this.fDecided();
-    const total = cs.length || 1;
-    const pct = (n: number) => Math.round((n / total) * 100);
-    const count = (fn: (c: CaseRec) => boolean) => cs.filter(fn).length;
-    return [
-      { value: `${pct(count((c) => c.decision === 'Approved'))}%`, label: 'Approved', icon: 'check', tone: 'green' },
-      { value: `${pct(count((c) => c.decision === 'Denied'))}%`, label: 'Denied', icon: 'xcircle', tone: 'red' },
-      { value: `${pct(count((c) => c.decision === 'Partial'))}%`, label: 'Partial', icon: 'minus', tone: 'amber' },
-      { value: `${pct(count((c) => c.tags.includes('auto')))}%`, label: 'Auto-Approved', icon: 'bolt', tone: 'teal' },
-      { value: `${pct(count((c) => c.tags.includes('mdReview')))}%`, label: 'MD Review', icon: 'user', tone: 'blue' },
-      { value: `${pct(count((c) => c.tags.includes('p2p')))}%`, label: 'P2P Rate', icon: 'phone', tone: 'purple' as any },
-    ];
-  });
+  /** The 6 headline tiles — same liveDecisionStats() the global Export button reads, so the tile, its drilldown, and its export can never drift apart. */
+  readonly decisionStats = computed(() => liveDecisionStats(...this.scopeArgs()));
 
-  /** Per-procedure approval rate + volume, grouped live from the case pool (guideline is the only non-derived field — a fixed per-procedure label, not something that varies by LOB/date). */
-  readonly decisionRows = computed((): DecisionRow[] => {
-    const byProc = new Map<string, CaseRec[]>();
-    for (const c of this.fDecided()) { if (!byProc.has(c.procedure)) byProc.set(c.procedure, []); byProc.get(c.procedure)!.push(c); }
-    return [...byProc.entries()].map(([procedure, group]) => ({
-      procedure,
-      serviceType: group[0].serviceType,
-      guideline: GUIDELINE_BY_PROCEDURE[procedure] ?? 'Internal Criteria',
-      approvalRate: Math.round((group.filter((c) => c.decision === 'Approved').length / group.length) * 100),
-      volume: group.length,
-    })).sort((a, b) => b.volume - a.volume);
-  });
+  /** Per-procedure approval rate + volume — same liveDecisionRows() the global Export button reads. */
+  readonly decisionRows = computed(() => liveDecisionRows(...this.scopeArgs()));
 
   readonly sortKey = signal<keyof DecisionRow | ''>('');
   readonly sortDir = signal<SortDir>(1);

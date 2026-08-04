@@ -1,5 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DashboardData } from '../data/dashboard-data';
+import { DashboardData, liveConcurrentRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Ring } from '../shared/ring';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
@@ -374,8 +374,14 @@ export class TatTab {
   private concurrentActive = computed(() =>
     this.pending.filter((c) => c.tags.includes('concurrent') && (this.lob() === 'all' || lobOf(c.authId) === this.lob())
       && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted))));
+  /** Same scope (LOB + Lookback) as concurrentActive — real rows derived from the case pool. */
+  private liveConcurrent(): ReturnType<typeof liveConcurrentRows> {
+    const lob = this.lob();
+    const period = this.lookback.period();
+    return liveConcurrentRows(lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays());
+  }
   readonly concurrent = computed(() => {
-    const rows = this.data.concurrentRows();
+    const rows = this.liveConcurrent();
     const n = rows.length || 1;
     return {
       active: this.concurrentActive().length,
@@ -457,7 +463,7 @@ export class TatTab {
 
   /** All 5 concurrent-review rows (not just overstay risk) — backs the Days/LOS aggregate tiles. */
   drillAllConcurrent() {
-    const rows = this.data.concurrentRows();
+    const rows = this.liveConcurrent();
     this.ix.openExplorer({
       title: 'Concurrent Review — All Active Reviews',
       context: `${rows.length} inpatient continued-stay reviews`,
@@ -524,7 +530,7 @@ export class TatTab {
   }
 
   drillOverstay() {
-    const rows = this.data.concurrentRows().filter((r) => r.overstayRisk !== 'green');
+    const rows = this.liveConcurrent().filter((r) => r.overstayRisk !== 'green');
     this.ix.openExplorer({
       title: 'Concurrent Review — Overstay Risk',
       context: `${rows.length} members exceeding expected length of stay`,

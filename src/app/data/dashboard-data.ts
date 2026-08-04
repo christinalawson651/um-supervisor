@@ -4,8 +4,33 @@ import {
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
-import { CASE_POOL, NURSES, CaseRec } from './case-pool';
-import { ageH, bandOf, lobOf, daysAgo } from './case-fields';
+import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE } from './case-pool';
+import { ageH, bandOf, lobOf, daysAgo, TODAY } from './case-fields';
+
+/**
+ * One inpatient concurrent-review row per real 'concurrent'-tagged case in the pool (LOS/admit/
+ * review-due fields are deterministic per authId, same pattern as ageH/vary elsewhere — not
+ * randomized, so the demo is stable across reloads).
+ */
+function concurrentRowFor(c: CaseRec): ConcurrentRow {
+  const n = Number(c.authId.slice(-2));
+  const los = 3 + (n % 10);
+  const expectedLos = 3 + ((n + 3) % 8);
+  const daysApproved = Math.max(1, expectedLos - (n % 3));
+  const daysRequested = daysApproved + (n % 4);
+  const nextReviewDate = new Date(TODAY);
+  nextReviewDate.setDate(nextReviewDate.getDate() + (2 + (n % 5)));
+  const diff = los - expectedLos;
+  const overstayRisk = diff >= 3 ? 'red' : diff >= 1 ? 'amber' : 'green';
+  const overstayLabel = diff >= 3 ? 'High' : diff >= 1 ? 'Medium' : 'Low';
+  return {
+    member: c.member, facility: c.provider,
+    admit: c.submitted, nextReview: nextReviewDate.toISOString().slice(0, 10),
+    los: `${los}d`, losFlag: diff > 0, expectedLos: `${expectedLos}d`,
+    daysApproved, daysRequested,
+    overstayRisk, overstayLabel,
+  };
+}
 
 /**
  * Active / Pending / Completed / Avg TAT are real counts from the case pool (not placeholder
@@ -128,46 +153,10 @@ export class DashboardData {
     { name: 'Robert Kim, RN',      team: 'Complex & Concurrent', ...nurseStats('Robert Kim, RN'),      utilization: 80 },
   ]);
 
-  // ---------- TAT & SLA Compliance ----------
-  readonly tatCompliance = 94;
-  readonly tatBuckets: TatBucket[] = [
-    { label: 'On Track', count: 232, tone: 'green' },
-    { label: 'At Risk',  count: 12,  tone: 'amber' },
-    { label: 'Breached', count: 3,   tone: 'red' },
-  ];
-  readonly tatStats: TatStat[] = [
-    { value: '34',   label: 'Expedited' },
-    { value: '213',  label: 'Standard' },
-    { value: '8',    label: 'Paused' },
-    { value: '1.8d', label: 'Avg Turnaround' },
-  ];
-
-  // ---------- Clinical Decision Insights ----------
-  readonly decisionStats: DecisionStat[] = [
-    { value: '62%', label: 'Approved',      icon: 'check',   tone: 'green' },
-    { value: '18%', label: 'Denied',        icon: 'xcircle', tone: 'red' },
-    { value: '20%', label: 'Partial',       icon: 'minus',   tone: 'amber' },
-    { value: '38%', label: 'Auto-Approved', icon: 'bolt',    tone: 'teal' },
-    { value: '15%', label: 'MD Review',     icon: 'user',    tone: 'blue' },
-    { value: '7%',  label: 'P2P Rate',      icon: 'phone',   tone: 'purple' as any },
-  ];
-  readonly decisionRows: DecisionRow[] = [
-    { procedure: 'Total Knee Replacement',   serviceType: 'Inpatient',  guideline: 'XYZ 2024',     approvalRate: 78, volume: 42 },
-    { procedure: 'Lumbar Fusion',            serviceType: 'Inpatient',  guideline: 'ABCD A-0420',  approvalRate: 65, volume: 28 },
-    { procedure: 'Cardiac Catheterization',  serviceType: 'Outpatient', guideline: 'XYZ 2024',     approvalRate: 82, volume: 35 },
-    { procedure: 'MRI Brain w/ Contrast',    serviceType: 'Outpatient', guideline: 'AIM Guidelines', approvalRate: 91, volume: 56 },
-    { procedure: 'Physical Therapy (12 visits)', serviceType: 'Outpatient', guideline: 'ABCD A-0103', approvalRate: 88, volume: 64 },
-    { procedure: 'Behavioral Health IOP',    serviceType: 'Behavioral', guideline: 'LOCUS Criteria', approvalRate: 72, volume: 19 },
-  ];
-
-  // ---------- Concurrent Review Monitoring ----------
-  readonly concurrentRows = signal<ConcurrentRow[]>([
-    { member: 'Adams, Patricia', facility: 'Memorial Hospital',  admit: '2026-03-10', nextReview: '2026-03-18', los: '7d', losFlag: true,  expectedLos: '5d', daysApproved: 5, daysRequested: 10, overstayRisk: 'red',   overstayLabel: 'High' },
-    { member: 'Brown, Michael',  facility: 'St. Mary Medical',   admit: '2026-03-12', nextReview: '2026-03-19', los: '5d', losFlag: true,  expectedLos: '4d', daysApproved: 4, daysRequested: 7,  overstayRisk: 'amber', overstayLabel: 'Medium' },
-    { member: 'Clark, Jennifer', facility: 'University Hospital', admit: '2026-03-14', nextReview: '2026-03-17', los: '3d', losFlag: false, expectedLos: '3d', daysApproved: 3, daysRequested: 5,  overstayRisk: 'green', overstayLabel: 'Low' },
-    { member: 'Davis, Robert',   facility: 'Community General',  admit: '2026-03-08', nextReview: '2026-03-17', los: '9d', losFlag: true,  expectedLos: '6d', daysApproved: 6, daysRequested: 12, overstayRisk: 'red',   overstayLabel: 'High' },
-    { member: 'Evans, Susan',    facility: 'Regional Medical',   admit: '2026-03-13', nextReview: '2026-03-20', los: '4d', losFlag: false, expectedLos: '5d', daysApproved: 5, daysRequested: 5,  overstayRisk: 'green', overstayLabel: 'Low' },
-  ]);
+  // ---------- TAT & SLA Compliance, Clinical Decision Insights, Concurrent Review ----------
+  // These 3 sections' headline numbers are exported as plain functions (below the class) instead of
+  // static arrays, so every consumer — the tab's own on-screen computed(), and the global Export
+  // button in app.ts — always reads the exact same live, LOB/Lookback-scoped values.
 
   // ---------- Intake & Documentation Quality ----------
   readonly qualityBars: QualityBar[] = [
@@ -283,7 +272,7 @@ export class DashboardData {
     return {
       kpis: this.kpis(), queues: this.queues(), nurses: this.nurses(),
       aiRecommendations: this.aiRecommendations(), riskCases: this.riskCases(),
-      concurrentRows: this.concurrentRows(), auditFlags: this.auditFlags(),
+      auditFlags: this.auditFlags(),
       history: this.history(),
     };
   }
@@ -298,7 +287,6 @@ export class DashboardData {
       if (s.nurses) this.nurses.set(s.nurses);
       if (s.aiRecommendations) this.aiRecommendations.set(s.aiRecommendations);
       if (s.riskCases) this.riskCases.set(s.riskCases);
-      if (s.concurrentRows) this.concurrentRows.set(s.concurrentRows);
       if (s.auditFlags) this.auditFlags.set(s.auditFlags);
       if (s.history) this.history.set(s.history);
     } catch {}
@@ -309,7 +297,7 @@ export class DashboardData {
     const d = structuredClone(this.defaults);
     this.kpis.set(d.kpis); this.queues.set(d.queues); this.nurses.set(d.nurses);
     this.aiRecommendations.set(d.aiRecommendations); this.riskCases.set(d.riskCases);
-    this.concurrentRows.set(d.concurrentRows); this.auditFlags.set(d.auditFlags);
+    this.auditFlags.set(d.auditFlags);
     this.history.set(d.history); // restores the seeded return-to-queue entries, clears session actions
   }
 
@@ -446,4 +434,70 @@ export class DashboardData {
       { icon: 'users',   value: `${util}%`,                    label: 'Team Utilization',  tone: 'green' },
     ];
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Live, LOB/Lookback-scoped derivations shared by a tab's own on-screen computed() AND the global
+// Export button in app.ts, so a tile's number, its drilldown table, and its CSV export can never
+// drift apart the way separately hand-typed static arrays used to.
+// ---------------------------------------------------------------------------------------------
+
+function inScope(c: CaseRec, lob?: string, withinDays?: number): boolean {
+  return (!lob || lob === 'all' || lobOf(c.authId) === lob)
+    && (withinDays === undefined || daysAgo(c.submitted) <= withinDays);
+}
+
+export function liveTatBuckets(lob?: string, withinDays?: number): TatBucket[] {
+  const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
+  return [
+    { label: 'On Track', count: cs.filter((c) => c.tags.includes('onTrack')).length, tone: 'green' },
+    { label: 'At Risk', count: cs.filter((c) => c.tags.includes('atRisk')).length, tone: 'amber' },
+    { label: 'Breached', count: cs.filter((c) => c.tags.includes('breached')).length, tone: 'red' },
+  ];
+}
+
+export function liveTatStats(lob?: string, withinDays?: number): TatStat[] {
+  const decided = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
+  const pending = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
+  const avg = decided.length ? `${(decided.reduce((s, c) => s + c.tatH, 0) / decided.length).toFixed(1)}d` : '0.0d';
+  return [
+    { value: String(decided.filter((c) => c.tags.includes('expedited')).length), label: 'Expedited' },
+    { value: String(decided.filter((c) => c.tags.includes('standard')).length), label: 'Standard' },
+    { value: String(pending.filter((c) => c.tags.includes('paused')).length), label: 'Paused' },
+    { value: avg, label: 'Avg Turnaround' },
+  ];
+}
+
+export function liveDecisionStats(lob?: string, withinDays?: number): DecisionStat[] {
+  const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
+  const total = cs.length || 1;
+  const pct = (n: number) => Math.round((n / total) * 100);
+  const count = (fn: (c: CaseRec) => boolean) => cs.filter(fn).length;
+  return [
+    { value: `${pct(count((c) => c.decision === 'Approved'))}%`, label: 'Approved', icon: 'check', tone: 'green' },
+    { value: `${pct(count((c) => c.decision === 'Denied'))}%`, label: 'Denied', icon: 'xcircle', tone: 'red' },
+    { value: `${pct(count((c) => c.decision === 'Partial'))}%`, label: 'Partial', icon: 'minus', tone: 'amber' },
+    { value: `${pct(count((c) => c.tags.includes('auto')))}%`, label: 'Auto-Approved', icon: 'bolt', tone: 'teal' },
+    { value: `${pct(count((c) => c.tags.includes('mdReview')))}%`, label: 'MD Review', icon: 'user', tone: 'blue' },
+    { value: `${pct(count((c) => c.tags.includes('p2p')))}%`, label: 'P2P Rate', icon: 'phone', tone: 'purple' as any },
+  ];
+}
+
+export function liveDecisionRows(lob?: string, withinDays?: number): DecisionRow[] {
+  const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
+  const byProc = new Map<string, CaseRec[]>();
+  for (const c of cs) { if (!byProc.has(c.procedure)) byProc.set(c.procedure, []); byProc.get(c.procedure)!.push(c); }
+  return [...byProc.entries()].map(([procedure, group]) => ({
+    procedure,
+    serviceType: group[0].serviceType,
+    guideline: GUIDELINE_BY_PROCEDURE[procedure] ?? 'Internal Criteria',
+    approvalRate: Math.round((group.filter((c) => c.decision === 'Approved').length / group.length) * 100),
+    volume: group.length,
+  })).sort((a, b) => b.volume - a.volume);
+}
+
+export function liveConcurrentRows(lob?: string, withinDays?: number): ConcurrentRow[] {
+  return CASE_POOL
+    .filter((c) => c.phase === 'pending' && c.tags.includes('concurrent') && inScope(c, lob, withinDays))
+    .map(concurrentRowFor);
 }
