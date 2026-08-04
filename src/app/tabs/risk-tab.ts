@@ -3,8 +3,10 @@ import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Members } from '../shared/members';
 import { Metrics } from '../shared/metrics';
+import { Exporter } from '../shared/exporter';
 import { RiskCase, RiskTile } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
+import { WidgetActions } from '../shared/widget-actions';
 import { CASE_POOL } from '../data/case-pool';
 import { lobOf } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
@@ -16,7 +18,7 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
 @Component({
   selector: 'app-risk-tab',
   standalone: true,
-  imports: [Icon],
+  imports: [Icon, WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Risk &amp; Escalation Panel</h2>
@@ -27,18 +29,23 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
 
     <div class="rtiles">
       @for (t of riskTiles(); track t.label; let i = $index) {
-        <div class="rtile clickable" [attr.data-tone]="t.tone" (click)="openTile(i)">
-          <div class="rt-lab"><span class="rt-ic" [attr.data-tone]="t.tone"><z-icon [name]="t.icon" [size]="14"></z-icon></span>{{ t.label }}</div>
-          <div class="rt-val">{{ t.value }}</div>
-          <div class="rt-foot" [attr.data-tone]="t.footerTone || null">{{ t.footer }}</div>
-        </div>
+        @if (!isHidden(t.label)) {
+          <div class="rtile clickable" [attr.data-tone]="t.tone" (click)="openTile(i)">
+            <z-widget-actions (exportClick)="exportTile(t)" (removeClick)="hide(t.label)"></z-widget-actions>
+            <div class="rt-lab"><span class="rt-ic" [attr.data-tone]="t.tone"><z-icon [name]="t.icon" [size]="14"></z-icon></span>{{ t.label }}</div>
+            <div class="rt-val">{{ t.value }}</div>
+            <div class="rt-foot" [attr.data-tone]="t.footerTone || null">{{ t.footer }}</div>
+          </div>
+        }
       }
     </div>
 
+    @if (!isHidden('table')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
         <h3 class="panel-title"><z-icon name="alert" [size]="14"></z-icon> Authorizations Requiring Attention</h3>
         <span class="note">Prioritized by risk score</span>
+        <z-widget-actions (exportClick)="exportTable()" (removeClick)="hide('table')"></z-widget-actions>
       </div>
       <table class="z-table">
         <thead>
@@ -66,11 +73,13 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
         </tbody>
       </table>
     </div>
+    }
   `,
   styles: [`
     .rtiles { display:grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-    .rtile { background:#fff; border:1px solid var(--border); border-left:4px solid var(--gray-300);
+    .rtile { position: relative; background:#fff; border:1px solid var(--border); border-left:4px solid var(--gray-300);
       border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
+    .rtile:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
     .rt-lab { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--gray-500); font-weight:600; }
     .rt-ic { width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center; }
     .rt-ic[data-tone="red"]{background:var(--red-bg);color:var(--red-fg);}
@@ -84,7 +93,7 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
     .rtile[data-tone="blue"]{ border-left-color:var(--purple); }
     .rtile[data-tone="blue"] .rt-ic{ background:#ede9fe; color:var(--purple); }
 
-    .tbl-head { display:flex; align-items:center; justify-content:space-between; }
+    .tbl-head { position: relative; display:flex; align-items:center; justify-content:space-between; }
     .panel-title { display:flex; align-items:center; gap:7px; }
     .note { font-size:11.5px; color:var(--gray-500); }
     .chk { width:36px; text-align:center; }
@@ -110,8 +119,22 @@ export class RiskTab {
   private ix = inject(Interaction);
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
+  private exporter = inject(Exporter);
 
   readonly selected = signal<Set<string>>(new Set());
+
+  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportTile(t: RiskTile) {
+    this.exporter.open({ title: t.label, name: `risk-${t.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value', 'Detail'], rows: [[t.label, t.value, t.footer]] });
+  }
+  exportTable() {
+    const rows = this.data.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]);
+    this.exporter.open({ title: 'Authorizations Requiring Attention', name: 'risk-escalation_2026-07-17', columns: ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'], rows });
+  }
 
   /**
    * The 4 headline tiles, recomputed so each one always matches the count its own click-through

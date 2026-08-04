@@ -12,6 +12,8 @@ import { COLUMNS, toRow } from '../shared/metrics';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 import { Icon } from '../shared/icon';
+import { WidgetActions } from '../shared/widget-actions';
+import { Exporter } from '../shared/exporter';
 
 interface DisplayQueue extends QueueCard { baseName: string; lob?: string; }
 type QueueSort = 'volume' | 'breach' | 'name';
@@ -19,7 +21,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
 @Component({
   selector: 'app-workforce-tab',
   standalone: true,
-  imports: [Icon, FormsModule],
+  imports: [Icon, FormsModule, WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Workforce &amp; Queue Management</h2>
@@ -51,7 +53,9 @@ type QueueSort = 'volume' | 'breach' | 'name';
 
     <div class="queues">
       @for (q of displayQueues(); track q.name) {
+        @if (!isHidden(q.name)) {
         <div class="qcard">
+          <z-widget-actions (exportClick)="exportQueue(q)" (removeClick)="hide(q.name)"></z-widget-actions>
           <div class="qtop">
             <span class="qname">{{ q.name }}</span>
             <span class="qcount">{{ q.count }}</span>
@@ -69,14 +73,17 @@ type QueueSort = 'volume' | 'breach' | 'name';
             <span (click)="openBucket(q.baseName, 'breach', q.lob)"><i class="d-breach"></i>Breach</span>
           </div>
         </div>
+        }
       } @empty {
         <div class="qempty">No queues match "{{ queueSearch() }}".</div>
       }
     </div>
 
+    @if (!isHidden('workload')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
         <h3 class="panel-title">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Nurse' }}{{ workloadScope() }}</h3>
+        <z-widget-actions (exportClick)="exportWorkload()" (removeClick)="hide('workload')"></z-widget-actions>
         <div class="flex gap-8 center">
           <div class="seg-toggle">
             <button [class.on]="groupBy() === 'nurse'" (click)="groupBy.set('nurse')">By Nurse</button>
@@ -162,6 +169,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
         </table>
       }
     </div>
+    }
   `,
   styles: [`
     .esc { color: var(--amber-fg); border-color: var(--gray-300); }
@@ -179,8 +187,9 @@ type QueueSort = 'volume' | 'breach' | 'name';
     .qtoolbar .btn.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; }
     .qtotal { margin-left:auto; font-size:12px; font-weight:600; color:var(--gray-500); }
     .qempty { grid-column:1/-1; text-align:center; padding:24px; color:var(--gray-500); font-size:13px; }
-    .qcard { background:#fff; border:1px solid var(--border); border-radius: var(--radius);
+    .qcard { position: relative; background:#fff; border:1px solid var(--border); border-radius: var(--radius);
       box-shadow: var(--shadow); padding: 16px 18px; }
+    .qcard:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
     .qtop { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; }
     .qname { font-size: 14px; font-weight: 600; color: var(--ink); }
     .qcount { font-size: 15px; font-weight: 700; color: var(--ink); }
@@ -199,7 +208,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
       font-variant-numeric: tabular-nums; }
     .clickable { cursor: pointer; }
     .num.clk:hover, td.clk:hover { text-decoration: underline; }
-    .tbl-head { display:flex; align-items:center; justify-content:space-between; }
+    .tbl-head { position: relative; display:flex; align-items:center; justify-content:space-between; }
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px;
       width: 220px; outline:none; }
     .search:focus { border-color: var(--teal-600); }
@@ -226,6 +235,30 @@ export class WorkforceTab {
   private rx = inject(Reassign);
   private esc = inject(Escalate);
   private bal = inject(Balance);
+  private exporter = inject(Exporter);
+
+  // ---- per-card "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportQueue(q: DisplayQueue) {
+    this.exporter.open({
+      title: q.name, name: `queue-${q.name.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      columns: ['Metric', 'Value'],
+      rows: [['Unclaimed', q.count], ['0-24h %', q.buckets.fresh], ['24-48h %', q.buckets.day2], ['>48h %', q.buckets.over48], ['Breach %', q.buckets.breach]],
+    });
+  }
+  exportWorkload() {
+    const rows = this.groupBy() === 'nurse'
+      ? this.visibleNurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization, n.team])
+      : this.filteredTeams().map((t) => [t.name, t.active, t.pending, t.completed, t.avgTat, t.utilization, '']);
+    this.exporter.open({
+      title: `Workload ${this.groupBy() === 'team' ? '— by Team' : 'per Nurse'}`, name: 'workforce-workload_2026-07-17',
+      columns: ['Nurse/Team', 'Active', 'Pending', 'Completed (MTD)', 'Avg TAT', 'Utilization %', 'Team'],
+      rows,
+    });
+  }
 
   readonly search = signal('');
   readonly sortKey = signal<keyof NurseRow | ''>('');

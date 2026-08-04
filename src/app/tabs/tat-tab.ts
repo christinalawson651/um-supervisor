@@ -2,6 +2,8 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveConcurrentRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Ring } from '../shared/ring';
+import { Exporter } from '../shared/exporter';
+import { WidgetActions } from '../shared/widget-actions';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { LOBS, PROGRAMS, lobOf, programOf, authTypeOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
@@ -12,7 +14,7 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
 @Component({
   selector: 'app-tat-tab',
   standalone: true,
-  imports: [Ring],
+  imports: [Ring, WidgetActions],
   template: `
     <div class="tab-head">
       <h2>TAT Compliance</h2>
@@ -40,7 +42,9 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
       }
     </div>
 
+    @if (!isHidden('headline')) {
     <div class="panel panel-pad">
+      <z-widget-actions (exportClick)="exportHeadline()" (removeClick)="hide('headline')"></z-widget-actions>
       <div class="tat-grid">
         <div class="left">
           <div class="donut clk" (click)="drillAllDecided()">
@@ -60,10 +64,12 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
         </div>
       </div>
     </div>
+    }
 
     <!-- Concurrent review numbers (inpatient) -->
-    @if (showConcurrent()) {
+    @if (showConcurrent() && !isHidden('concurrent')) {
       <div class="panel panel-pad mt-6">
+        <z-widget-actions (exportClick)="exportConcurrentPanel()" (removeClick)="hide('concurrent')"></z-widget-actions>
         <div class="pt-row">
           <h3 class="pt">Inpatient Concurrent Review</h3>
           <span class="pt-sub">Continued-stay reviews &amp; length-of-stay management</span>
@@ -88,8 +94,11 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
     }
 
     <div class="grid-2 mt-6">
+      @if (!isHidden('by-lob')) {
       <div class="panel">
-        <div class="panel-pad"><h3 class="pt">TAT Compliance by Line of Business</h3></div>
+        <div class="panel-pad"><h3 class="pt">TAT Compliance by Line of Business</h3>
+          <z-widget-actions (exportClick)="exportByLob()" (removeClick)="hide('by-lob')"></z-widget-actions>
+        </div>
         <table class="z-table">
           <thead><tr><th>Line of Business</th><th>Volume</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Compliance</th></tr></thead>
           <tbody>
@@ -111,9 +120,13 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
           </tbody>
         </table>
       </div>
+      }
 
+      @if (!isHidden('by-program')) {
       <div class="panel">
-        <div class="panel-pad"><h3 class="pt">TAT Compliance by Program</h3></div>
+        <div class="panel-pad"><h3 class="pt">TAT Compliance by Program</h3>
+          <z-widget-actions (exportClick)="exportByProgram()" (removeClick)="hide('by-program')"></z-widget-actions>
+        </div>
         <table class="z-table">
           <thead><tr><th>Program</th><th>Volume</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Compliance</th></tr></thead>
           <tbody>
@@ -135,11 +148,14 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
           </tbody>
         </table>
       </div>
+      }
     </div>
 
     <div class="grid-2 mt-6">
       <!-- Notification Compliance -->
+      @if (!isHidden('notification')) {
       <div class="panel panel-pad">
+        <z-widget-actions (exportClick)="exportNotification()" (removeClick)="hide('notification')"></z-widget-actions>
         <div class="pt-row">
           <h3 class="pt">Notification Compliance</h3>
           <span class="pt-sub">Member &amp; provider notice within regulatory timeframes</span>
@@ -167,9 +183,12 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
           </div>
         </div>
       </div>
+      }
 
       <!-- Regulatory TAT by Urgency -->
+      @if (!isHidden('regulatory')) {
       <div class="panel panel-pad">
+        <z-widget-actions (exportClick)="exportRegulatory()" (removeClick)="hide('regulatory')"></z-widget-actions>
         <div class="pt-row">
           <h3 class="pt">Regulatory TAT by Urgency</h3>
           <span class="pt-sub">Decisions rendered within the mandated clock</span>
@@ -193,9 +212,12 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
           }
         </div>
       </div>
+      }
     </div>
   `,
   styles: [`
+    .panel, .panel-pad { position: relative; }
+    .panel:hover z-widget-actions, .panel-pad:hover z-widget-actions { opacity: 1; }
     .tat-grid { display:grid; grid-template-columns: 1.15fr 1fr; gap: 26px; align-items:center; }
     .left { display:flex; gap: 22px; align-items:center; }
     .donut { text-align:center; flex: 0 0 auto; }
@@ -259,6 +281,57 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
 export class TatTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
+  private exporter = inject(Exporter);
+
+  // ---- per-panel "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportHeadline() {
+    this.exporter.open({
+      title: 'TAT Compliance', name: 'tat-headline_2026-07-17',
+      columns: ['Metric', 'Value'],
+      rows: [['Compliance %', this.head().compliance], ...this.buckets().map((b) => [b.label, b.count] as (string | number)[]), ...this.stats().map((s) => [s.label, s.value] as (string | number)[])],
+    });
+  }
+  exportConcurrentPanel() {
+    const c = this.concurrent();
+    this.exporter.open({
+      title: 'Inpatient Concurrent Review', name: 'tat-concurrent_2026-07-17',
+      columns: ['Metric', 'Value'],
+      rows: [['Active Reviews', c.active], ['Overstay Risk', c.overstay], ['Days Approved', c.daysApproved], ['Days Requested', c.daysRequested], ['Avg LOS', `${c.avgLos}d`], ['Avg Expected LOS', `${c.avgExp}d`]],
+    });
+  }
+  exportByLob() {
+    this.exporter.open({
+      title: 'TAT Compliance by Line of Business', name: 'tat-by-lob_2026-07-17',
+      columns: ['Line of Business', 'Volume', 'On Track', 'At Risk', 'Breached', 'Compliance %'],
+      rows: this.byLob().map((r) => [r.name, r.total, r.onTrack, r.atRisk, r.breached, r.compliance]),
+    });
+  }
+  exportByProgram() {
+    this.exporter.open({
+      title: 'TAT Compliance by Program', name: 'tat-by-program_2026-07-17',
+      columns: ['Program', 'Volume', 'On Track', 'At Risk', 'Breached', 'Compliance %'],
+      rows: this.byProgram().map((r) => [r.name, r.total, r.onTrack, r.atRisk, r.breached, r.compliance]),
+    });
+  }
+  exportNotification() {
+    const n = this.notif();
+    this.exporter.open({
+      title: 'Notification Compliance', name: 'tat-notification_2026-07-17',
+      columns: ['Metric', 'Value'],
+      rows: [['Member Notice On-Time %', n.memberPct], ['Provider Notice On-Time %', n.providerPct], ['Avg Time to Notice (d)', n.avgDays], ['Late Notices', n.late]],
+    });
+  }
+  exportRegulatory() {
+    this.exporter.open({
+      title: 'Regulatory TAT by Urgency', name: 'tat-regulatory_2026-07-17',
+      columns: ['Urgency', 'Clock', 'On Time', 'At Risk', 'Breached', 'Total', 'Compliance %'],
+      rows: this.regTat().map((u) => [u.name, u.clock, u.onTime, u.atRisk, u.breached, u.total, u.compliance]),
+    });
+  }
 
   private decided = CASE_POOL.filter((c) => c.phase === 'decided');
   private pending = CASE_POOL.filter((c) => c.phase === 'pending');

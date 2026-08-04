@@ -1,21 +1,26 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveConcurrentRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
+import { Exporter } from '../shared/exporter';
 import { ConcurrentRow } from '../data/dashboard.models';
+import { WidgetActions } from '../shared/widget-actions';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-concurrent-tab',
   standalone: true,
+  imports: [WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Concurrent Review Monitoring</h2>
       <span class="section-note">Active inpatient authorizations under review</span>
     </div>
 
+    @if (!isHidden('table')) {
     <div class="panel">
+      <z-widget-actions (exportClick)="exportTable()" (removeClick)="hide('table')"></z-widget-actions>
       <table class="z-table">
         <thead>
           <tr>
@@ -43,8 +48,13 @@ import { Lookback } from '../shared/lookback';
         </tbody>
       </table>
     </div>
+    }
   `,
-  styles: [`.clickable { cursor: pointer; }`],
+  styles: [`
+    .clickable { cursor: pointer; }
+    .panel { position: relative; }
+    .panel:hover z-widget-actions { opacity: 1; }
+  `],
 })
 export class ConcurrentTab {
   data = inject(DashboardData);
@@ -52,6 +62,20 @@ export class ConcurrentTab {
   private esc = inject(Escalate);
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
+  private exporter = inject(Exporter);
+
+  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportTable() {
+    this.exporter.open({
+      title: 'Concurrent Review Monitoring', name: 'concurrent-review_2026-07-17',
+      columns: ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'],
+      rows: this.concurrentRows().map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]),
+    });
+  }
 
   /** Real concurrent-review rows derived from the case pool, scoped by the shared LOB + Lookback filters. */
   readonly concurrentRows = computed(() => {

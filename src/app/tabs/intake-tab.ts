@@ -1,16 +1,18 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveQualityBars, liveMissingFields } from '../data/dashboard-data';
 import { Metrics } from '../shared/metrics';
 import { Interaction } from '../shared/interaction';
 import { MissingField } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
+import { WidgetActions } from '../shared/widget-actions';
+import { Exporter } from '../shared/exporter';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-intake-tab',
   standalone: true,
-  imports: [Icon],
+  imports: [Icon, WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Intake &amp; Documentation Quality</h2>
@@ -19,18 +21,24 @@ import { Lookback } from '../shared/lookback';
 
     <div class="grid-3">
       @for (b of qualityBars(); track b.label; let i = $index) {
-        <div class="panel panel-pad bar-block clickable" (click)="metrics.open(barKeys[i])">
-          <div class="bar-top"><z-icon [name]="b.icon" [size]="15" [stroke]="1.8"></z-icon>{{ b.label }}</div>
-          <div class="bar-val" [class.amber]="b.tone==='amber'">{{ b.pct }}%</div>
-          <div class="pbar" [class.amber]="b.tone==='amber'">
-            <span [style.width.%]="b.pct"></span>
+        @if (!isHidden(b.label)) {
+          <div class="panel panel-pad bar-block clickable" (click)="metrics.open(barKeys[i])">
+            <z-widget-actions (exportClick)="exportBar(b)" (removeClick)="hide(b.label)"></z-widget-actions>
+            <div class="bar-top"><z-icon [name]="b.icon" [size]="15" [stroke]="1.8"></z-icon>{{ b.label }}</div>
+            <div class="bar-val" [class.amber]="b.tone==='amber'">{{ b.pct }}%</div>
+            <div class="pbar" [class.amber]="b.tone==='amber'">
+              <span [style.width.%]="b.pct"></span>
+            </div>
           </div>
-        </div>
+        }
       }
     </div>
 
+    @if (!isHidden('missing-fields')) {
     <div class="panel mt-6">
-      <div class="panel-pad"><h3 class="panel-title">Top Missing Fields</h3></div>
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Top Missing Fields</h3>
+        <z-widget-actions (exportClick)="exportMissingFields()" (removeClick)="hide('missing-fields')"></z-widget-actions>
+      </div>
       <table class="z-table">
         <thead>
           <tr><th>Field</th><th>Missing Count</th><th>% of Submissions</th></tr>
@@ -49,6 +57,7 @@ import { Lookback } from '../shared/lookback';
         </tbody>
       </table>
     </div>
+    }
   `,
   styles: [`
     .bar-top z-icon { color: var(--gray-400); }
@@ -56,12 +65,15 @@ import { Lookback } from '../shared/lookback';
       font-variant-numeric: tabular-nums; }
     .clickable { cursor: pointer; transition: box-shadow .12s; }
     .clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
+    .bar-block, .tbl-head { position: relative; }
+    .bar-block:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
   `],
 })
 export class IntakeTab {
   data = inject(DashboardData);
   metrics = inject(Metrics);
   private ix = inject(Interaction);
+  private exporter = inject(Exporter);
   readonly barKeys = ['intake.complete', 'intake.auto', 'intake.rfi'];
 
   private lobFilter = inject(LobFilter);
@@ -73,6 +85,22 @@ export class IntakeTab {
   }
   readonly qualityBars = computed(() => liveQualityBars(...this.scopeArgs()));
   readonly missingFields = computed(() => liveMissingFields(...this.scopeArgs()));
+
+  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportBar(b: { label: string; pct: number }) {
+    this.exporter.open({ title: b.label, name: `intake-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[b.label, `${b.pct}%`]] });
+  }
+  exportMissingFields() {
+    this.exporter.open({
+      title: 'Top Missing Fields', name: 'intake-missing-fields_2026-07-17',
+      columns: ['Field', 'Missing Count', '% of Submissions'],
+      rows: this.missingFields().map((f) => [f.field, f.count, f.pct]),
+    });
+  }
 
   openField(f: MissingField) {
     this.ix.openDrawer({

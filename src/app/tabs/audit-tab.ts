@@ -1,14 +1,17 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveComplianceBars } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
+import { Exporter } from '../shared/exporter';
 import { AuditFlag } from '../data/dashboard.models';
+import { WidgetActions } from '../shared/widget-actions';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-audit-tab',
   standalone: true,
+  imports: [WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Audit &amp; Compliance</h2>
@@ -17,16 +20,22 @@ import { Lookback } from '../shared/lookback';
 
     <div class="grid-3">
       @for (b of complianceBars(); track b.label; let i = $index) {
-        <div class="panel panel-pad clickable" (click)="metrics.open(barKeys[i])">
-          <div class="clab">{{ b.label }}</div>
-          <div class="cval">{{ b.pct }}%</div>
-          <div class="pbar"><span [style.width.%]="b.pct"></span></div>
-        </div>
+        @if (!isHidden(b.label)) {
+          <div class="panel panel-pad bar-block clickable" (click)="metrics.open(barKeys[i])">
+            <z-widget-actions (exportClick)="exportBar(b)" (removeClick)="hide(b.label)"></z-widget-actions>
+            <div class="clab">{{ b.label }}</div>
+            <div class="cval">{{ b.pct }}%</div>
+            <div class="pbar"><span [style.width.%]="b.pct"></span></div>
+          </div>
+        }
       }
     </div>
 
+    @if (!isHidden('audit-flags')) {
     <div class="panel mt-6">
-      <div class="panel-pad"><h3 class="panel-title">Audit Flags</h3></div>
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Audit Flags</h3>
+        <z-widget-actions (exportClick)="exportFlags()" (removeClick)="hide('audit-flags')"></z-widget-actions>
+      </div>
       <table class="z-table">
         <thead>
           <tr><th>ID</th><th>Type</th><th>Description</th><th>Date</th><th>Severity</th></tr>
@@ -48,12 +57,15 @@ import { Lookback } from '../shared/lookback';
         </tbody>
       </table>
     </div>
+    }
   `,
   styles: [`
     .clab { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
     .cval { font-size: 26px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
     .clickable { cursor: pointer; }
     .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
+    .bar-block, .tbl-head { position: relative; }
+    .bar-block:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
   `],
 })
 export class AuditTab {
@@ -62,6 +74,7 @@ export class AuditTab {
   metrics = inject(Metrics);
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
+  private exporter = inject(Exporter);
   readonly barKeys = ['audit.doc', 'audit.guideline', 'audit.rationale'];
 
   readonly complianceBars = computed(() => {
@@ -69,6 +82,22 @@ export class AuditTab {
     const period = this.lookback.period();
     return liveComplianceBars(lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays());
   });
+
+  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportBar(b: { label: string; pct: number }) {
+    this.exporter.open({ title: b.label, name: `audit-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[b.label, `${b.pct}%`]] });
+  }
+  exportFlags() {
+    this.exporter.open({
+      title: 'Audit Flags', name: 'audit-flags_2026-07-17',
+      columns: ['ID', 'Type', 'Description', 'Date', 'Severity'],
+      rows: this.data.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]),
+    });
+  }
 
   open(f: AuditFlag) {
     this.ix.openDrawer({

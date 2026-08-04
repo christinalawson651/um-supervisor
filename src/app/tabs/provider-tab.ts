@@ -5,29 +5,37 @@ import { Metrics } from '../shared/metrics';
 import { ProviderRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
+import { WidgetActions } from '../shared/widget-actions';
+import { Exporter } from '../shared/exporter';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-provider-tab',
   standalone: true,
-  imports: [Icon],
+  imports: [Icon, WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Provider &amp; Network Insights</h2>
       <span class="section-note">Provider performance and network utilization</span>
     </div>
 
-    <div class="oon clickable" (click)="metrics.open('prov.oon')">
-      <div class="oon-ic"><z-icon name="mappin" [size]="18" [stroke]="1.8"></z-icon></div>
-      <div>
-        <div class="oon-val">{{ oonRequests() }}</div>
-        <div class="oon-lab">Out-of-Network Requests</div>
+    @if (!isHidden('oon')) {
+      <div class="oon clickable" (click)="metrics.open('prov.oon')">
+        <z-widget-actions (exportClick)="exportOon()" (removeClick)="hide('oon')"></z-widget-actions>
+        <div class="oon-ic"><z-icon name="mappin" [size]="18" [stroke]="1.8"></z-icon></div>
+        <div>
+          <div class="oon-val">{{ oonRequests() }}</div>
+          <div class="oon-lab">Out-of-Network Requests</div>
+        </div>
       </div>
-    </div>
+    }
 
+    @if (!isHidden('providers')) {
     <div class="panel mt-6">
-      <div class="panel-pad"><h3 class="panel-title">Top Requesting Providers</h3></div>
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Top Requesting Providers</h3>
+        <z-widget-actions (exportClick)="exportProviders()" (removeClick)="hide('providers')"></z-widget-actions>
+      </div>
       <table class="z-table">
         <thead>
           <tr>
@@ -52,11 +60,14 @@ import { Lookback } from '../shared/lookback';
         </tbody>
       </table>
     </div>
+    }
   `,
   styles: [`
-    .oon { display:flex; align-items:center; gap:12px; width: 260px;
+    .oon { position: relative; display:flex; align-items:center; gap:12px; width: 260px;
       background:#fff; border:1px solid var(--border); border-left:3px solid var(--amber);
       border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
+    .oon:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
+    .tbl-head { position: relative; }
     .oon-ic { width:34px;height:34px;border-radius:8px;background:var(--amber-bg);color:var(--amber-fg);
       display:flex;align-items:center;justify-content:center; }
     .oon-val { font-size: 22px; font-weight: 700; color: var(--ink); }
@@ -73,6 +84,23 @@ export class ProviderTab {
   metrics = inject(Metrics);
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
+  private exporter = inject(Exporter);
+
+  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportOon() {
+    this.exporter.open({ title: 'Out-of-Network Requests', name: 'oon-requests_2026-07-17', columns: ['Metric', 'Value'], rows: [['Out-of-Network Requests', this.oonRequests()]] });
+  }
+  exportProviders() {
+    this.exporter.open({
+      title: 'Top Requesting Providers', name: 'providers_2026-07-17',
+      columns: ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'],
+      rows: this.providers().map((p) => [p.provider, p.npi, p.requests, p.approvalRate, p.rfiRate]),
+    });
+  }
 
   /** Real per-provider Requests/Approval/RFI, derived from the case pool and scoped by the shared LOB + Lookback filters. */
   readonly providers = computed(() => {

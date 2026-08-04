@@ -1,17 +1,19 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveFinancials, liveHighDollarCases } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics, QUEUE_TO_PEND } from '../shared/metrics';
+import { Exporter } from '../shared/exporter';
 import { HighDollarCase } from '../data/dashboard.models';
 import { nbaFor } from '../data/um-status';
 import { Icon } from '../shared/icon';
+import { WidgetActions } from '../shared/widget-actions';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-financial-tab',
   standalone: true,
-  imports: [Icon],
+  imports: [Icon, WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Financial / Cost Indicators</h2>
@@ -20,16 +22,22 @@ import { Lookback } from '../shared/lookback';
 
     <div class="grid-3">
       @for (m of financials(); track m.label; let i = $index) {
-        <div class="metric-tile clickable" (click)="metrics.open(finKeys[i])">
-          <div class="ic"><z-icon [name]="m.icon" [size]="22" [stroke]="1.6"></z-icon></div>
-          <div class="val">{{ m.value }}</div>
-          <div class="lab">{{ m.label }}</div>
-        </div>
+        @if (!isHidden(m.label)) {
+          <div class="metric-tile clickable" (click)="metrics.open(finKeys[i])">
+            <z-widget-actions (exportClick)="exportMetric(m)" (removeClick)="hide(m.label)"></z-widget-actions>
+            <div class="ic"><z-icon [name]="m.icon" [size]="22" [stroke]="1.6"></z-icon></div>
+            <div class="val">{{ m.value }}</div>
+            <div class="lab">{{ m.label }}</div>
+          </div>
+        }
       }
     </div>
 
+    @if (!isHidden('high-dollar')) {
     <div class="panel mt-6">
-      <div class="panel-pad"><h3 class="panel-title">High-Dollar Authorizations</h3></div>
+      <div class="panel-pad tbl-head"><h3 class="panel-title">High-Dollar Authorizations</h3>
+        <z-widget-actions (exportClick)="exportHighDollar()" (removeClick)="hide('high-dollar')"></z-widget-actions>
+      </div>
       <table class="z-table">
         <thead>
           <tr><th>Auth ID</th><th>Member</th><th>Procedure</th><th>Estimated Cost</th><th>Status</th><th>Next Best Action</th></tr>
@@ -48,10 +56,13 @@ import { Lookback } from '../shared/lookback';
         </tbody>
       </table>
     </div>
+    }
   `,
   styles: [`
     .clickable { cursor: pointer; transition: box-shadow .12s; }
     .metric-tile.clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
+    .metric-tile, .tbl-head { position: relative; }
+    .metric-tile:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
   `],
 })
 export class FinancialTab {
@@ -60,7 +71,24 @@ export class FinancialTab {
   metrics = inject(Metrics);
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
+  private exporter = inject(Exporter);
   readonly finKeys = ['fin.pending', 'fin.avoided', 'fin.los'];
+
+  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportMetric(m: { label: string; value: string }) {
+    this.exporter.open({ title: m.label, name: `financial-${m.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[m.label, m.value]] });
+  }
+  exportHighDollar() {
+    this.exporter.open({
+      title: 'High-Dollar Authorizations', name: 'high-dollar-authorizations_2026-07-17',
+      columns: ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'],
+      rows: this.highDollarCases().map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]),
+    });
+  }
 
   /**
    * c.status here is the case's real queue/decision status (e.g. "RFI Pending", "Clinical Review")
