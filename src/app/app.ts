@@ -14,7 +14,7 @@ import { Exporter } from './shared/exporter';
 import { Lookback } from './shared/lookback';
 import { LobFilter } from './shared/lob-filter';
 import { REFERRALS } from './data/referrals';
-import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows, liveMissingFields, liveProviders } from './data/dashboard-data';
+import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows, liveMissingFields, liveProviders, liveHighDollarCases } from './data/dashboard-data';
 
 import { OverviewDashboard } from './modules/overview-dashboard';
 import { CmDashboard } from './modules/cm-dashboard';
@@ -185,7 +185,7 @@ export class App {
       case 6: name = 'providers'; columns = ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'];
         rows = liveProviders(lob, days).map((p) => [p.provider, p.npi, p.requests, p.approvalRate, p.rfiRate]); break;
       case 7: name = 'high-dollar-authorizations'; columns = ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'];
-        rows = d.highDollarCases.map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]); break;
+        rows = liveHighDollarCases(lob, days, 50).map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]); break;
       case 8: name = 'audit-flags'; columns = ['ID', 'Type', 'Description', 'Date', 'Severity'];
         rows = d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]); break;
       case 9: name = 'cm-referrals'; columns = ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'Status'];

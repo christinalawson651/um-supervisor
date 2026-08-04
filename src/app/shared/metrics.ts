@@ -26,7 +26,7 @@ const DECIDED_TOTAL = deci().length;   // 247
 const pct = (n: number, d: number) => Math.round((n / d) * 100);
 
 // Map a pending queue -> canonical pend reason (status); NBA comes from the shared model.
-const QUEUE_TO_PEND: Record<string, string> = {
+export const QUEUE_TO_PEND: Record<string, string> = {
   'Intake': 'Pending Eligibility',
   'Clinical Review': 'Pending Review',
   'MD Review': 'Pending MD Review',

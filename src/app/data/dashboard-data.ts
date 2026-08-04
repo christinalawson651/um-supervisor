@@ -165,17 +165,7 @@ export class DashboardData {
   // liveProviders() (below the class) is the real source now; OON Requests uses Metrics.count('prov.oon').
 
   // ---------- Financial / Cost Indicators ----------
-  readonly financials = [
-    { value: '$4.3M', label: 'Estimated Pending Cost', icon: 'dollar' },
-    { value: '$1.8M', label: 'Cost Avoided (MTD)',     icon: 'shield' },
-    { value: '+1.3d', label: 'LOS Variance',           icon: 'barchart' },
-  ];
-  readonly highDollarCases: HighDollarCase[] = [
-    { authId: 'AUTH-4521', member: 'Johnson, Robert',  procedure: 'Cardiac Bypass (CABG)',     cost: '$285K', status: 'Pending Review' },
-    { authId: 'AUTH-4498', member: 'Martinez, Carlos', procedure: 'Liver Transplant Evaluation', cost: '$142K', status: 'Pending MD Review' },
-    { authId: 'AUTH-4534', member: 'Williams, Sarah',  procedure: 'NICU Stay (21 days)',        cost: '$198K', status: 'Concurrent Review' },
-    { authId: 'AUTH-4512', member: 'Thompson, James',  procedure: 'Spinal Fusion (3-level)',    cost: '$127K', status: 'Pending Peer-to-Peer' },
-  ];
+  // liveFinancials()/liveHighDollarCases() (below the class) are the real source now.
 
   // ---------- Audit & Compliance ----------
   readonly complianceBars: QualityBar[] = [
@@ -507,6 +497,34 @@ export function liveMissingFields(lob?: string, withinDays?: number): MissingFie
   return MISSING_FIELDS
     .map((field) => ({ field, count: counts.get(field) ?? 0, pct: pctOf(counts.get(field) ?? 0, pendingCs.length) }))
     .sort((a, b) => b.count - a.count);
+}
+
+export function liveFinancials(lob?: string, withinDays?: number): { value: string; label: string; icon: string }[] {
+  const pendingCs = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
+  const decidedCs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
+  const pendingCost = pendingCs.reduce((s, c) => s + c.cost, 0);
+  const avoidedCost = decidedCs.filter((c) => c.decision === 'Denied' || c.decision === 'Partial').reduce((s, c) => s + c.cost, 0);
+  const fmtM = (n: number) => `$${(n / 1_000_000).toFixed(1)}M`;
+  // LOS variance is only meaningful for cases that actually carry LOS data — the 'concurrent'-tagged
+  // inpatient stays — not every decided case, since only those have a real length-of-stay field.
+  const concurrent = liveConcurrentRows(lob, withinDays);
+  const n = concurrent.length || 1;
+  const avgLos = concurrent.reduce((s, r) => s + parseInt(r.los), 0) / n;
+  const avgExp = concurrent.reduce((s, r) => s + parseInt(r.expectedLos), 0) / n;
+  const variance = avgLos - avgExp;
+  return [
+    { value: fmtM(pendingCost), label: 'Estimated Pending Cost', icon: 'dollar' },
+    { value: fmtM(avoidedCost), label: 'Cost Avoided (MTD)', icon: 'shield' },
+    { value: `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}d`, label: 'LOS Variance', icon: 'barchart' },
+  ];
+}
+
+export function liveHighDollarCases(lob?: string, withinDays?: number, limit = 10): HighDollarCase[] {
+  return CASE_POOL
+    .filter((c) => c.cost >= 50000 && inScope(c, lob, withinDays))
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, limit)
+    .map((c) => ({ authId: c.authId, member: c.member, procedure: c.procedure, cost: `$${Math.round(c.cost / 1000)}K`, status: c.status }));
 }
 
 export function liveProviders(lob?: string, withinDays?: number): ProviderRow[] {
