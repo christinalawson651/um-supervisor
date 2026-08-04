@@ -589,15 +589,28 @@ export class TatTab {
 
   drillNotice(kind: 'member' | 'provider' | 'late') {
     const n = this.notif();
+    const memberLateSet = new Set(n.memberLate);
+    const providerLateSet = new Set(n.providerLate);
     const lateSet = new Set([...n.memberLate, ...n.providerLate]);
-    let cases: CaseRec[]; let title: string; let context: string;
-    if (kind === 'member') { cases = n.adverse; title = 'Member Notices — Adverse Determinations'; context = `${cases.length} member notices required · ${n.memberLate.length} late`; }
-    else if (kind === 'provider') { cases = this.fDecided(); title = 'Provider Notices — All Determinations'; context = `${cases.length} provider notices · ${n.providerLate.length} late`; }
-    else { cases = [...n.memberLate, ...n.providerLate]; title = 'Late Notices'; context = `${cases.length} notices sent past the regulatory timeframe`; }
+    let cases: CaseRec[]; let title: string; let context: string; let noticeType: (c: CaseRec) => string;
+    if (kind === 'member') {
+      cases = n.adverse; title = 'Member Notices — Adverse Determinations';
+      context = `${cases.length} member notices required · ${n.memberLate.length} late`;
+      noticeType = () => 'Member';
+    } else if (kind === 'provider') {
+      cases = this.fDecided(); title = 'Provider Notices — All Determinations';
+      context = `${cases.length} provider notices · ${n.providerLate.length} late`;
+      noticeType = () => 'Provider';
+    } else {
+      // dedupe — a case can be late on both the member and provider notice, and should show once with both types, not two rows
+      cases = [...lateSet];
+      title = 'Late Notices'; context = `${cases.length} notices sent past the regulatory timeframe`;
+      noticeType = (c) => [memberLateSet.has(c) && 'Member', providerLateSet.has(c) && 'Provider'].filter(Boolean).join(' + ');
+    }
     this.ix.openExplorer({
       title, context,
-      columns: ['Auth ID', 'Member', 'Determination', 'Provider', 'Urgency', 'Notice Status', 'Est. Cost'],
-      rows: cases.map((c) => [c.authId, c.member, c.decision, c.provider, urgencyOf(c), lateSet.has(c) ? 'Late' : 'On Time', `$${c.cost.toLocaleString()}`]),
+      columns: ['Auth ID', 'Member', 'Notice Type', 'Determination', 'Provider', 'Urgency', 'Notice Status', 'Est. Cost'],
+      rows: cases.map((c) => [c.authId, c.member, noticeType(c), c.decision, c.provider, urgencyOf(c), lateSet.has(c) ? 'Late' : 'On Time', `$${c.cost.toLocaleString()}`]),
       exportName: `notification-${kind}_2026-07-17`,
       memberColumn: 1,
     });
