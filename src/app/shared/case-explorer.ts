@@ -89,7 +89,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                       @if (ci === e.memberColumn) {
                         <td><a class="mlink" (click)="openAuth(row, e)">{{ cell }}</a></td>
                       } @else if (e.columns[ci] === 'Procedure' && guidelineFor(cell)) {
-                        <td class="has-tip" [title]="'Guideline: ' + guidelineFor(cell)">{{ cell }}</td>
+                        <td class="has-tip">{{ cell }}<span class="tip">Guideline: {{ guidelineFor(cell) }}</span></td>
                       } @else {
                         <td>{{ cell }}</td>
                       }
@@ -152,7 +152,11 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
     .etable tbody tr:hover { background: var(--gray-50); }
     .mlink { color:#2563eb; font-weight:600; cursor:pointer; }
     .mlink:hover { text-decoration:underline; }
-    .has-tip { cursor: help; text-decoration: underline dotted var(--gray-400); text-underline-offset: 3px; }
+    .has-tip { position: relative; cursor: help; text-decoration: underline dotted var(--gray-400); text-underline-offset: 3px; }
+    .has-tip .tip { visibility: hidden; opacity: 0; position: absolute; top: 100%; left: 0; margin-top: 6px;
+      background: var(--ink); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      white-space: nowrap; z-index: 30; transition: opacity .1s; pointer-events: none; }
+    .has-tip:hover .tip { visibility: visible; opacity: 1; }
     .empty { text-align:center; color:var(--gray-500); padding: 28px; }
     .pager { display:flex; align-items:center; gap:12px; padding: 14px 24px; font-size:12.5px;
       color: var(--gray-500); }
