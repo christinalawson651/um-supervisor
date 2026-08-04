@@ -1,10 +1,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DashboardData } from '../data/dashboard-data';
+import { DashboardData, liveProviders } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
 import { ProviderRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
+import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-provider-tab',
@@ -19,7 +21,7 @@ import { Icon } from '../shared/icon';
     <div class="oon clickable" (click)="metrics.open('prov.oon')">
       <div class="oon-ic"><z-icon name="mappin" [size]="18" [stroke]="1.8"></z-icon></div>
       <div>
-        <div class="oon-val">{{ data.oonRequests }}</div>
+        <div class="oon-val">{{ oonRequests() }}</div>
         <div class="oon-lab">Out-of-Network Requests</div>
       </div>
     </div>
@@ -69,10 +71,21 @@ export class ProviderTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
   metrics = inject(Metrics);
+  private lobFilter = inject(LobFilter);
+  private lookback = inject(Lookback);
+
+  /** Real per-provider Requests/Approval/RFI, derived from the case pool and scoped by the shared LOB + Lookback filters. */
+  readonly providers = computed(() => {
+    const lob = this.lobFilter.value();
+    const period = this.lookback.period();
+    return liveProviders(lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays());
+  });
+  /** Same count Metrics.open('prov.oon') already drills into. */
+  readonly oonRequests = computed(() => this.metrics.count('prov.oon'));
 
   readonly sortKey = signal<keyof ProviderRow | ''>('');
   readonly sortDir = signal<SortDir>(1);
-  readonly sortedRows = computed(() => compareRows(this.data.providers, this.sortKey(), this.sortDir()));
+  readonly sortedRows = computed(() => compareRows(this.providers(), this.sortKey(), this.sortDir()));
   sortBy(k: keyof ProviderRow) {
     if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
     else { this.sortKey.set(k); this.sortDir.set(1); }

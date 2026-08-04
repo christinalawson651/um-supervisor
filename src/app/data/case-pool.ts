@@ -26,6 +26,10 @@ export const PROVIDERS = [
   'Dr. Sarah Mitchell', 'Dr. James Parker', 'Dr. Emily Chen',
   'Memorial Orthopedic Group', 'Regional Heart Center', 'Coastal Neurology Associates',
 ];
+export const NPI_BY_PROVIDER: Record<string, string> = {
+  'Dr. Sarah Mitchell': '1234567890', 'Dr. James Parker': '0987654321', 'Dr. Emily Chen': '1122334455',
+  'Memorial Orthopedic Group': '5544332211', 'Regional Heart Center': '6677889900', 'Coastal Neurology Associates': '1133557799',
+};
 
 const FIRST = ['Patricia', 'Michael', 'Jennifer', 'Robert', 'Susan', 'Daniel', 'Maria', 'James', 'Sana', 'Angela',
   'Carlos', 'Nicole', 'Linda', 'Sean', 'Rina', 'Thomas', 'Katherine', 'Antonio', 'Beth', 'Hector',

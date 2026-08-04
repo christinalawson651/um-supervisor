@@ -4,7 +4,7 @@ import {
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
-import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE } from './case-pool';
+import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
 import { ageH, bandOf, lobOf, daysAgo, TODAY } from './case-fields';
 
 /**
@@ -162,15 +162,7 @@ export class DashboardData {
   // liveQualityBars()/liveMissingFields() (below the class) are the real source now.
 
   // ---------- Provider & Network Insights ----------
-  readonly oonRequests = 47;
-  readonly providers: ProviderRow[] = [
-    { provider: 'Dr. Sarah Mitchell',          npi: '1234567890', requests: 34, approvalRate: 82, rfiRate: 12, rfiHigh: false },
-    { provider: 'Dr. James Parker',            npi: '0987654321', requests: 28, approvalRate: 75, rfiRate: 18, rfiHigh: false },
-    { provider: 'Dr. Emily Chen',              npi: '1122334455', requests: 25, approvalRate: 91, rfiRate: 5,  rfiHigh: false },
-    { provider: 'Memorial Orthopedic Group',   npi: '5544332211', requests: 22, approvalRate: 68, rfiRate: 24, rfiHigh: true },
-    { provider: 'Regional Heart Center',       npi: '6677889900', requests: 19, approvalRate: 88, rfiRate: 8,  rfiHigh: false },
-    { provider: 'Coastal Neurology Associates', npi: '1133557799', requests: 17, approvalRate: 71, rfiRate: 22, rfiHigh: true },
-  ];
+  // liveProviders() (below the class) is the real source now; OON Requests uses Metrics.count('prov.oon').
 
   // ---------- Financial / Cost Indicators ----------
   readonly financials = [
@@ -515,4 +507,14 @@ export function liveMissingFields(lob?: string, withinDays?: number): MissingFie
   return MISSING_FIELDS
     .map((field) => ({ field, count: counts.get(field) ?? 0, pct: pctOf(counts.get(field) ?? 0, pendingCs.length) }))
     .sort((a, b) => b.count - a.count);
+}
+
+export function liveProviders(lob?: string, withinDays?: number): ProviderRow[] {
+  return PROVIDERS.map((provider) => {
+    const cs = CASE_POOL.filter((c) => c.provider === provider && inScope(c, lob, withinDays));
+    const decidedCs = cs.filter((c) => c.phase === 'decided');
+    const approvalRate = decidedCs.length ? pctOf(decidedCs.filter((c) => c.decision === 'Approved').length, decidedCs.length) : 0;
+    const rfiRate = cs.length ? pctOf(cs.filter((c) => c.tags.includes('incompleteDoc')).length, cs.length) : 0;
+    return { provider, npi: NPI_BY_PROVIDER[provider] ?? '', requests: cs.length, approvalRate, rfiRate, rfiHigh: rfiRate >= 20 };
+  }).sort((a, b) => b.requests - a.requests);
 }

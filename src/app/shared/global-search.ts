@@ -4,7 +4,7 @@ import { Members } from './members';
 import { Interaction } from './interaction';
 import { Nav } from './nav';
 import { DashboardData } from '../data/dashboard-data';
-import { CASE_POOL } from '../data/case-pool';
+import { CASE_POOL, PROVIDERS, NPI_BY_PROVIDER } from '../data/case-pool';
 import { Icon } from './icon';
 
 interface Hit { type: 'Member' | 'Authorization' | 'Case' | 'Provider' | 'Nurse'; label: string; sub: string; member?: string; }
@@ -73,7 +73,7 @@ export class GlobalSearch {
      ['AP-2026-0112', 'Maria Benitez'], ['AP-2025-0891', 'Sheryl Leonard'], ['AP-2026-0088', 'Shannon Wright']]
       .forEach(([id, m]) => { out.push({ type: id.startsWith('AP-') ? 'Case' : 'Authorization', label: id, sub: m, member: m });
         if (!seen.has(m)) { seen.add(m); out.push({ type: 'Member', label: m, sub: '' }); } });
-    for (const p of this.data.providers) out.push({ type: 'Provider', label: p.provider, sub: `NPI ${p.npi}` });
+    for (const p of PROVIDERS) out.push({ type: 'Provider', label: p, sub: `NPI ${NPI_BY_PROVIDER[p] ?? ''}` });
     for (const n of this.data.nurses()) out.push({ type: 'Nurse', label: n.name, sub: `${n.utilization}% utilized` });
     ['Sara Nguyen, RN', 'David Patel, MSW', 'Maria Torres, RN', 'James Wong, PharmD', 'Angela Ruiz, RN']
       .forEach((n) => out.push({ type: 'Nurse', label: n, sub: 'Care Manager' }));
