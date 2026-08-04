@@ -186,10 +186,10 @@ const TAT_WIDGETS = [
           </div>
         </div>
         <div class="notif-bars">
-          <div class="nb"><span class="nb-lab">Member ({{ notif().memberTotal }})</span>
+          <div class="nb clk" (click)="drillNotice('member')"><span class="nb-lab">Member ({{ notif().memberTotal }})</span>
             <span class="mini-bar" [class.teal]="notif().memberPct >= 95"><span [style.width.%]="notif().memberPct"></span></span>
           </div>
-          <div class="nb"><span class="nb-lab">Provider ({{ notif().providerTotal }})</span>
+          <div class="nb clk" (click)="drillNotice('provider')"><span class="nb-lab">Provider ({{ notif().providerTotal }})</span>
             <span class="mini-bar" [class.teal]="notif().providerPct >= 95"><span [style.width.%]="notif().providerPct"></span></span>
           </div>
         </div>
@@ -273,7 +273,8 @@ const TAT_WIDGETS = [
     .notif-stats .stat-box.warn { background:#fdf6e3; }
     .stat-box.clk:hover { box-shadow:0 0 0 2px var(--teal, #14b8a6) inset; }
     .notif-bars { margin-top:16px; display:flex; flex-direction:column; gap:12px; }
-    .nb { display:flex; align-items:center; gap:12px; }
+    .nb { display:flex; align-items:center; gap:12px; border-radius:6px; padding:4px 6px; margin:-4px -6px; }
+    .nb.clk:hover { background:var(--gray-100); }
     .nb-lab { font-size:12px; color:var(--gray-600); width:110px; flex:0 0 auto; }
     .urg-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
     .urg-card { border:1px solid var(--line, #e5e7eb); border-radius:10px; padding:14px 16px; transition:box-shadow .12s; }
