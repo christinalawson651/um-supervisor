@@ -2,6 +2,8 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveConcurrentRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
+import { Reassign } from '../shared/reassign';
+import { Balance } from '../shared/balance';
 import { Exporter } from '../shared/exporter';
 import { ConcurrentRow } from '../data/dashboard.models';
 import { Members } from '../shared/members';
@@ -59,9 +61,17 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
         </select>
         <z-widget-actions (exportClick)="exportTable()" (removeClick)="hide('table')"></z-widget-actions>
       </div>
+      <div class="sel-toolbar">
+        @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
+        <span class="spacer"></span>
+        <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected()">Reassign selected</button>
+        <button class="btn outline sm" (click)="balanceSelected()">Balance{{ selected().size ? ' selected' : '' }}</button>
+        <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected()">Escalate selected</button>
+      </div>
       <table class="z-table compact">
         <thead>
           <tr>
+            <th class="selth"><input type="checkbox" [checked]="allSelected()" (change)="toggleAllFiltered($event)" /></th>
             <th>Member</th><th>Facility</th><th>LOS</th>
             <th>Stay Timeline</th><th>Uncert.</th>
             <th>Next Review</th><th>Req./Appr.</th><th>Status</th><th>Reviewer</th>
@@ -72,6 +82,7 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
           @for (r of filteredRows(); track r.member) {
             @let tl = timelineFor(r);
             <tr>
+              <td class="selth"><input type="checkbox" [checked]="selected().has(r.authId)" (change)="toggleSel(r.authId)" /></td>
               <td><a class="mlink" (click)="openMember(r)">{{ r.member }}</a></td>
               <td class="fac" [title]="r.facility">{{ r.facility }}</td>
               <td [class.danger]="r.losFlag">{{ r.los }}</td>
@@ -97,7 +108,7 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
             </tr>
           }
           @if (!filteredRows().length) {
-            <tr><td colspan="10" class="empty-row">No reviews match this filter.</td></tr>
+            <tr><td colspan="11" class="empty-row">No reviews match this filter.</td></tr>
           }
         </tbody>
       </table>
@@ -146,6 +157,10 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
     .svc-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
       font-size: 12.5px; color: var(--ink-soft); margin-left: auto; margin-right: 12px; }
     .empty-row { text-align: center; color: var(--gray-500); padding: 20px; }
+    .sel-toolbar { display: flex; align-items: center; gap: 12px; padding: 0 16px 12px; flex-wrap: wrap; }
+    .selcount { font-size: 12px; font-weight: 700; color: var(--teal-700); white-space: nowrap; }
+    .spacer { flex: 1; }
+    .selth { width: 1%; padding-right: 4px !important; cursor: default; }
     .stay-tl { position: relative; width: 84px; height: 16px; }
     .tl-track { position: absolute; left: 0; right: 0; top: 5px; height: 6px; background: var(--gray-100); border-radius: 3px; }
     .tl-fill { position: absolute; top: 5px; height: 6px; border-radius: 3px; }
@@ -168,6 +183,8 @@ export class ConcurrentTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
   private esc = inject(Escalate);
+  private rx = inject(Reassign);
+  private bal = inject(Balance);
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
   private exporter = inject(Exporter);
@@ -211,6 +228,90 @@ export class ConcurrentTab {
   /** A tile sets the same filter the table uses, so drilling in stays on this page instead of a modal. */
   drillStatus(filter: StatusFilter) {
     this.statusFilter.set(filter);
+  }
+
+  // ---- bulk selection + Reassign/Balance/Escalate — same pattern as the Case Explorer's toolbar ----
+  readonly selected = signal<Set<string>>(new Set());
+  toggleSel(id: string) { this.selected.update((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  allSelected() { const f = this.filteredRows(); return f.length > 0 && f.every((r) => this.selected().has(r.authId)); }
+  toggleAllFiltered(e: Event) {
+    const on = (e.target as HTMLInputElement).checked;
+    this.selected.set(on ? new Set(this.filteredRows().map((r) => r.authId)) : new Set());
+  }
+
+  reassignSelected() {
+    const ids = [...this.selected()];
+    if (!ids.length) return;
+    const rows = this.concurrentRows().filter((r) => ids.includes(r.authId));
+    const cases = rows.map((r) => ({
+      authId: r.authId, member: r.member, type: 'Inpatient Concurrent Review', queue: r.status,
+      priority: r.status, owner: r.reviewer !== '—' ? r.reviewer : 'Unassigned',
+    }));
+    const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
+    this.rx.open({
+      title: `Reassign ${ids.length} concurrent review${ids.length > 1 ? 's' : ''}`,
+      cases, nurses, preselectAll: true,
+      apply: (assignedIds, target) => {
+        assignedIds.forEach((id) => {
+          const row = rows.find((r) => r.authId === id);
+          this.data.moveOneCase(row && row.reviewer !== '—' ? row.reviewer : null, target);
+        });
+        this.ix.toast(`${assignedIds.length} concurrent review(s) reassigned to ${target}.`);
+        this.data.addHistory('swap', 'Concurrent reviews reassigned', `${assignedIds.length} review(s) → ${target}`);
+        this.selected.set(new Set());
+      },
+    });
+  }
+
+  /** With reviews selected, spreads exactly those across nurses with capacity. With nothing
+   *  selected, falls back to the generic team-wide rebalance (same as every other tab's Balance). */
+  balanceSelected() {
+    const ids = [...this.selected()];
+    if (!ids.length) { this.bal.run(); return; }
+    const rows = this.concurrentRows().filter((r) => ids.includes(r.authId));
+    const owners = new Map(rows.map((r) => [r.authId, r.reviewer !== '—' ? r.reviewer : null] as const));
+
+    const sim = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization }));
+    const plan = ids.map((id) => {
+      sim.sort((a, b) => a.utilization - b.utilization);
+      const target = sim[0];
+      target.utilization = Math.min(100, target.utilization + 4);
+      return { authId: id, from: owners.get(id) ?? null, to: target.name };
+    });
+    const byTarget = new Map<string, number>();
+    plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
+    const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'review' : 'reviews', target }));
+
+    this.ix.ask({
+      title: `Balance ${ids.length} selected review${ids.length > 1 ? 's' : ''}`,
+      body: 'Move these concurrent reviews to the nurses with the most capacity:',
+      breakdown, confirmLabel: 'Balance', tone: 'teal',
+      onConfirm: () => {
+        plan.forEach((p) => this.data.moveOneCase(p.from, p.to));
+        this.ix.toast(`${ids.length} review(s) balanced across ${byTarget.size} nurse(s).`);
+        this.data.addHistory('balance', 'Concurrent reviews balanced', `${ids.length} review(s) across ${byTarget.size} nurse(s)`);
+        this.selected.set(new Set());
+      },
+    });
+  }
+
+  escalateSelected() {
+    const ids = [...this.selected()];
+    if (!ids.length) return;
+    const rows = this.concurrentRows().filter((r) => ids.includes(r.authId));
+    const candidates = rows.map((r) => ({
+      authId: r.authId, member: r.member, detail: `${r.facility} · ${r.status}`,
+      riskLabel: r.status, risk: r.statusTone as 'red' | 'amber' | 'green',
+    }));
+    this.esc.open({
+      title: `Escalate ${ids.length} Concurrent Review${ids.length > 1 ? 's' : ''}`,
+      candidates, targets: ESCALATE_TARGETS,
+      apply: (_ids, who) => {
+        this.ix.toast(`${ids.length} review(s) escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Concurrent reviews escalated', `${ids.length} review(s) → ${who}`);
+        this.selected.set(new Set());
+      },
+    });
   }
 
   exportStat(s: { label: string; filter: StatusFilter }) {
@@ -285,10 +386,40 @@ export class ConcurrentTab {
       note: r.nextAction,
       // No determination — including concurrent-review day extensions — is ever made from this dashboard.
       // Additional days always route to a formal reviewer instead of being approved here.
-      actions: r.daysRequested > r.totalCertifiedDays
-        ? [{ label: `Route ${r.daysRequested - r.totalCertifiedDays} additional day(s) to formal review`, tone: 'teal',
-             run: () => this.routeForReview(r) }]
-        : [],
+      actions: [
+        { label: 'Reassign this review', tone: 'teal', run: () => this.reassignOne(r) },
+        { label: 'Escalate this review', tone: 'amber', run: () => this.escalateOne(r) },
+        ...(r.daysRequested > r.totalCertifiedDays
+          ? [{ label: `Route ${r.daysRequested - r.totalCertifiedDays} additional day(s) to formal review`, tone: 'teal' as const,
+               run: () => this.routeForReview(r) }]
+          : []),
+      ],
+    });
+  }
+
+  private reassignOne(r: ConcurrentRow) {
+    const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
+    this.rx.open({
+      title: `Reassign ${r.member}`,
+      cases: [{ authId: r.authId, member: r.member, type: 'Inpatient Concurrent Review', queue: r.status, priority: r.status, owner: r.reviewer !== '—' ? r.reviewer : 'Unassigned' }],
+      nurses, preselectAll: true,
+      apply: (_ids, target) => {
+        this.data.moveOneCase(r.reviewer !== '—' ? r.reviewer : null, target);
+        this.ix.toast(`${r.member} reassigned to ${target}.`);
+        this.data.addHistory('swap', 'Concurrent review reassigned', `${r.member} → ${target}`);
+      },
+    });
+  }
+
+  private escalateOne(r: ConcurrentRow) {
+    this.esc.open({
+      title: `Escalate ${r.member}`,
+      candidates: [{ authId: r.authId, member: r.member, detail: `${r.facility} · ${r.status}`, riskLabel: r.status, risk: r.statusTone as 'red' | 'amber' | 'green' }],
+      targets: ESCALATE_TARGETS,
+      apply: (_ids, who) => {
+        this.ix.toast(`${r.member} escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Concurrent review escalated', `${r.member} → ${who}`);
+      },
     });
   }
 
@@ -297,7 +428,7 @@ export class ConcurrentTab {
     this.esc.open({
       title: `Route ${r.member} for Formal Review`,
       candidates: [{
-        authId: r.facility, member: r.member,
+        authId: r.authId, member: r.member,
         detail: `${r.facility} · ${extra} additional day(s) requested beyond ${r.totalCertifiedDays} certified`,
         riskLabel: r.status, risk: r.statusTone as 'red' | 'amber' | 'green',
       }],

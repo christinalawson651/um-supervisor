@@ -39,6 +39,7 @@ export interface DecisionRow {
 }
 
 export interface ConcurrentRow {
+  authId: string;
   member: string;
   facility: string;
   admit: string;

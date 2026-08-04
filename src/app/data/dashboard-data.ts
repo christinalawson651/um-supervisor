@@ -66,6 +66,7 @@ function concurrentRowFor(c: CaseRec): ConcurrentRow {
   }
 
   return {
+    authId: c.authId,
     member: c.member, facility: c.provider,
     admit: c.submitted,
     los: `${los}d`, losFlag: diff > 0,
