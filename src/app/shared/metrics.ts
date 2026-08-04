@@ -113,6 +113,13 @@ export class Metrics {
 
   has(key: string) { return key in DRILLS; }
 
+  /** Live count for a drill key, scoped by the shared LOB + Lookback filters — lets a tile's headline
+   *  number always match what its own click-through shows, instead of a separately hand-typed value. */
+  count(key: string): number {
+    const d = DRILLS[key];
+    return d ? this.byLob(d.pick()).length : 0;
+  }
+
   /** True when neither shared filter is actively narrowing anything — the original, unfiltered baseline. */
   private isDefaultScope(): boolean {
     return this.lobFilter.value() === 'all' && this.lookback.period() === '30d';

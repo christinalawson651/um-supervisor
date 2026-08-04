@@ -1,10 +1,14 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Members } from '../shared/members';
 import { Metrics } from '../shared/metrics';
-import { RiskCase } from '../data/dashboard.models';
+import { RiskCase, RiskTile } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
+import { CASE_POOL } from '../data/case-pool';
+import { lobOf } from '../data/case-fields';
+import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 
 const ACUITY_DRIVERS = ['High-acuity ICU', 'Transplant', 'Oncology'];
 const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
@@ -22,7 +26,7 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
     </div>
 
     <div class="rtiles">
-      @for (t of data.riskTiles; track t.label; let i = $index) {
+      @for (t of riskTiles(); track t.label; let i = $index) {
         <div class="rtile clickable" [attr.data-tone]="t.tone" (click)="openTile(i)">
           <div class="rt-lab"><span class="rt-ic" [attr.data-tone]="t.tone"><z-icon [name]="t.icon" [size]="14"></z-icon></span>{{ t.label }}</div>
           <div class="rt-val">{{ t.value }}</div>
@@ -104,8 +108,34 @@ export class RiskTab {
   members = inject(Members);
   metrics = inject(Metrics);
   private ix = inject(Interaction);
+  private lobFilter = inject(LobFilter);
+  private lookback = inject(Lookback);
 
   readonly selected = signal<Set<string>>(new Set());
+
+  /**
+   * The 4 headline tiles, recomputed so each one always matches the count its own click-through
+   * shows. SLA Breach Risk / High-Dollar are real case-pool counts scoped by the shared LOB +
+   * Lookback filters (via Metrics.count(), the same lookup their drills already use). High-Acuity /
+   * Escalated Today read the live riskCases()/history() signals directly — real and session-aware,
+   * though (unlike the case pool) that underlying list isn't itself LOB/date-taggable.
+   */
+  readonly riskTiles = computed((): RiskTile[] => {
+    const inScope = (c: { authId: string; submitted: string }) =>
+      (this.lobFilter.value() === 'all' || lobOf(c.authId) === this.lobFilter.value())
+      && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted));
+    const highDollar = CASE_POOL.filter((c) => c.cost >= 50000 && inScope(c));
+    const exposure = highDollar.reduce((s, c) => s + c.cost, 0);
+    const breached = this.metrics.count('kpi.breached');
+    const acuity = this.data.riskCases().filter((r) => r.drivers.some((d) => ACUITY_DRIVERS.includes(d))).length;
+    const escalations = this.data.history().filter((h) => h.icon === 'arrowup');
+    return [
+      { icon: 'alert', label: 'SLA Breach Risk', value: String(this.metrics.count('kpi.risk')), footer: `${breached} already breached`, footerTone: 'red', tone: 'red' },
+      { icon: 'dollar', label: 'High-Dollar (>$50k)', value: String(highDollar.length), footer: `$${(exposure / 1_000_000).toFixed(1)}M exposure`, tone: 'amber' },
+      { icon: 'shield', label: 'High-Acuity', value: String(acuity), footer: 'ICU / transplant / oncology', tone: 'amber' },
+      { icon: 'arrowup', label: 'Escalated Today', value: String(escalations.length), footer: `${escalations.length} this session`, tone: 'blue' },
+    ];
+  });
 
   private readonly TARGETS = ['Dr. Patel — Medical Director', 'Dr. Nguyen — MD Review',
     'Dr. Rivera — MD Review', 'Peer-to-Peer Review Queue', 'Supervisor — Christina Lawson'];
