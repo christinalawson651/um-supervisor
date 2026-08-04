@@ -1,7 +1,10 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DashboardData, liveDecisionStats, liveDecisionRows, inScope } from '../data/dashboard-data';
+import {
+  DashboardData, liveDecisionStats, liveDecisionRows, inScope,
+  liveDeterminationMix, liveDeterminationCases, DeterminationMixRow,
+} from '../data/dashboard-data';
 import { CASE_POOL } from '../data/case-pool';
-import { urgencyOf, mdReviewerOf } from '../data/case-fields';
+import { urgencyOf, mdReviewerOf, determinationReasonOf, criteriaStatusOf } from '../data/case-fields';
 import { Interaction } from '../shared/interaction';
 import { Metrics, COLUMNS, toRow } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
@@ -15,8 +18,10 @@ import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
 const CLINICAL_WIDGETS = [
+  { id: 'decision-mix', title: 'Decision Mix' },
   { id: 'Approved', title: 'Approved' }, { id: 'Denied', title: 'Denied' }, { id: 'Partial', title: 'Partial' },
   { id: 'Auto-Approved', title: 'Auto-Approved' }, { id: 'MD Review', title: 'MD Review' }, { id: 'P2P Rate', title: 'P2P Rate' },
+  { id: 'reason-mix', title: 'Determination Reason Mix' },
   { id: 'drilldown', title: 'Decision Drilldown by Service' },
 ];
 
@@ -33,6 +38,26 @@ const CLINICAL_WIDGETS = [
 
     <z-widget-customize [vis]="vis"></z-widget-customize>
 
+    @if (!isHidden('decision-mix')) {
+    <div class="panel mix-panel mb-4">
+      <z-widget-actions (exportClick)="exportMix()" (removeClick)="hide('decision-mix')"></z-widget-actions>
+      <h3 class="panel-title">Decision Mix</h3>
+      <div class="mix-bar">
+        @for (m of decisionMix(); track m.label; let i = $index) {
+          <div class="mix-seg" [attr.data-tone]="m.tone" [style.width.%]="m.pct"
+               (click)="metrics.open(decKeys[i])" [title]="m.label + ': ' + m.count + ' (' + m.pct + '%)'"></div>
+        }
+      </div>
+      <div class="mix-legend">
+        @for (m of decisionMix(); track m.label; let i = $index) {
+          <div class="mix-item clk" [attr.data-tone]="m.tone" (click)="metrics.open(decKeys[i])">
+            <span class="mix-dot"></span>{{ m.label }} — {{ m.count }} ({{ m.pct }}%)
+          </div>
+        }
+      </div>
+    </div>
+    }
+
     <div class="dstats">
       @for (s of decisionStats(); track s.label; let i = $index) {
         @if (!isHidden(s.label)) {
@@ -46,9 +71,45 @@ const CLINICAL_WIDGETS = [
       }
     </div>
 
+    @if (!isHidden('reason-mix')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head">
+        <h3 class="panel-title">Determination Reason Mix</h3>
+        <div class="mix-toggle">
+          <button class="seg-btn" [class.active]="mixOutcome()==='Denied'" (click)="mixOutcome.set('Denied')">Denied / Partial</button>
+          <button class="seg-btn" [class.active]="mixOutcome()==='Approved'" (click)="mixOutcome.set('Approved')">Approved</button>
+        </div>
+        <z-widget-actions (exportClick)="exportReasonMix()" (removeClick)="hide('reason-mix')"></z-widget-actions>
+      </div>
+      <div class="reason-rows">
+        @for (r of reasonMix(); track r.code) {
+          <div class="reason-row clk" (click)="drillReason(r)">
+            <div class="reason-lab">
+              <span class="reason-code">{{ r.code }}</span>
+              <span class="reason-cat" [attr.data-cat]="r.category">{{ r.category }}</span>
+              {{ r.label }}
+            </div>
+            <div class="reason-bar-track"><div class="reason-bar-fill" [style.width.%]="r.pct"></div></div>
+            <div class="reason-count">{{ r.count }} · {{ r.pct }}%</div>
+          </div>
+        }
+        @if (!reasonMix().length) {
+          <div class="reason-empty">No {{ mixOutcome() === 'Approved' ? 'approved' : 'denied/partial' }} decisions in the current scope.</div>
+        }
+      </div>
+    </div>
+    }
+
     @if (!isHidden('drilldown')) {
     <div class="panel mt-6">
-      <div class="panel-pad tbl-head"><h3 class="panel-title">Decision Drilldown by Service</h3>
+      <div class="panel-pad tbl-head">
+        <h3 class="panel-title">Decision Drilldown by Service</h3>
+        <select class="svc-filter" [value]="serviceTypeFilter()" (change)="serviceTypeFilter.set($any($event.target).value)">
+          <option value="all">All Service Types</option>
+          <option value="Inpatient">Inpatient</option>
+          <option value="Outpatient">Outpatient</option>
+          <option value="Behavioral">Behavioral</option>
+        </select>
         <z-widget-actions (exportClick)="exportDrilldown()" (removeClick)="hide('drilldown')"></z-widget-actions>
       </div>
       <table class="z-table">
@@ -72,6 +133,9 @@ const CLINICAL_WIDGETS = [
               <td class="num">{{ r.volume }}</td>
             </tr>
           }
+          @if (!sortedRows().length) {
+            <tr><td colspan="5" class="empty-row">No procedures match this filter.</td></tr>
+          }
         </tbody>
       </table>
     </div>
@@ -82,7 +146,7 @@ const CLINICAL_WIDGETS = [
     .dstat { position: relative; background:#fff; border:1px solid var(--border); border-top:3px solid var(--gray-300);
       border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 12px; text-align:center; }
     .dstat:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
-    .tbl-head { position: relative; display: flex; align-items: center; justify-content: space-between; }
+    .tbl-head { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px 16px; padding-right: 44px; }
     .dic { display:flex; justify-content:center; margin-bottom: 10px; }
     .dval { font-size: 26px; font-weight: 700; color: var(--ink); }
     .dlab { font-size: 10.5px; letter-spacing:0.05em; text-transform:uppercase;
@@ -103,6 +167,43 @@ const CLINICAL_WIDGETS = [
     .sortable:hover { color: var(--ink-soft); }
     .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
     .cz-btn { margin-left: auto; flex-shrink: 0; }
+    .mb-4 { margin-bottom: 16px; }
+    .mix-panel { position: relative; padding: 16px 20px; }
+    .mix-panel:hover z-widget-actions { opacity: 1; }
+    .mix-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 10px 0 12px; background: var(--gray-100); }
+    .mix-seg { cursor: pointer; transition: opacity .12s; }
+    .mix-seg:hover { opacity: .85; }
+    .mix-seg[data-tone="green"] { background: var(--green); }
+    .mix-seg[data-tone="red"] { background: var(--red); }
+    .mix-seg[data-tone="amber"] { background: var(--amber); }
+    .mix-legend { display: flex; gap: 20px; flex-wrap: wrap; }
+    .mix-item { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; padding: 2px 4px; border-radius: 4px; color: var(--ink-soft); }
+    .mix-item:hover { background: var(--gray-100); }
+    .mix-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .mix-item[data-tone="green"] .mix-dot { background: var(--green); }
+    .mix-item[data-tone="red"] .mix-dot { background: var(--red); }
+    .mix-item[data-tone="amber"] .mix-dot { background: var(--amber); }
+    .mix-toggle { display: flex; gap: 6px; margin-left: auto; margin-right: 12px; }
+    .seg-btn { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
+      font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--gray-500); }
+    .seg-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .reason-rows { padding: 4px 20px 18px; display: flex; flex-direction: column; gap: 10px; }
+    .reason-row { display: grid; grid-template-columns: 1fr 160px 90px; align-items: center; gap: 12px;
+      cursor: pointer; padding: 6px 8px; border-radius: 6px; }
+    .reason-row:hover { background: var(--gray-100); }
+    .reason-code { font-family: monospace; font-weight: 700; color: var(--ink); margin-right: 8px; }
+    .reason-cat { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px;
+      border-radius: 4px; margin-right: 8px; font-weight: 600; }
+    .reason-cat[data-cat="Admission"] { background: var(--blue-bg); color: var(--blue-fg); }
+    .reason-cat[data-cat="Clinical"] { background: var(--teal-100); color: var(--teal-900); }
+    .reason-cat[data-cat="Administrative"] { background: var(--amber-bg); color: var(--amber-fg); }
+    .reason-bar-track { height: 8px; background: var(--gray-100); border-radius: 4px; overflow: hidden; }
+    .reason-bar-fill { height: 100%; background: var(--teal-600); }
+    .reason-count { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--gray-500); }
+    .reason-empty { color: var(--gray-500); font-size: 13px; padding: 8px; }
+    .svc-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
+      font-size: 12.5px; color: var(--ink-soft); margin-left: auto; margin-right: 12px; }
+    .empty-row { text-align: center; color: var(--gray-500); padding: 20px; }
   `],
 })
 export class ClinicalTab {
@@ -146,12 +247,65 @@ export class ClinicalTab {
   /** The 6 headline tiles — same liveDecisionStats() the global Export button reads, so the tile, its drilldown, and its export can never drift apart. */
   readonly decisionStats = computed(() => liveDecisionStats(...this.scopeArgs()));
 
+  /** Approved/Denied/Partial as one visual mix (the 6 tiles above show each independently — this
+   *  shows them as parts of one whole). Reuses decKeys[0..2] so its drill-through matches the tiles. */
+  readonly decisionMix = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, days));
+    const total = cs.length || 1;
+    const of = (d: string) => cs.filter((c) => c.decision === d).length;
+    const approved = of('Approved'); const denied = of('Denied'); const partial = of('Partial');
+    return [
+      { label: 'Approved', count: approved, pct: Math.round((approved / total) * 100), tone: 'green' },
+      { label: 'Denied', count: denied, pct: Math.round((denied / total) * 100), tone: 'red' },
+      { label: 'Partial', count: partial, pct: Math.round((partial / total) * 100), tone: 'amber' },
+    ];
+  });
+  exportMix() {
+    const [lob, days] = this.scopeArgs();
+    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, days));
+    this.exporter.open({ title: 'Decision Mix', name: 'clinical-decision-mix_2026-07-17', columns: COLUMNS, rows: cases.map(toRow) });
+  }
+
+  /** Determination Reason Mix — real reason-code breakdown behind Approved or Denied/Partial
+   *  decisions, matching the real UM workflow where every determination requires a reason code. */
+  readonly mixOutcome = signal<'Approved' | 'Denied'>('Denied');
+  readonly reasonMix = computed(() => liveDeterminationMix(this.mixOutcome(), ...this.scopeArgs()));
+  drillReason(row: DeterminationMixRow) {
+    const [lob, days] = this.scopeArgs();
+    const cases = liveDeterminationCases(this.mixOutcome(), row.code, lob, days);
+    this.ix.openExplorer({
+      title: `${row.code} · ${row.label}`,
+      context: `${cases.length} ${this.mixOutcome().toLowerCase()} decision(s) coded ${row.code} (${row.pct}% of ${this.mixOutcome().toLowerCase()} decisions)`,
+      columns: COLUMNS, rows: cases.map(toRow),
+      exportName: `determination-${row.code.toLowerCase()}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  exportReasonMix() {
+    const [lob, days] = this.scopeArgs();
+    const outcome = this.mixOutcome();
+    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, days)
+      && (outcome === 'Approved' ? c.decision === 'Approved' : c.decision === 'Denied' || c.decision === 'Partial'));
+    this.exporter.open({
+      title: `Determination Reason Mix — ${outcome}`, name: `determination-mix-${outcome.toLowerCase()}_2026-07-17`,
+      columns: [...COLUMNS, 'Reason Code'],
+      rows: cases.map((c) => [...toRow(c), determinationReasonOf(c)?.label ?? '—']),
+    });
+  }
+
   /** Per-procedure approval rate + volume — same liveDecisionRows() the global Export button reads. */
   readonly decisionRows = computed(() => liveDecisionRows(...this.scopeArgs()));
 
+  readonly serviceTypeFilter = signal<'all' | 'Inpatient' | 'Outpatient' | 'Behavioral'>('all');
+  readonly filteredRows = computed(() => {
+    const f = this.serviceTypeFilter();
+    const rows = this.decisionRows();
+    return f === 'all' ? rows : rows.filter((r) => r.serviceType === f);
+  });
+
   readonly sortKey = signal<keyof DecisionRow | ''>('');
   readonly sortDir = signal<SortDir>(1);
-  readonly sortedRows = computed(() => compareRows(this.decisionRows(), this.sortKey(), this.sortDir()));
+  readonly sortedRows = computed(() => compareRows(this.filteredRows(), this.sortKey(), this.sortDir()));
   sortBy(k: keyof DecisionRow) {
     if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
     else { this.sortKey.set(k); this.sortDir.set(1); }
@@ -178,17 +332,20 @@ export class ClinicalTab {
     });
   }
 
-  /** Every decided case for this procedure, with the nurse reviewer who handled it and the MD
-   *  reviewer tied to the determination (MD Reviewer only populated for cases that actually
-   *  required MD/peer-to-peer review; Reviewer is '—' for auto-approved cases — no nurse touched them). */
+  /** Every decided case for this procedure, with the nurse reviewer who handled it, the MD reviewer
+   *  tied to the determination (only populated for cases that actually required MD/peer-to-peer
+   *  review; Reviewer is '—' for auto-approved cases), and the criteria review outcome behind it. */
   openDecisionLog(r: DecisionRow) {
     const [lob, days] = this.scopeArgs();
     const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.procedure === r.procedure && inScope(c, lob, days));
     this.ix.openExplorer({
       title: `${r.procedure} — Decision Log`,
       context: `${cases.length} decision(s) for ${r.procedure} · ${r.approvalRate}% approval rate`,
-      columns: ['Auth ID', 'Member', 'Decision', 'Reviewer', 'MD Reviewer', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'],
-      rows: cases.map((c) => [c.authId, c.member, c.decision, c.nurse, mdReviewerOf(c) ?? '—', c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`]),
+      columns: ['Auth ID', 'Member', 'Decision', 'Criteria Met', 'Reason Code', 'Reviewer', 'MD Reviewer', 'Provider', 'Urgency', 'Submitted', 'TAT (h)', 'Est. Cost'],
+      rows: cases.map((c) => {
+        const cs = criteriaStatusOf(c);
+        return [c.authId, c.member, c.decision, `${cs.met}/${cs.total}`, determinationReasonOf(c)?.code ?? '—', c.nurse, mdReviewerOf(c) ?? '—', c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`];
+      }),
       exportName: `decision-log-${r.procedure.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`,
       memberColumn: 1,
     });

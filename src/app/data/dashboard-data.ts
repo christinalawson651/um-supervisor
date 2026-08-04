@@ -5,7 +5,7 @@ import {
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
 import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
-import { ageH, bandOf, lobOf, daysAgo, TODAY } from './case-fields';
+import { ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf } from './case-fields';
 
 /**
  * One inpatient concurrent-review row per real 'concurrent'-tagged case in the pool (LOS/admit/
@@ -463,6 +463,31 @@ export function liveDecisionRows(lob?: string, withinDays?: number): DecisionRow
     approvalRate: Math.round((group.filter((c) => c.decision === 'Approved').length / group.length) * 100),
     volume: group.length,
   })).sort((a, b) => b.volume - a.volume);
+}
+
+export interface DeterminationMixRow { code: string; label: string; category: string; count: number; pct: number; }
+
+/** Breakdown of the reason codes behind Approved (or Denied+Partial) determinations — the real UM
+ *  workflow requires one of these codes on every determination, not just denials. */
+export function liveDeterminationMix(outcome: 'Approved' | 'Denied', lob?: string, withinDays?: number): DeterminationMixRow[] {
+  const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays)
+    && (outcome === 'Approved' ? c.decision === 'Approved' : c.decision === 'Denied' || c.decision === 'Partial'));
+  const total = cs.length || 1;
+  const codes = outcome === 'Approved' ? APPROVAL_CODES : DENIAL_CODES;
+  return codes
+    .map((d) => {
+      const count = cs.filter((c) => determinationReasonOf(c)?.code === d.code).length;
+      return { code: d.code, label: d.label, category: d.category, count, pct: Math.round((count / total) * 100) };
+    })
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count);
+}
+
+/** The real cases behind one reason code — backs both the mix row's click-through and its export. */
+export function liveDeterminationCases(outcome: 'Approved' | 'Denied', code: string, lob?: string, withinDays?: number): CaseRec[] {
+  return CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays)
+    && (outcome === 'Approved' ? c.decision === 'Approved' : c.decision === 'Denied' || c.decision === 'Partial')
+    && determinationReasonOf(c)?.code === code);
 }
 
 export function liveConcurrentRows(lob?: string, withinDays?: number): ConcurrentRow[] {

@@ -38,6 +38,59 @@ export function mdReviewerOf(c: CaseRec): string | null {
   return MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length];
 }
 
+// ---- Determination reason codes — mirrors the real UM determination workflow, where every
+// approve/deny/partial requires picking a structured reason code before confirming (not just free text).
+export interface DeterminationCode { code: string; label: string; category: 'Admission' | 'Clinical' | 'Administrative'; }
+
+export const APPROVAL_CODES: DeterminationCode[] = [
+  { code: 'AP-AD-01', label: 'Admission medically necessary', category: 'Admission' },
+  { code: 'AP-AD-02', label: 'Meets inpatient admission criteria', category: 'Admission' },
+  { code: 'AP-CL-01', label: 'Meets clinical criteria', category: 'Clinical' },
+  { code: 'AP-CL-02', label: 'Medical necessity established', category: 'Clinical' },
+  { code: 'AP-CL-03', label: 'Guideline-supported', category: 'Clinical' },
+  { code: 'AP-AM-01', label: 'Auto-approved (criteria met)', category: 'Administrative' },
+  { code: 'AP-AM-02', label: 'Covered benefit', category: 'Administrative' },
+];
+
+export const DENIAL_CODES: DeterminationCode[] = [
+  { code: 'AD-01', label: 'Admission not medically necessary', category: 'Admission' },
+  { code: 'AD-02', label: 'Alternate level of care available', category: 'Admission' },
+  { code: 'AD-03', label: 'Observation more appropriate than inpatient', category: 'Admission' },
+  { code: 'CL-01', label: 'Does not meet clinical criteria', category: 'Clinical' },
+  { code: 'CL-02', label: 'Experimental / Investigational', category: 'Clinical' },
+  { code: 'CL-03', label: 'Insufficient clinical documentation', category: 'Clinical' },
+  { code: 'CL-04', label: 'Non-compliance with treatment plan', category: 'Clinical' },
+  { code: 'AM-01', label: 'Non-covered service / benefit', category: 'Administrative' },
+  { code: 'AM-02', label: 'Eligibility / benefit exhausted', category: 'Administrative' },
+  { code: 'AM-03', label: 'Untimely filing / authorization', category: 'Administrative' },
+  { code: 'AM-04', label: 'Duplicate request', category: 'Administrative' },
+];
+
+/** The reason code behind a determination — Approved cases get an approval code (auto-approved
+ *  cases always land on AP-AM-01, matching the real "Auto-approved (criteria met)" code); Denied
+ *  and Partial cases get a denial code (Partial = why the un-approved portion was cut). */
+export function determinationReasonOf(c: CaseRec): DeterminationCode | null {
+  if (c.phase !== 'decided') return null;
+  if (c.decision === 'Approved') {
+    if (c.tags.includes('auto')) return APPROVAL_CODES.find((d) => d.code === 'AP-AM-01')!;
+    const pool = APPROVAL_CODES.filter((d) => d.code !== 'AP-AM-01');
+    return pool[Number(c.authId.slice(-2)) % pool.length];
+  }
+  return DENIAL_CODES[Number(c.authId.slice(-2)) % DENIAL_CODES.length];
+}
+
+/** Criteria review outcome ("X of Y met") behind every determination — deterministic per case and
+ *  correlated with the decision (Approved ≈ full match, Denied/Partial show a real gap). */
+export function criteriaStatusOf(c: CaseRec): { met: number; total: number } {
+  const total = 3 + (Number(c.authId.slice(-1)) % 5); // 3..7
+  if (c.decision === 'Denied') {
+    const unmet = 1 + (Number(c.authId.slice(-2)) % Math.max(1, total - 1));
+    return { met: Math.max(0, total - unmet), total };
+  }
+  if (c.decision === 'Partial') return { met: total - 1, total };
+  return { met: total, total };
+}
+
 /** Composite score for the Case Explorer's "Sort: Urgency" control — expedited & SLA-risk float to the top. */
 export function urgencyScore(c: CaseRec): number {
   let score = 0;
