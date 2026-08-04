@@ -45,3 +45,11 @@ export function bandOf(authId: string, breached: boolean): 'fresh' | 'day2' | 'o
   const h = ageH(authId);
   return h < 24 ? 'fresh' : h < 48 ? 'day2' : 'over48';
 }
+
+// ---- Shared "now" for every lookback/date calculation, so the case pool's dates and the
+// Lookback filter always agree on what "today" means (matches DashboardData.today). ----
+export const TODAY = new Date(2026, 6, 17); // Friday, July 17, 2026
+export function daysAgo(dateStr: string): number {
+  const d = new Date(`${dateStr}T00:00:00`);
+  return Math.round((TODAY.getTime() - d.getTime()) / 86400000);
+}

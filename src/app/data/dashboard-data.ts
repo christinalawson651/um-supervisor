@@ -4,8 +4,8 @@ import {
   ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
-import { CASE_POOL, NURSES } from './case-pool';
-import { ageH, bandOf, lobOf } from './case-fields';
+import { CASE_POOL, NURSES, CaseRec } from './case-pool';
+import { ageH, bandOf, lobOf, daysAgo } from './case-fields';
 
 /**
  * Active / Pending / Completed / Avg TAT are real counts from the case pool (not placeholder
@@ -24,8 +24,12 @@ import { ageH, bandOf, lobOf } from './case-fields';
  * the shared queue. Count and age bars are both computed from that unclaimed subset only, so a
  * queue card's bars describe exactly the cases its count refers to.
  */
-function queueStats(statusName: string) {
-  const unclaimed = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === statusName && c.nurse === '—');
+function queueStats(statusName: string, opts?: { lob?: string; withinDays?: number }) {
+  const unclaimed = CASE_POOL.filter((c) =>
+    c.phase === 'pending' && c.status === statusName && c.nurse === '—' &&
+    (!opts?.lob || opts.lob === 'all' || lobOf(c.authId) === opts.lob) &&
+    (opts?.withinDays === undefined || daysAgo(c.submitted) <= opts.withinDays),
+  );
   const total = unclaimed.length || 1;
   const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
   unclaimed.forEach((c) => { bands[bandOf(c.authId, c.tags.includes('breached'))]++; });
@@ -38,14 +42,18 @@ function queueStats(statusName: string) {
   };
 }
 
-function nurseStats(name: string, lob?: string) {
-  const inLob = (c: { authId: string }) => !lob || lob === 'all' || lobOf(c.authId) === lob;
-  const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name && inLob(c));
+function nurseStats(name: string, opts?: { lob?: string; withinDays?: number }) {
+  const inScope = (c: CaseRec) =>
+    (!opts?.lob || opts.lob === 'all' || lobOf(c.authId) === opts.lob) &&
+    (opts?.withinDays === undefined || daysAgo(c.submitted) <= opts.withinDays);
+  const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name && inScope(c));
   const pending = active.filter((c) => c.tags.includes('rfi') || c.tags.includes('p2p'));
-  const completed = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === name && inLob(c));
+  const completed = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === name && inScope(c));
   const avgTatH = completed.length ? completed.reduce((s, c) => s + c.tatH, 0) / completed.length : 0;
   return { active: active.length, pending: pending.length, completed: completed.length, avgTat: `${avgTatH.toFixed(1)}h` };
 }
+
+const pctOf = (n: number, d: number) => Math.round((n / (d || 1)) * 100);
 
 export interface HistoryEntry {
   time: string;
@@ -394,12 +402,48 @@ export class DashboardData {
   }
 
   /**
-   * Active/Pending/Completed/Avg TAT for one nurse, scoped to a single LOB — recomputed live from
-   * the case pool so the Workload table reacts to the shared top-bar LOB filter the same way the
-   * queue cards do. Utilization is left untouched: it's the nurse's overall capacity indicator
-   * (and reflects any session reassign/balance moves), not a value that splits meaningfully by LOB.
+   * Active/Pending/Completed/Avg TAT for one nurse, scoped to a LOB and/or a lookback window —
+   * recomputed live from the case pool so the Workload table reacts to the shared top-bar LOB and
+   * Lookback filters the same way the queue cards do. Utilization is left untouched: it's the
+   * nurse's overall capacity indicator (and reflects any session reassign/balance moves), not a
+   * value that splits meaningfully by LOB or date.
    */
-  nurseStatsForLob(name: string, lob: string) {
-    return nurseStats(name, lob);
+  nurseStatsForLob(name: string, lob?: string, withinDays?: number) {
+    return nurseStats(name, { lob, withinDays });
+  }
+
+  /** Same idea as nurseStatsForLob, for one queue's unclaimed pool — used by Workforce's queue cards. */
+  queueStatsScoped(statusName: string, lob?: string, withinDays?: number) {
+    return queueStats(statusName, { lob, withinDays });
+  }
+
+  /**
+   * The 8 top KPI tiles, recomputed live from the case pool for a given lookback window (days back
+   * from "today", inclusive; undefined = no date filter). Mirrors the same math as the static
+   * `kpis` signal's default values so switching lookback periods shows a real, consistent picture
+   * instead of hand-picked flavor numbers.
+   */
+  liveKpis(withinDays: number): Kpi[] {
+    const within = (c: CaseRec) => daysAgo(c.submitted) <= withinDays;
+    const pendingIn = CASE_POOL.filter((c) => c.phase === 'pending' && within(c));
+    const decidedIn = CASE_POOL.filter((c) => c.phase === 'decided' && within(c));
+    const onTrack = decidedIn.filter((c) => c.tags.includes('onTrack')).length;
+    const auto = decidedIn.filter((c) => c.tags.includes('auto')).length;
+    const avgTatH = decidedIn.length ? decidedIn.reduce((s, c) => s + c.tatH, 0) / decidedIn.length : 0;
+    const unassigned = pendingIn.filter((c) => c.nurse === '—').length;
+    const breached = pendingIn.filter((c) => c.tags.includes('breached')).length;
+    const atRisk = pendingIn.filter((c) => c.tags.includes('atRisk')).length;
+    const nurseRows = this.nurses();
+    const util = pctOf(nurseRows.reduce((s, n) => s + n.utilization, 0), nurseRows.length);
+    return [
+      { icon: 'folder',  value: `${pendingIn.length}`,        label: 'Pending Authorizations', tone: 'green' },
+      { icon: 'check',   value: `${pctOf(onTrack, decidedIn.length)}%`, label: 'TAT Compliance',    tone: 'green' },
+      { icon: 'bolt',    value: `${pctOf(auto, decidedIn.length)}%`,    label: 'Auto-Approval Rate', tone: 'teal' },
+      { icon: 'alert',   value: `${atRisk}`,                  label: 'Authorizations at Risk', tone: 'amber' },
+      { icon: 'clock',   value: `${avgTatH.toFixed(1)}h`,     label: 'Avg Handle Time',   tone: 'teal' },
+      { icon: 'inbox',   value: `${unassigned}`,               label: 'Unassigned Queue',  tone: 'amber' },
+      { icon: 'xcircle', value: `${breached}`,                 label: 'Breached TAT',      tone: 'red' },
+      { icon: 'users',   value: `${util}%`,                    label: 'Team Utilization',  tone: 'green' },
+    ];
   }
 }

@@ -1,6 +1,6 @@
 // A generated pool of authorization records that backs every metric drill-down.
 // Deterministic (no RNG) so the demo shows the same data on every load.
-import { ageH } from './case-fields';
+import { ageH, TODAY } from './case-fields';
 
 export type Decision = 'Approved' | 'Denied' | 'Partial' | 'Pending';
 
@@ -59,10 +59,25 @@ const PROCS: Proc[] = [
 export const NURSES = ['Maria Gonzalez, RN', 'Jessica Williams, RN', 'Andrew Mitchell, RN',
   'Sarah Mitchell, RN', 'Emily Chen, RN', 'Robert Kim, RN'];
 
-// simple deterministic date within July 2026
-function dateFor(i: number): string {
-  const day = 4 + (i % 9); // 4..12
-  return `2026-07-${String(day).padStart(2, '0')}`;
+// ---- Real dates, anchored on TODAY, so the Lookback filter (Today/7 days/30 days/QTD) has an
+// actual date range to slice — instead of every case falling in the same fixed window. ----
+function isoDate(daysAgoVal: number): string {
+  const d = new Date(TODAY);
+  d.setDate(d.getDate() - daysAgoVal);
+  return d.toISOString().slice(0, 10);
+}
+// Pending work skews recent (that's what "pending" means) and stays within 30 days, matching the
+// 30-day default lookback so the un-filtered baseline count (247) never silently changes.
+function pendingDaysAgo(i: number): number {
+  const r = i % 20;
+  if (r < 3) return i % 2;         // ~15% submitted today or yesterday
+  if (r < 8) return 2 + (i % 6);   // ~25% within the last week
+  return 8 + (i % 22);             // remainder spread across the rest of the 30-day window
+}
+// Decided work is spread across a full trailing quarter so Today/7 days/30 days/QTD each show a
+// meaningfully different (and realistically growing) decided volume.
+function decidedDaysAgo(j: number): number {
+  return j % 90;
 }
 function member(i: number): string {
   return `${LAST[i % LAST.length]}, ${FIRST[(i * 7 + 3) % FIRST.length]}`;
@@ -128,7 +143,7 @@ function buildPending(): CaseRec[] {
         status: q.status,
         nurse,
         provider: PROVIDERS[(i * 3 + 2) % PROVIDERS.length],
-        submitted: dateFor(i),
+        submitted: isoDate(pendingDaysAgo(i)),
         tatH: vary(p.tat, i, 0.3),
         cost: vary(p.cost, i, p.cost * 0.05),
         phase: 'pending',
@@ -174,7 +189,7 @@ function buildDecided(): CaseRec[] {
       decision, status,
       nurse: tags.includes('auto') ? '—' : NURSES[j % NURSES.length],
       provider: PROVIDERS[(j * 5 + 1) % PROVIDERS.length],
-      submitted: dateFor(j),
+      submitted: isoDate(decidedDaysAgo(j)),
       tatH: vary(p.tat, j, 0.4),
       cost: vary(p.cost, j, p.cost * 0.05),
       phase: 'decided',

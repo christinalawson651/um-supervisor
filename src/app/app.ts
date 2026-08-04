@@ -107,17 +107,13 @@ export class App {
   private lobFilter = inject(LobFilter);
   readonly lobOptions = this.lobFilter.options;
   readonly lob = this.lobFilter.value;
-  // value overrides per lookback (order matches the KPI strip); '30d' uses the live/current values
-  private readonly PERIOD_VALUES: Record<string, string[]> = {
-    today: ['38', '93.1%', '41%', '4', '2.2h', '3', '1', '89%'],
-    '7d': ['162', '93.8%', '39%', '9', '2.3h', '6', '2', '88%'],
-    qtd: ['712', '94.5%', '37%', '21', '2.5h', '12', '7', '86%'],
-  };
+  // '30d' is the baseline (every pending case fits within it by construction) so it keeps showing
+  // the live, session-mutable KPI values (escalate/resolve/assign actions etc.); any other period
+  // is recomputed fresh from the case pool for that real date window — no more canned flavor numbers.
   readonly displayKpis = computed(() => {
     const p = this.period();
-    const live = this.data.kpis();
-    if (p === '30d' || !this.PERIOD_VALUES[p]) return live;
-    return live.map((k, i) => ({ ...k, value: this.PERIOD_VALUES[p][i] }));
+    if (p === '30d') return this.data.kpis();
+    return this.data.liveKpis(this.lookback.windowDays());
   });
 
   select(i: number) { this.selected.set(i); }

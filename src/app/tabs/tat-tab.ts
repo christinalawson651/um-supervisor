@@ -5,6 +5,7 @@ import { Ring } from '../shared/ring';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { LOBS, PROGRAMS, lobOf, programOf, authTypeOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 
 type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
 
@@ -271,15 +272,17 @@ export class TatTab {
   ];
   readonly authType = signal<AuthTypeChoice>('all');
   readonly lob = this.lobFilter.value; // shared top-bar filter — same signal, so it stays in sync everywhere
+  private lookback = inject(Lookback); // shared top-bar lookback — same treatment as LOB
   readonly program = signal<string>('all');
-  readonly filterActive = computed(() => this.authType() !== 'all' || this.lob() !== 'all' || this.program() !== 'all');
-  /** Clears this tab's own filters; the LOB filter is a shell-level control, reset it from the top bar. */
+  readonly filterActive = computed(() => this.authType() !== 'all' || this.lob() !== 'all' || this.program() !== 'all' || this.lookback.period() !== '30d');
+  /** Clears this tab's own filters; the LOB and Lookback filters are shell-level controls, reset them from the top bar. */
   clearFilters() { this.authType.set('all'); this.program.set('all'); }
 
   private passes(c: CaseRec, skip: { lob?: boolean; program?: boolean; auth?: boolean } = {}) {
     if (!skip.auth && this.authType() !== 'all' && authTypeOf(c) !== this.authType()) return false;
     if (!skip.lob && this.lob() !== 'all' && lobOf(c.authId) !== this.lob()) return false;
     if (!skip.program && this.program() !== 'all' && programOf(c) !== this.program()) return false;
+    if (this.lookback.period() !== '30d' && !this.lookback.includes(c.submitted)) return false;
     return true;
   }
   readonly fDecided = computed(() => this.decided.filter((c) => this.passes(c)));
@@ -369,7 +372,8 @@ export class TatTab {
   readonly showConcurrent = computed(() =>
     (this.authType() === 'all' || this.authType() === 'IP') && (this.program() === 'all' || this.program() === 'Inpatient'));
   private concurrentActive = computed(() =>
-    this.pending.filter((c) => c.tags.includes('concurrent') && (this.lob() === 'all' || lobOf(c.authId) === this.lob())));
+    this.pending.filter((c) => c.tags.includes('concurrent') && (this.lob() === 'all' || lobOf(c.authId) === this.lob())
+      && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted))));
   readonly concurrent = computed(() => {
     const rows = this.data.concurrentRows();
     const n = rows.length || 1;

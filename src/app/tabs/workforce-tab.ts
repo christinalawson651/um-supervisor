@@ -6,10 +6,11 @@ import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Balance } from '../shared/balance';
 import { NurseRow, QueueCard } from '../data/dashboard.models';
-import { CASE_POOL } from '../data/case-pool';
-import { urgencyOf, lobOf, LOBS, ageH, bandOf } from '../data/case-fields';
+import { CASE_POOL, CaseRec } from '../data/case-pool';
+import { urgencyOf, lobOf, LOBS, ageH, bandOf, daysAgo } from '../data/case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 import { Icon } from '../shared/icon';
 
 interface DisplayQueue extends QueueCard { baseName: string; lob?: string; }
@@ -75,7 +76,7 @@ type QueueSort = 'volume' | 'breach' | 'name';
 
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
-        <h3 class="panel-title">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Nurse' }}{{ lob() === 'all' ? '' : ' · ' + lob() }}</h3>
+        <h3 class="panel-title">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Nurse' }}{{ workloadScope() }}</h3>
         <div class="flex gap-8 center">
           <div class="seg-toggle">
             <button [class.on]="groupBy() === 'nurse'" (click)="groupBy.set('nurse')">By Nurse</button>
@@ -239,10 +240,23 @@ export class WorkforceTab {
   readonly splitByLob = signal(false);
   private lobFilter = inject(LobFilter); // the shared top-bar LOB control — scopes these cards too
   readonly lob = this.lobFilter.value; // exposed for the Workload panel title
+  private lookback = inject(Lookback); // the shared top-bar Lookback control — scopes these cards too
+  readonly workloadScope = computed(() => this.scopeLabel(this.lob()));
+  /** True only at the untouched baseline (All LOBs, 30 days) — every pending case fits inside it by construction. */
+  private isDefaultScope(): boolean { return this.lobFilter.value() === 'all' && this.lookback.period() === '30d'; }
+  /** " · Medicaid · Today" style suffix for drill-down titles/context — omits whichever filter is at its default. */
+  private scopeLabel(lob: string): string {
+    const period = this.lookback.period();
+    const periodLabel = this.lookback.periods.find((p) => p.id === period)?.label;
+    const parts = [lob !== 'all' ? lob : null, period !== '30d' ? periodLabel : null].filter(Boolean);
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
+  }
+  private inLookback(c: CaseRec): boolean { return daysAgo(c.submitted) <= this.lookback.windowDays(); }
 
-  /** Real per-LOB breakdown of one queue's unclaimed pool, computed live from the case pool. */
+  /** Real per-LOB breakdown of one queue's unclaimed pool, computed live from the case pool (and the shared Lookback window). */
   private lobSplit(q: QueueCard): DisplayQueue[] {
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === q.name && c.nurse === '—');
+    const days = this.lookback.windowDays();
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === q.name && c.nurse === '—' && daysAgo(c.submitted) <= days);
     const byLob = new Map<string, typeof cases>();
     for (const c of cases) { const l = lobOf(c.authId); if (!byLob.has(l)) byLob.set(l, []); byLob.get(l)!.push(c); }
     return LOBS.map((l) => {
@@ -262,10 +276,11 @@ export class WorkforceTab {
 
   readonly displayQueues = computed((): DisplayQueue[] => {
     const topLob = this.lobFilter.value();
+    const days = this.lookback.windowDays();
     const base: DisplayQueue[] = this.data.queues().map((q) => ({ ...q, baseName: q.name }));
     let list: DisplayQueue[];
     if (this.splitByLob()) {
-      // full per-LOB breakdown, narrowed further if a specific LOB is also selected up top
+      // full per-LOB breakdown (lookback-scoped inside lobSplit), narrowed further if a specific LOB is also selected up top
       list = base.flatMap((q) => this.lobSplit(q)).filter((s) => topLob === 'all' || s.lob === topLob);
     } else if (topLob !== 'all') {
       // collapse each card down to just the selected LOB's slice (0-count if none in that queue)
@@ -273,8 +288,11 @@ export class WorkforceTab {
         ...q, name: `${q.name} · ${topLob}`, baseName: q.name, lob: topLob,
         count: 0, buckets: { fresh: 0, day2: 0, over48: 0, breach: 0 },
       });
+    } else if (this.lookback.period() !== '30d') {
+      // no LOB narrowing, but a non-default lookback still needs live counts from the case pool
+      list = base.map((q) => ({ ...q, ...this.data.queueStatsScoped(q.baseName, undefined, days) }));
     } else {
-      list = base;
+      list = base; // default scope — the mutable base signal, preserving any session queue mutations
     }
     const q = this.queueSearch().trim().toLowerCase();
     if (q) list = list.filter((x) => x.name.toLowerCase().includes(q));
@@ -286,16 +304,17 @@ export class WorkforceTab {
   });
 
   /**
-   * Active/Pending/Completed/Avg TAT recomputed live from the case pool for the selected LOB —
-   * same real-count-not-flavor-text principle as the queue cards. Utilization stays whatever the
-   * base row holds (including any session reassign/balance moves) since it's a whole-caseload
-   * capacity indicator, not something that splits meaningfully per LOB.
+   * Active/Pending/Completed/Avg TAT recomputed live from the case pool for the selected LOB and
+   * Lookback window — same real-count-not-flavor-text principle as the queue cards. Utilization
+   * stays whatever the base row holds (including any session reassign/balance moves) since it's a
+   * whole-caseload capacity indicator, not something that splits meaningfully by LOB or date.
    */
   readonly effectiveNurses = computed((): NurseRow[] => {
-    const lob = this.lobFilter.value();
     const rows = this.data.nurses();
-    if (lob === 'all') return rows;
-    return rows.map((n) => ({ ...n, ...this.data.nurseStatsForLob(n.name, lob) }));
+    if (this.isDefaultScope()) return rows;
+    const lob = this.lobFilter.value();
+    const days = this.lookback.windowDays();
+    return rows.map((n) => ({ ...n, ...this.data.nurseStatsForLob(n.name, lob === 'all' ? undefined : lob, days) }));
   });
 
   // ---- team rollup ----
@@ -367,8 +386,8 @@ export class WorkforceTab {
   /** Same Case Explorer used by every graph/KPI drill — consistent look, not a separate summary drawer. */
   openNurse(n: NurseRow) {
     const lob = this.lobFilter.value();
-    const scope = lob === 'all' ? '' : ` · ${lob}`;
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (lob === 'all' || lobOf(c.authId) === lob));
+    const scope = this.scopeLabel(lob);
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (lob === 'all' || lobOf(c.authId) === lob) && this.inLookback(c));
     this.ix.openExplorer({
       title: `${n.name}${scope}`,
       context: `${cases.length} pending authorization(s) assigned${scope} · ${n.utilization}% utilized`,
@@ -382,8 +401,8 @@ export class WorkforceTab {
   /** The "Pending" column — the subset of this nurse's active work awaiting an external response. */
   openNursePending(n: NurseRow) {
     const lob = this.lobFilter.value();
-    const scope = lob === 'all' ? '' : ` · ${lob}`;
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (c.tags.includes('rfi') || c.tags.includes('p2p')) && (lob === 'all' || lobOf(c.authId) === lob));
+    const scope = this.scopeLabel(lob);
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === n.name && (c.tags.includes('rfi') || c.tags.includes('p2p')) && (lob === 'all' || lobOf(c.authId) === lob) && this.inLookback(c));
     this.ix.openExplorer({
       title: `${n.name} — Pending External Response${scope}`,
       context: `${cases.length} authorization(s) awaiting RFI or peer-to-peer response${scope}`,
@@ -397,8 +416,8 @@ export class WorkforceTab {
   /** The "Completed (MTD)" and "Avg TAT" columns — this nurse's decided authorizations. */
   openNurseCompleted(n: NurseRow) {
     const lob = this.lobFilter.value();
-    const scope = lob === 'all' ? '' : ` · ${lob}`;
-    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === n.name && (lob === 'all' || lobOf(c.authId) === lob));
+    const scope = this.scopeLabel(lob);
+    const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === n.name && (lob === 'all' || lobOf(c.authId) === lob) && this.inLookback(c));
     this.ix.openExplorer({
       title: `${n.name} — Completed (MTD)${scope}`,
       context: `${cases.length} authorization(s) decided this month${scope}`,
@@ -436,18 +455,20 @@ export class WorkforceTab {
 
   private ageLabel(h: number) { return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d ${h % 24}h`; }
 
-  /** Drill a queue's age band -> Case Explorer of the unclaimed authorizations in it (optionally scoped to one LOB). */
+  /** Drill a queue's age band -> Case Explorer of the unclaimed authorizations in it (optionally scoped to one LOB, plus the shared Lookback window). */
   openBucket(queue: string, band: string, lob?: string) {
     const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const rows = CASE_POOL
-      .filter((c) => c.phase === 'pending' && c.status === queue && c.nurse === '—' && (!lob || lobOf(c.authId) === lob) && bandOf(c.authId, c.tags.includes('breached')) === band)
+      .filter((c) => c.phase === 'pending' && c.status === queue && c.nurse === '—' && (!lob || lobOf(c.authId) === lob) && this.inLookback(c) && bandOf(c.authId, c.tags.includes('breached')) === band)
       .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(ageH(c.authId))] as (string | number)[]);
-    const scopeLabel = lob ? `${queue} · ${lob}` : queue;
+    const period = this.lookback.period();
+    const periodSuffix = period !== '30d' ? ` · ${this.lookback.periods.find((p) => p.id === period)?.label}` : '';
+    const queueLabel = `${lob ? `${queue} · ${lob}` : queue}${periodSuffix}`;
     this.ix.openExplorer({
-      title: `${scopeLabel} — ${labels[band]}`,
-      context: `${rows.length} unclaimed authorization(s) in ${scopeLabel} · ${labels[band]}`,
+      title: `${queueLabel} — ${labels[band]}`,
+      context: `${rows.length} unclaimed authorization(s) in ${queueLabel} · ${labels[band]}`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue'],
-      rows, exportName: `${scopeLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
+      rows, exportName: `${queueLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
     });
   }
 

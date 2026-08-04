@@ -5,6 +5,7 @@ import { nbaFor } from '../data/um-status';
 import { lobOf, urgencyOf } from '../data/case-fields';
 import { Interaction } from './interaction';
 import { LobFilter } from './lob-filter';
+import { Lookback } from './lookback';
 import { downloadCsv } from './export-csv';
 
 // Rich, full-width column set for the Case Explorer — every drill uses the same shape
@@ -108,19 +109,33 @@ export class Metrics {
   private ix = inject(Interaction);
   private data = inject(DashboardData);
   private lobFilter = inject(LobFilter);
+  private lookback = inject(Lookback);
 
   has(key: string) { return key in DRILLS; }
 
-  /** Scope a drill's cases to the shared top-bar LOB filter (no-op when set to "All LOBs"). */
-  private byLob(cases: CaseRec[]): CaseRec[] {
-    const lob = this.lobFilter.value();
-    return lob === 'all' ? cases : cases.filter((c) => lobOf(c.authId) === lob);
+  /** True when neither shared filter is actively narrowing anything — the original, unfiltered baseline. */
+  private isDefaultScope(): boolean {
+    return this.lobFilter.value() === 'all' && this.lookback.period() === '30d';
   }
 
-  /** Context line — honest about the LOB scope instead of reusing a fixed-denominator % once filtered. */
-  private ctxFor(d: Drill, cases: CaseRec[]): string {
+  /** Scope a drill's cases to the shared top-bar LOB + Lookback filters (no-op at the default scope). */
+  private byLob(cases: CaseRec[]): CaseRec[] {
+    if (this.isDefaultScope()) return cases;
     const lob = this.lobFilter.value();
-    return lob === 'all' ? d.ctx(cases.length) : `${cases.length} authorization(s) · filtered to ${lob}`;
+    const period = this.lookback.period();
+    return cases.filter((c) =>
+      (lob === 'all' || lobOf(c.authId) === lob) && (period === '30d' || this.lookback.includes(c.submitted)),
+    );
+  }
+
+  /** Context line — honest about the LOB/Lookback scope instead of reusing a fixed-denominator % once filtered. */
+  private ctxFor(d: Drill, cases: CaseRec[]): string {
+    if (this.isDefaultScope()) return d.ctx(cases.length);
+    const lob = this.lobFilter.value();
+    const period = this.lookback.period();
+    const periodLabel = this.lookback.periods.find((p) => p.id === period)?.label ?? period;
+    const scope = [lob !== 'all' ? lob : null, period !== '30d' ? periodLabel : null].filter(Boolean).join(' · ');
+    return `${cases.length} authorization(s) · filtered to ${scope}`;
   }
 
   open(key: string) {
