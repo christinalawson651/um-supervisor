@@ -7,7 +7,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
-import { LOBS, PROGRAMS, lobOf, programOf, authTypeOf, tatStatus, urgencyOf } from '../data/case-fields';
+import { LOBS, SERVICE_CATEGORIES, lobOf, serviceCategoryOf, authTypeOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
@@ -15,7 +15,7 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
 
 const TAT_WIDGETS = [
   { id: 'headline', title: 'TAT Compliance (headline)' }, { id: 'concurrent', title: 'Inpatient Concurrent Review' },
-  { id: 'by-lob', title: 'TAT Compliance by Line of Business' }, { id: 'by-program', title: 'TAT Compliance by Program' },
+  { id: 'by-lob', title: 'TAT Compliance by Line of Business' }, { id: 'by-service-category', title: 'TAT Compliance by Service Category' },
   { id: 'notification', title: 'Notification Compliance' }, { id: 'regulatory', title: 'Regulatory TAT by Urgency' },
 ];
 
@@ -41,10 +41,10 @@ const TAT_WIDGETS = [
         }
       </div>
       <label class="fsel">
-        <span>Program</span>
-        <select [value]="program()" (change)="program.set($any($event.target).value)">
-          <option value="all">All Programs</option>
-          @for (p of programs; track p) { <option [value]="p">{{ p }}</option> }
+        <span>Service Category</span>
+        <select [value]="serviceCategory()" (change)="serviceCategory.set($any($event.target).value)">
+          <option value="all">All Service Categories</option>
+          @for (p of serviceCategories; track p) { <option [value]="p">{{ p }}</option> }
         </select>
       </label>
       @if (filterActive()) {
@@ -133,16 +133,16 @@ const TAT_WIDGETS = [
       </div>
       }
 
-      @if (!isHidden('by-program')) {
+      @if (!isHidden('by-service-category')) {
       <div class="panel">
-        <div class="panel-pad"><h3 class="pt">TAT Compliance by Program</h3>
-          <z-widget-actions (exportClick)="exportByProgram()" (removeClick)="hide('by-program')"></z-widget-actions>
+        <div class="panel-pad"><h3 class="pt">TAT Compliance by Service Category</h3>
+          <z-widget-actions (exportClick)="exportByServiceCategory()" (removeClick)="hide('by-service-category')"></z-widget-actions>
         </div>
         <table class="z-table">
-          <thead><tr><th>Program</th><th>Volume</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Compliance</th></tr></thead>
+          <thead><tr><th>Service Category</th><th>Volume</th><th>On Track</th><th>At Risk</th><th>Breached</th><th>Compliance</th></tr></thead>
           <tbody>
-            @for (r of byProgram(); track r.name) {
-              <tr class="clk" (click)="drill('program', r.name)">
+            @for (r of byServiceCategory(); track r.name) {
+              <tr class="clk" (click)="drill('serviceCategory', r.name)">
                 <td class="strong">{{ r.name }}</td>
                 <td class="num">{{ r.total }}</td>
                 <td class="num">{{ r.onTrack }}</td>
@@ -323,11 +323,11 @@ export class TatTab {
       rows: this.byLob().map((r) => [r.name, r.total, r.onTrack, r.atRisk, r.breached, r.compliance]),
     });
   }
-  exportByProgram() {
+  exportByServiceCategory() {
     this.exporter.open({
-      title: 'TAT Compliance by Program', name: 'tat-by-program_2026-07-17',
-      columns: ['Program', 'Volume', 'On Track', 'At Risk', 'Breached', 'Compliance %'],
-      rows: this.byProgram().map((r) => [r.name, r.total, r.onTrack, r.atRisk, r.breached, r.compliance]),
+      title: 'TAT Compliance by Service Category', name: 'tat-by-service-category_2026-07-17',
+      columns: ['Service Category', 'Volume', 'On Track', 'At Risk', 'Breached', 'Compliance %'],
+      rows: this.byServiceCategory().map((r) => [r.name, r.total, r.onTrack, r.atRisk, r.breached, r.compliance]),
     });
   }
   exportNotification() {
@@ -352,22 +352,22 @@ export class TatTab {
   // ---- filter state ----
   private lobFilter = inject(LobFilter);
   readonly lobs = LOBS;
-  readonly programs = PROGRAMS;
+  readonly serviceCategories = SERVICE_CATEGORIES;
   readonly authTypes: { id: AuthTypeChoice; label: string }[] = [
     { id: 'all', label: 'All' }, { id: 'IP', label: 'IP' }, { id: 'OP', label: 'OP' }, { id: 'RX', label: 'RX' },
   ];
   readonly authType = signal<AuthTypeChoice>('all');
   readonly lob = this.lobFilter.value; // shared top-bar filter — same signal, so it stays in sync everywhere
   private lookback = inject(Lookback); // shared top-bar lookback — same treatment as LOB
-  readonly program = signal<string>('all');
-  readonly filterActive = computed(() => this.authType() !== 'all' || this.lob() !== 'all' || this.program() !== 'all' || this.lookback.period() !== '30d');
+  readonly serviceCategory = signal<string>('all');
+  readonly filterActive = computed(() => this.authType() !== 'all' || this.lob() !== 'all' || this.serviceCategory() !== 'all' || this.lookback.period() !== '30d');
   /** Clears this tab's own filters; the LOB and Lookback filters are shell-level controls, reset them from the top bar. */
-  clearFilters() { this.authType.set('all'); this.program.set('all'); }
+  clearFilters() { this.authType.set('all'); this.serviceCategory.set('all'); }
 
-  private passes(c: CaseRec, skip: { lob?: boolean; program?: boolean; auth?: boolean } = {}) {
+  private passes(c: CaseRec, skip: { lob?: boolean; serviceCategory?: boolean; auth?: boolean } = {}) {
     if (!skip.auth && this.authType() !== 'all' && authTypeOf(c) !== this.authType()) return false;
     if (!skip.lob && this.lob() !== 'all' && lobOf(c.authId) !== this.lob()) return false;
-    if (!skip.program && this.program() !== 'all' && programOf(c) !== this.program()) return false;
+    if (!skip.serviceCategory && this.serviceCategory() !== 'all' && serviceCategoryOf(c) !== this.serviceCategory()) return false;
     if (this.lookback.period() !== '30d' && !this.lookback.includes(c.submitted)) return false;
     return true;
   }
@@ -419,7 +419,7 @@ export class TatTab {
     }).sort((a, b) => b.total - a.total);
   }
   readonly byLob = computed(() => this.breakdownOver(this.decided.filter((c) => this.passes(c, { lob: true })), (c) => lobOf(c.authId)));
-  readonly byProgram = computed(() => this.breakdownOver(this.decided.filter((c) => this.passes(c, { program: true })), (c) => programOf(c)));
+  readonly byServiceCategory = computed(() => this.breakdownOver(this.decided.filter((c) => this.passes(c, { serviceCategory: true })), (c) => serviceCategoryOf(c)));
 
   // ---- Regulatory TAT by urgency ----
   readonly regTat = computed(() => {
@@ -456,7 +456,7 @@ export class TatTab {
 
   // ---- Inpatient concurrent review ----
   readonly showConcurrent = computed(() =>
-    (this.authType() === 'all' || this.authType() === 'IP') && (this.program() === 'all' || this.program() === 'Inpatient'));
+    (this.authType() === 'all' || this.authType() === 'IP') && (this.serviceCategory() === 'all' || this.serviceCategory() === 'Inpatient'));
   private concurrentActive = computed(() =>
     this.pending.filter((c) => c.tags.includes('concurrent') && (this.lob() === 'all' || lobOf(c.authId) === this.lob())
       && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted))));
@@ -481,7 +481,7 @@ export class TatTab {
 
   // ---- drills ----
 
-  /** The headline donut — every decision currently in view (respects Auth Type/Program/LOB filters). */
+  /** The headline donut — every decision currently in view (respects Auth Type/Service Category/LOB filters). */
   drillAllDecided() {
     const cases = this.fDecided();
     this.ix.openExplorer({
@@ -560,10 +560,10 @@ export class TatTab {
     });
   }
 
-  drill(dim: 'lob' | 'program', value: string) {
-    const keyFn = dim === 'lob' ? (c: CaseRec) => lobOf(c.authId) : (c: CaseRec) => programOf(c);
-    const cases = this.decided.filter((c) => this.passes(c, dim === 'lob' ? { lob: true } : { program: true }) && keyFn(c) === value);
-    const label = dim === 'lob' ? 'Line of Business' : 'Program';
+  drill(dim: 'lob' | 'serviceCategory', value: string) {
+    const keyFn = dim === 'lob' ? (c: CaseRec) => lobOf(c.authId) : (c: CaseRec) => serviceCategoryOf(c);
+    const cases = this.decided.filter((c) => this.passes(c, dim === 'lob' ? { lob: true } : { serviceCategory: true }) && keyFn(c) === value);
+    const label = dim === 'lob' ? 'Line of Business' : 'Service Category';
     this.ix.openExplorer({
       title: `TAT — ${value}`,
       context: `${cases.length} decisions · ${label} ${value}`,

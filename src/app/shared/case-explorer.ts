@@ -8,7 +8,7 @@ import { Balance } from './balance';
 import { downloadCsv } from './export-csv';
 import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
-import { lobOf, programOf, tatStatus, urgencyOf } from '../data/case-fields';
+import { lobOf, serviceCategoryOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { nbaFor } from '../data/um-status';
 import { pendReason } from './metrics';
 
@@ -360,7 +360,7 @@ export class CaseExplorer {
         { label: 'Service Type', value: rec.serviceType },
         { label: 'Provider', value: rec.provider },
         { label: 'Line of Business', value: lobOf(rec.authId) },
-        { label: 'Program', value: programOf(rec) },
+        { label: 'Service Category', value: serviceCategoryOf(rec) },
         { label: 'Urgency', value: urgencyOf(rec) },
         ...(pending
           ? [{ label: 'Pend Reason', value: reason! }, { label: 'Next Best Action', value: nbaFor(reason!) }]

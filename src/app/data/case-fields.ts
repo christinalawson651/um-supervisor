@@ -1,12 +1,14 @@
 // Shared, derived case attributes used across every tab's tables and drill-downs
-// (single source of truth so "LOB", "Program", and "Urgency" mean the same thing everywhere).
+// (single source of truth so "LOB", "Service Category", and "Urgency" mean the same thing everywhere).
 import { CaseRec } from './case-pool';
 
 export const LOBS = ['Medicaid', 'Medicare Advantage', 'Commercial PPO', 'ACA Exchange'];
 export function lobOf(authId: string): string { return LOBS[Number(authId.slice(-2)) % LOBS.length]; }
 
-export const PROGRAMS = ['Inpatient', 'Outpatient', 'Behavioral Health', 'Pharmacy', 'DME / Home Health'];
-export function programOf(c: CaseRec): string {
+// Named "Service Category" (not "Program") so it doesn't collide with CM's own Program concept
+// (care-management program enrollment) — these are unrelated ideas that happen to share a word.
+export const SERVICE_CATEGORIES = ['Inpatient', 'Outpatient', 'Behavioral Health', 'Pharmacy', 'DME / Home Health'];
+export function serviceCategoryOf(c: CaseRec): string {
   if (c.serviceType === 'Inpatient') return 'Inpatient';
   if (c.serviceType === 'Behavioral') return 'Behavioral Health';
   const h = Number(c.authId.slice(-1)) % 3;
@@ -16,7 +18,7 @@ export function programOf(c: CaseRec): string {
 export type AuthType = 'IP' | 'OP' | 'RX';
 export function authTypeOf(c: CaseRec): AuthType {
   if (c.serviceType === 'Inpatient') return 'IP';
-  if (programOf(c) === 'Pharmacy') return 'RX';
+  if (serviceCategoryOf(c) === 'Pharmacy') return 'RX';
   return 'OP';
 }
 
