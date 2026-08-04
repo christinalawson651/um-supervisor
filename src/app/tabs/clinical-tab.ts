@@ -21,7 +21,7 @@ const CLINICAL_WIDGETS = [
   { id: 'decision-mix', title: 'Decision Mix' },
   { id: 'Approved', title: 'Approved' }, { id: 'Denied', title: 'Denied' }, { id: 'Partial', title: 'Partial' },
   { id: 'Auto-Approved', title: 'Auto-Approved' }, { id: 'MD Review', title: 'MD Review' }, { id: 'P2P Rate', title: 'P2P Rate' },
-  { id: 'reason-mix', title: 'Determination Reason Mix' },
+  { id: 'reason-mix', title: 'Reason Codes by Outcome' },
   { id: 'drilldown', title: 'Decision Drilldown by Service' },
 ];
 
@@ -74,7 +74,7 @@ const CLINICAL_WIDGETS = [
     @if (!isHidden('reason-mix')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
-        <h3 class="panel-title">Determination Reason Mix</h3>
+        <h3 class="panel-title">Reason Codes by Outcome</h3>
         <div class="mix-toggle">
           <button class="seg-btn" [class.active]="mixOutcome()==='Denied'" (click)="mixOutcome.set('Denied')">Denied</button>
           <button class="seg-btn" [class.active]="mixOutcome()==='Partial'" (click)="mixOutcome.set('Partial')">Partial</button>
@@ -196,7 +196,7 @@ const CLINICAL_WIDGETS = [
       font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--gray-500); }
     .seg-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
     .reason-rows { padding: 4px 20px 18px; display: flex; flex-direction: column; gap: 10px; }
-    .reason-row { display: grid; grid-template-columns: 1fr 160px 90px; align-items: center; gap: 12px;
+    .reason-row { display: grid; grid-template-columns: minmax(200px, 460px) 1fr 90px; align-items: center; gap: 16px;
       cursor: pointer; padding: 6px 8px; border-radius: 6px; }
     .reason-row:hover { background: var(--gray-100); }
     .reason-code { font-family: monospace; font-weight: 700; color: var(--ink); margin-right: 8px; }
@@ -277,9 +277,9 @@ export class ClinicalTab {
     this.exporter.open({ title: 'Decision Mix', name: 'clinical-decision-mix_2026-07-17', columns: COLUMNS, rows: cases.map(toRow) });
   }
 
-  /** Determination Reason Mix — real reason-code breakdown behind Approved, Denied, or Partial
-   *  decisions (tracked separately), matching the real UM workflow where every determination
-   *  requires a reason code. */
+  /** Reason Codes by Outcome — a drill-down of the Decision Mix above: pick one of its three
+   *  outcomes and see the real reason-code breakdown behind it, matching the real UM workflow
+   *  where every determination requires a reason code. */
   readonly mixOutcome = signal<DeterminationOutcome>('Denied');
   readonly reasonMix = computed(() => liveDeterminationMix(this.mixOutcome(), ...this.scopeArgs()));
   drillReason(row: DeterminationMixRow) {
@@ -297,7 +297,7 @@ export class ClinicalTab {
     const outcome = this.mixOutcome();
     const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.decision === outcome && inScope(c, lob, days));
     this.exporter.open({
-      title: `Determination Reason Mix — ${outcome}`, name: `determination-mix-${outcome.toLowerCase()}_2026-07-17`,
+      title: `Reason Codes by Outcome — ${outcome}`, name: `determination-mix-${outcome.toLowerCase()}_2026-07-17`,
       columns: [...COLUMNS, 'Reason Code'],
       rows: cases.map((c) => [...toRow(c), determinationReasonOf(c)?.label ?? '—']),
     });
