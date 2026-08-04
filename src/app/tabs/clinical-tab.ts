@@ -2,16 +2,18 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveDecisionStats, liveDecisionRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
+import { Exporter } from '../shared/exporter';
 import { DecisionRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
+import { WidgetActions } from '../shared/widget-actions';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-clinical-tab',
   standalone: true,
-  imports: [Icon],
+  imports: [Icon, WidgetActions],
   template: `
     <div class="tab-head">
       <h2>Clinical Decision Insights</h2>
@@ -20,16 +22,22 @@ import { Lookback } from '../shared/lookback';
 
     <div class="dstats">
       @for (s of decisionStats(); track s.label; let i = $index) {
-        <div class="dstat clickable" [attr.data-tone]="s.tone" (click)="metrics.open(decKeys[i])">
-          <div class="dic"><z-icon [name]="s.icon" [size]="20" [stroke]="1.8"></z-icon></div>
-          <div class="dval">{{ s.value }}</div>
-          <div class="dlab">{{ s.label }}</div>
-        </div>
+        @if (!isHidden(s.label)) {
+          <div class="dstat clickable" [attr.data-tone]="s.tone" (click)="metrics.open(decKeys[i])">
+            <z-widget-actions (exportClick)="exportStat(s)" (removeClick)="hide(s.label)"></z-widget-actions>
+            <div class="dic"><z-icon [name]="s.icon" [size]="20" [stroke]="1.8"></z-icon></div>
+            <div class="dval">{{ s.value }}</div>
+            <div class="dlab">{{ s.label }}</div>
+          </div>
+        }
       }
     </div>
 
+    @if (!isHidden('drilldown')) {
     <div class="panel mt-6">
-      <div class="panel-pad"><h3 class="panel-title">Decision Drilldown by Service</h3></div>
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Decision Drilldown by Service</h3>
+        <z-widget-actions (exportClick)="exportDrilldown()" (removeClick)="hide('drilldown')"></z-widget-actions>
+      </div>
       <table class="z-table">
         <thead>
           <tr>
@@ -54,11 +62,14 @@ import { Lookback } from '../shared/lookback';
         </tbody>
       </table>
     </div>
+    }
   `,
   styles: [`
     .dstats { display:grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
-    .dstat { background:#fff; border:1px solid var(--border); border-top:3px solid var(--gray-300);
+    .dstat { position: relative; background:#fff; border:1px solid var(--border); border-top:3px solid var(--gray-300);
       border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 12px; text-align:center; }
+    .dstat:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
+    .tbl-head { position: relative; display: flex; align-items: center; justify-content: space-between; }
     .dic { display:flex; justify-content:center; margin-bottom: 10px; }
     .dval { font-size: 26px; font-weight: 700; color: var(--ink); }
     .dlab { font-size: 10.5px; letter-spacing:0.05em; text-transform:uppercase;
@@ -83,7 +94,24 @@ export class ClinicalTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
   metrics = inject(Metrics);
+  private exporter = inject(Exporter);
   readonly decKeys = ['dec.approved', 'dec.denied', 'dec.partial', 'dec.auto', 'dec.md', 'dec.p2p'];
+
+  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
+  private hiddenTiles = signal<Set<string>>(new Set());
+  isHidden(id: string) { return this.hiddenTiles().has(id); }
+  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+
+  exportStat(s: { label: string; value: string }) {
+    this.exporter.open({ title: s.label, name: `clinical-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[s.label, s.value]] });
+  }
+  exportDrilldown() {
+    this.exporter.open({
+      title: 'Decision Drilldown by Service', name: 'clinical-drilldown_2026-07-17',
+      columns: ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'],
+      rows: this.sortedRows().map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]),
+    });
+  }
 
   // ---- shared top-bar filters — same treatment as every other converted tab ----
   private lobFilter = inject(LobFilter);
