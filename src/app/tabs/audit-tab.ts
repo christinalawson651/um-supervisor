@@ -1,8 +1,10 @@
-import { Component, inject } from '@angular/core';
-import { DashboardData } from '../data/dashboard-data';
+import { Component, computed, inject } from '@angular/core';
+import { DashboardData, liveComplianceBars } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
 import { AuditFlag } from '../data/dashboard.models';
+import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-audit-tab',
@@ -14,7 +16,7 @@ import { AuditFlag } from '../data/dashboard.models';
     </div>
 
     <div class="grid-3">
-      @for (b of data.complianceBars; track b.label; let i = $index) {
+      @for (b of complianceBars(); track b.label; let i = $index) {
         <div class="panel panel-pad clickable" (click)="metrics.open(barKeys[i])">
           <div class="clab">{{ b.label }}</div>
           <div class="cval">{{ b.pct }}%</div>
@@ -58,7 +60,15 @@ export class AuditTab {
   data = inject(DashboardData);
   private ix = inject(Interaction);
   metrics = inject(Metrics);
+  private lobFilter = inject(LobFilter);
+  private lookback = inject(Lookback);
   readonly barKeys = ['audit.doc', 'audit.guideline', 'audit.rationale'];
+
+  readonly complianceBars = computed(() => {
+    const lob = this.lobFilter.value();
+    const period = this.lookback.period();
+    return liveComplianceBars(lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays());
+  });
 
   open(f: AuditFlag) {
     this.ix.openDrawer({

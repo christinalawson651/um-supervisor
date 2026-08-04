@@ -168,11 +168,9 @@ export class DashboardData {
   // liveFinancials()/liveHighDollarCases() (below the class) are the real source now.
 
   // ---------- Audit & Compliance ----------
-  readonly complianceBars: QualityBar[] = [
-    { label: 'Documentation Completeness', pct: 82, tone: 'teal', icon: '' },
-    { label: 'Guideline Adherence',        pct: 94, tone: 'teal', icon: '' },
-    { label: 'Decision Rationale Documented', pct: 89, tone: 'teal', icon: '' },
-  ];
+  // liveComplianceBars() (below the class) is the real source now. auditFlags stays a curated,
+  // session-mutable list (like riskCases) — these are discrete flagged audit EVENTS, not an
+  // aggregate stat, so they aren't derived from the case pool the way the compliance bars are.
   readonly auditFlags = signal<AuditFlag[]>([
     { id: 'AUD-201', type: 'Missing Rationale',       description: 'Decision rationale not documented for AUTH-4488', date: '2026-03-15', severity: 'amber', severityLabel: 'Medium' },
     { id: 'AUD-202', type: 'Guideline Deviation',     description: 'Approval without XYZ criteria match — AUTH-4501',  date: '2026-03-14', severity: 'red',   severityLabel: 'High' },
@@ -525,6 +523,22 @@ export function liveHighDollarCases(lob?: string, withinDays?: number, limit = 1
     .sort((a, b) => b.cost - a.cost)
     .slice(0, limit)
     .map((c) => ({ authId: c.authId, member: c.member, procedure: c.procedure, cost: `$${Math.round(c.cost / 1000)}K`, status: c.status }));
+}
+
+/**
+ * No single CaseRec tag maps 1:1 to "guideline adherence" or "rationale documented" — these are
+ * reasonable proxies (adherence ~ decision wasn't appealed; rationale ~ approval wasn't purely
+ * rule-based auto-approval and had complete documentation), not a literal stored field.
+ */
+export function liveComplianceBars(lob?: string, withinDays?: number): QualityBar[] {
+  const all = CASE_POOL.filter((c) => inScope(c, lob, withinDays));
+  const decided = all.filter((c) => c.phase === 'decided');
+  const approved = decided.filter((c) => c.decision === 'Approved');
+  return [
+    { label: 'Documentation Completeness', pct: pctOf(all.filter((c) => !c.tags.includes('incompleteDoc')).length, all.length), tone: 'teal', icon: '' },
+    { label: 'Guideline Adherence', pct: pctOf(decided.filter((c) => !c.tags.includes('appeal')).length, decided.length), tone: 'teal', icon: '' },
+    { label: 'Decision Rationale Documented', pct: pctOf(approved.filter((c) => !c.tags.includes('auto') && !c.tags.includes('incompleteDoc')).length, approved.length), tone: 'teal', icon: '' },
+  ];
 }
 
 export function liveProviders(lob?: string, withinDays?: number): ProviderRow[] {
