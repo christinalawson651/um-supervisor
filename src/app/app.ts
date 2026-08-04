@@ -178,8 +178,8 @@ export class App {
         rows = liveDecisionRows(lob, days).map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]); break;
       case 3: name = 'risk-escalation'; columns = ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'];
         rows = d.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]); break;
-      case 4: name = 'concurrent-review'; columns = ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'];
-        rows = liveConcurrentRows(lob, days).map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]); break;
+      case 4: name = 'concurrent-review'; columns = ['Member', 'Facility', 'LOS', 'Total Certified Days', 'Certified Through', 'Days Remaining', 'Uncertified Days', 'Next Review Due', 'Requested/Approved', 'Status', 'Reviewer', 'Expected Discharge', 'Next Action'];
+        rows = liveConcurrentRows(lob, days).map((r) => [r.member, r.facility, r.los, r.totalCertifiedDays, r.certifiedThrough, r.daysRemaining, r.uncertifiedDays, r.nextReview, `${r.daysRequested} / ${r.totalCertifiedDays}`, r.status, r.reviewer, r.expectedDischarge, r.nextAction]); break;
       case 5: name = 'intake-missing-fields'; columns = ['Field', 'Missing Count', '% of Submissions'];
         rows = liveMissingFields(lob, days).map((f) => [f.field, f.count, f.pct]); break;
       case 6: name = 'providers'; columns = ['Provider', 'NPI', 'Requests MTD', 'Approval Rate %', 'RFI Rate %'];

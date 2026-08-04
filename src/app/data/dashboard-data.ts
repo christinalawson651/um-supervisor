@@ -11,23 +11,70 @@ import { ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, dete
  * One inpatient concurrent-review row per real 'concurrent'-tagged case in the pool (LOS/admit/
  * review-due fields are deterministic per authId, same pattern as ageH/vary elsewhere — not
  * randomized, so the demo is stable across reloads).
+ *
+ * Certified Through / Days Remaining / Uncertified Days are the primary risk indicators: Total
+ * Certified Days can lag behind the actual LOS (the nurse hasn't certified the most recent days
+ * yet) — that gap is Uncertified Days, a real payment/compliance risk distinct from Requested/
+ * Approved (the provider explicitly asking for *additional* days beyond what's certified).
  */
 function concurrentRowFor(c: CaseRec): ConcurrentRow {
   const n = Number(c.authId.slice(-2));
-  const los = 3 + (n % 10);
-  const expectedLos = 3 + ((n + 3) % 8);
-  const daysApproved = Math.max(1, expectedLos - (n % 3));
-  const daysRequested = daysApproved + (n % 4);
+  const los = 3 + (n % 10);                 // current day of stay — "today" is day `los`
+  const expectedLos = 3 + ((n + 3) % 8);     // total days this stay was expected to run
+
+  // Certification is usually granted a few days *ahead* of the current stay day; ~20% of cases
+  // lag behind instead (the nurse hasn't certified the most recent day(s)) — that gap is Uncertified
+  // Days, a real payment/compliance risk. Both are anchored on `los`/TODAY, not the submitted date,
+  // so Certified Through and Days Remaining land near today regardless of how old the auth record is.
+  const lagging = n % 5 === 0;
+  const totalCertifiedDays = lagging ? Math.max(1, los - 2) : los + (1 + (n % 4));
+  const uncertifiedDays = Math.max(0, los - totalCertifiedDays);
+  const daysRemaining = totalCertifiedDays - los;
+  const overExpected = los > expectedLos;
+  const daysRequested = totalCertifiedDays + (overExpected && n % 3 === 0 ? 3 : 0);
+
+  const certifiedThroughDate = new Date(TODAY);
+  certifiedThroughDate.setDate(certifiedThroughDate.getDate() + daysRemaining);
+
   const nextReviewDate = new Date(TODAY);
   nextReviewDate.setDate(nextReviewDate.getDate() + (2 + (n % 5)));
+
+  const expectedDischargeDate = new Date(TODAY);
+  expectedDischargeDate.setDate(expectedDischargeDate.getDate() + (expectedLos - los));
+
   const diff = los - expectedLos;
   const overstayRisk = diff >= 3 ? 'red' : diff >= 1 ? 'amber' : 'green';
   const overstayLabel = diff >= 3 ? 'High' : diff >= 1 ? 'Medium' : 'Low';
+
+  let status: string; let statusTone: 'green' | 'amber' | 'red'; let nextAction: string;
+  if (uncertifiedDays > 0) {
+    status = 'Uncertified Days'; statusTone = 'red';
+    nextAction = `Certify ${uncertifiedDays} outstanding day(s) or request a retro review`;
+  } else if (daysRequested > totalCertifiedDays) {
+    status = 'Extension Requested'; statusTone = 'amber';
+    nextAction = `Route ${daysRequested - totalCertifiedDays} additional day(s) to formal review`;
+  } else if (daysRemaining <= 1) {
+    status = 'Recert Due'; statusTone = 'amber';
+    nextAction = 'Submit continued-stay review before certification lapses';
+  } else {
+    status = 'Certified'; statusTone = 'green';
+    nextAction = 'Continue monitoring — no action needed';
+  }
+
   return {
     member: c.member, facility: c.provider,
-    admit: c.submitted, nextReview: nextReviewDate.toISOString().slice(0, 10),
-    los: `${los}d`, losFlag: diff > 0, expectedLos: `${expectedLos}d`,
-    daysApproved, daysRequested,
+    admit: c.submitted,
+    los: `${los}d`, losFlag: diff > 0,
+    totalCertifiedDays,
+    certifiedThrough: certifiedThroughDate.toISOString().slice(0, 10),
+    daysRemaining, uncertifiedDays,
+    nextReview: nextReviewDate.toISOString().slice(0, 10),
+    daysRequested,
+    status, statusTone,
+    reviewer: c.nurse,
+    expectedDischarge: expectedDischargeDate.toISOString().slice(0, 10),
+    nextAction,
+    expectedLos: `${expectedLos}d`,
     overstayRisk, overstayLabel,
   };
 }

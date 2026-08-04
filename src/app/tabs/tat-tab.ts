@@ -473,7 +473,7 @@ export class TatTab {
     return {
       active: this.concurrentActive().length,
       overstay: rows.filter((r) => r.overstayRisk !== 'green').length,
-      daysApproved: rows.reduce((s, r) => s + r.daysApproved, 0),
+      daysApproved: rows.reduce((s, r) => s + r.totalCertifiedDays, 0),
       daysRequested: rows.reduce((s, r) => s + r.daysRequested, 0),
       avgLos: (rows.reduce((s, r) => s + parseInt(r.los), 0) / n).toFixed(1),
       avgExp: (rows.reduce((s, r) => s + parseInt(r.expectedLos), 0) / n).toFixed(1),
@@ -555,7 +555,7 @@ export class TatTab {
       title: 'Concurrent Review — All Active Reviews',
       context: `${rows.length} inpatient continued-stay reviews`,
       columns: ['Member', 'Facility', 'LOS', 'Expected', 'Days Approved', 'Days Requested', 'Overstay Risk'],
-      rows: rows.map((r) => [r.member, r.facility, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]),
+      rows: rows.map((r) => [r.member, r.facility, r.los, r.expectedLos, r.totalCertifiedDays, r.daysRequested, r.overstayLabel]),
       exportName: 'concurrent-all_2026-07-17',
       memberColumn: 0,
     });
@@ -635,7 +635,7 @@ export class TatTab {
       title: 'Concurrent Review — Overstay Risk',
       context: `${rows.length} members exceeding expected length of stay`,
       columns: ['Member', 'Facility', 'LOS', 'Expected', 'Days Approved', 'Days Requested', 'Overstay Risk'],
-      rows: rows.map((r) => [r.member, r.facility, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]),
+      rows: rows.map((r) => [r.member, r.facility, r.los, r.expectedLos, r.totalCertifiedDays, r.daysRequested, r.overstayLabel]),
       exportName: `concurrent-overstay_2026-07-17`,
       memberColumn: 0,
     });

@@ -42,13 +42,21 @@ export interface ConcurrentRow {
   member: string;
   facility: string;
   admit: string;
-  nextReview: string;
   los: string;
   losFlag: boolean;
-  expectedLos: string;
-  daysApproved: number;
+  totalCertifiedDays: number;
+  certifiedThrough: string;
+  daysRemaining: number;       // can be negative — certification already lapsed
+  uncertifiedDays: number;     // LOS days beyond what's been certified so far
+  nextReview: string;
   daysRequested: number;
-  overstayRisk: Tone; // green/amber/red
+  status: string;              // 'Certified' | 'Uncertified Days' | 'Extension Requested' | 'Recert Due'
+  statusTone: Tone;
+  reviewer: string;
+  expectedDischarge: string;
+  nextAction: string;
+  expectedLos: string;         // internal — not its own grid column (superseded by Expected Discharge), kept for aggregation
+  overstayRisk: Tone;          // green/amber/red — LOS vs. expected-LOS risk (kept for internal styling)
   overstayLabel: string;
 }
 

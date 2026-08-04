@@ -31,9 +31,10 @@ const CONCURRENT_WIDGETS = [{ id: 'table', title: 'Concurrent Review Monitoring'
       <table class="z-table">
         <thead>
           <tr>
-            <th>Member</th><th>Facility</th><th>Admit Date</th><th>Next Review Due</th>
-            <th>LOS</th><th>Expected LOS</th><th>Days Approved</th><th>Days Requested</th>
-            <th>Overstay Risk</th>
+            <th>Member</th><th>Facility</th><th>LOS</th>
+            <th>Total Certified Days</th><th>Certified Through</th><th>Days Remaining</th><th>Uncertified Days</th>
+            <th>Next Review Due</th><th>Requested/Approved</th><th>Status</th><th>Reviewer</th>
+            <th>Expected Discharge</th><th>Next Action</th>
           </tr>
         </thead>
         <tbody>
@@ -41,15 +42,19 @@ const CONCURRENT_WIDGETS = [{ id: 'table', title: 'Concurrent Review Monitoring'
             <tr class="clickable" (click)="open(r)">
               <td class="strong">{{ r.member }}</td>
               <td>{{ r.facility }}</td>
-              <td>{{ r.admit }}</td>
-              <td>{{ r.nextReview }}</td>
               <td [class.danger]="r.losFlag">{{ r.los }}</td>
-              <td>{{ r.expectedLos }}</td>
-              <td class="num">{{ r.daysApproved }}</td>
-              <td class="num">{{ r.daysRequested }}</td>
-              <td><span class="badge" [class.red]="r.overstayRisk==='red'"
-                    [class.amber]="r.overstayRisk==='amber'"
-                    [class.green]="r.overstayRisk==='green'">{{ r.overstayLabel }}</span></td>
+              <td class="num">{{ r.totalCertifiedDays }}</td>
+              <td>{{ r.certifiedThrough }}</td>
+              <td class="num" [class.danger]="r.daysRemaining <= 1" [class.warn]="r.daysRemaining > 1 && r.daysRemaining <= 3">{{ r.daysRemaining }}</td>
+              <td class="num" [class.danger]="r.uncertifiedDays > 0">{{ r.uncertifiedDays }}</td>
+              <td>{{ r.nextReview }}</td>
+              <td class="num">{{ r.daysRequested }} / {{ r.totalCertifiedDays }}</td>
+              <td><span class="badge" [class.red]="r.statusTone==='red'"
+                    [class.amber]="r.statusTone==='amber'"
+                    [class.green]="r.statusTone==='green'">{{ r.status }}</span></td>
+              <td>{{ r.reviewer }}</td>
+              <td>{{ r.expectedDischarge }}</td>
+              <td class="na">{{ r.nextAction }}</td>
             </tr>
           }
         </tbody>
@@ -63,6 +68,8 @@ const CONCURRENT_WIDGETS = [{ id: 'table', title: 'Concurrent Review Monitoring'
     .panel:hover z-widget-actions { opacity: 1; }
     .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
     .cz-btn { margin-left: auto; flex-shrink: 0; }
+    .warn { color: var(--amber-fg); font-weight: 600; }
+    .na { color: var(--ink-soft); font-size: 12.5px; white-space: normal; min-width: 220px; }
   `],
 })
 export class ConcurrentTab {
@@ -81,8 +88,10 @@ export class ConcurrentTab {
   exportTable() {
     this.exporter.open({
       title: 'Concurrent Review Monitoring', name: 'concurrent-review_2026-07-17',
-      columns: ['Member', 'Facility', 'Admit', 'Next Review', 'LOS', 'Expected LOS', 'Days Approved', 'Days Requested', 'Overstay Risk'],
-      rows: this.concurrentRows().map((r) => [r.member, r.facility, r.admit, r.nextReview, r.los, r.expectedLos, r.daysApproved, r.daysRequested, r.overstayLabel]),
+      columns: ['Member', 'Facility', 'LOS', 'Total Certified Days', 'Certified Through', 'Days Remaining',
+        'Uncertified Days', 'Next Review Due', 'Requested/Approved', 'Status', 'Reviewer', 'Expected Discharge', 'Next Action'],
+      rows: this.concurrentRows().map((r) => [r.member, r.facility, r.los, r.totalCertifiedDays, r.certifiedThrough,
+        r.daysRemaining, r.uncertifiedDays, r.nextReview, `${r.daysRequested} / ${r.totalCertifiedDays}`, r.status, r.reviewer, r.expectedDischarge, r.nextAction]),
     });
   }
 
@@ -97,36 +106,37 @@ export class ConcurrentTab {
     this.ix.openDrawer({
       title: r.member,
       subtitle: `${r.facility} · Inpatient concurrent review`,
-      badge: { text: `${r.overstayLabel} overstay risk`, tone: r.overstayRisk as any },
+      badge: { text: r.status, tone: r.statusTone as any },
       fields: [
         { label: 'Admit Date', value: r.admit },
-        { label: 'Next Review Due', value: r.nextReview },
         { label: 'Length of Stay', value: r.los, tone: r.losFlag ? 'red' : undefined },
-        { label: 'Expected LOS', value: r.expectedLos },
-        { label: 'Days Approved', value: String(r.daysApproved) },
-        { label: 'Days Requested', value: String(r.daysRequested) },
-        { label: 'Additional Days Pending', value: String(Math.max(0, r.daysRequested - r.daysApproved)), tone: 'amber' },
+        { label: 'Total Certified Days', value: String(r.totalCertifiedDays) },
+        { label: 'Certified Through', value: r.certifiedThrough, tone: r.daysRemaining <= 1 ? 'red' : undefined },
+        { label: 'Days Remaining', value: String(r.daysRemaining), tone: r.daysRemaining <= 1 ? 'red' : r.daysRemaining <= 3 ? 'amber' : undefined },
+        { label: 'Uncertified Days', value: String(r.uncertifiedDays), tone: r.uncertifiedDays > 0 ? 'red' : undefined },
+        { label: 'Next Review Due', value: r.nextReview },
+        { label: 'Requested / Approved', value: `${r.daysRequested} / ${r.totalCertifiedDays}` },
+        { label: 'Reviewer', value: r.reviewer },
+        { label: 'Expected Discharge', value: r.expectedDischarge },
       ],
-      note: r.daysRequested > r.daysApproved
-        ? `Provider has requested ${r.daysRequested - r.daysApproved} additional day(s) beyond what is currently approved. This dashboard cannot approve additional days — route to a formal reviewer.`
-        : 'All requested days are approved.',
+      note: r.nextAction,
       // No determination — including concurrent-review day extensions — is ever made from this dashboard.
       // Additional days always route to a formal reviewer instead of being approved here.
-      actions: r.daysRequested > r.daysApproved
-        ? [{ label: `Route ${r.daysRequested - r.daysApproved} additional day(s) to formal review`, tone: 'teal',
+      actions: r.daysRequested > r.totalCertifiedDays
+        ? [{ label: `Route ${r.daysRequested - r.totalCertifiedDays} additional day(s) to formal review`, tone: 'teal',
              run: () => this.routeForReview(r) }]
         : [],
     });
   }
 
   private routeForReview(r: ConcurrentRow) {
-    const extra = r.daysRequested - r.daysApproved;
+    const extra = r.daysRequested - r.totalCertifiedDays;
     this.esc.open({
       title: `Route ${r.member} for Formal Review`,
       candidates: [{
         authId: r.facility, member: r.member,
-        detail: `${r.facility} · ${extra} additional day(s) requested beyond ${r.daysApproved} approved`,
-        riskLabel: r.overstayLabel, risk: r.overstayRisk as 'red' | 'amber' | 'green',
+        detail: `${r.facility} · ${extra} additional day(s) requested beyond ${r.totalCertifiedDays} certified`,
+        riskLabel: r.status, risk: r.statusTone as 'red' | 'amber' | 'green',
       }],
       targets: ESCALATE_TARGETS,
       apply: (_ids, who) => {
