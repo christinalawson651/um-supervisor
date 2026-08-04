@@ -4,6 +4,8 @@ import { Interaction } from '../shared/interaction';
 import { Ring } from '../shared/ring';
 import { Exporter } from '../shared/exporter';
 import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { LOBS, PROGRAMS, lobOf, programOf, authTypeOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
@@ -11,15 +13,24 @@ import { Lookback } from '../shared/lookback';
 
 type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
 
+const TAT_WIDGETS = [
+  { id: 'headline', title: 'TAT Compliance (headline)' }, { id: 'concurrent', title: 'Inpatient Concurrent Review' },
+  { id: 'by-lob', title: 'TAT Compliance by Line of Business' }, { id: 'by-program', title: 'TAT Compliance by Program' },
+  { id: 'notification', title: 'Notification Compliance' }, { id: 'regulatory', title: 'Regulatory TAT by Urgency' },
+];
+
 @Component({
   selector: 'app-tat-tab',
   standalone: true,
-  imports: [Ring, WidgetActions],
+  imports: [Ring, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>TAT Compliance</h2>
       <span class="section-note">Strong compliance — your team is meeting targets</span>
+      <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     <!-- Filter bar (LOB is set from the top bar and applies here too) -->
     <div class="filter-bar">
@@ -218,6 +229,8 @@ type AuthTypeChoice = 'all' | 'IP' | 'OP' | 'RX';
   styles: [`
     .panel, .panel-pad { position: relative; }
     .panel:hover z-widget-actions, .panel-pad:hover z-widget-actions { opacity: 1; }
+    .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
+    .cz-btn { margin-left: auto; flex-shrink: 0; }
     .tat-grid { display:grid; grid-template-columns: 1.15fr 1fr; gap: 26px; align-items:center; }
     .left { display:flex; gap: 22px; align-items:center; }
     .donut { text-align:center; flex: 0 0 auto; }
@@ -283,10 +296,10 @@ export class TatTab {
   private ix = inject(Interaction);
   private exporter = inject(Exporter);
 
-  // ---- per-panel "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a panel's × ----
+  readonly vis = new WidgetVisibility('zyter-um-tat-widgets-v1', TAT_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportHeadline() {
     this.exporter.open({

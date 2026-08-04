@@ -5,19 +5,29 @@ import { Interaction } from '../shared/interaction';
 import { MissingField } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 import { Exporter } from '../shared/exporter';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
+const INTAKE_WIDGETS = [
+  { id: 'Complete Submissions', title: 'Complete Submissions' }, { id: 'Auto-Approved', title: 'Auto-Approved' },
+  { id: 'Needing RFI', title: 'Needing RFI' }, { id: 'missing-fields', title: 'Top Missing Fields' },
+];
+
 @Component({
   selector: 'app-intake-tab',
   standalone: true,
-  imports: [Icon, WidgetActions],
+  imports: [Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Intake &amp; Documentation Quality</h2>
       <span class="section-note">Documentation quality is tracking positively</span>
+      <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     <div class="grid-3">
       @for (b of qualityBars(); track b.label; let i = $index) {
@@ -67,6 +77,8 @@ import { Lookback } from '../shared/lookback';
     .clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
     .bar-block, .tbl-head { position: relative; }
     .bar-block:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
+    .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
+    .cz-btn { margin-left: auto; flex-shrink: 0; }
   `],
 })
 export class IntakeTab {
@@ -86,10 +98,10 @@ export class IntakeTab {
   readonly qualityBars = computed(() => liveQualityBars(...this.scopeArgs()));
   readonly missingFields = computed(() => liveMissingFields(...this.scopeArgs()));
 
-  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
+  readonly vis = new WidgetVisibility('zyter-um-intake-widgets-v1', INTAKE_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportBar(b: { label: string; pct: number }) {
     this.exporter.open({ title: b.label, name: `intake-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[b.label, `${b.pct}%`]] });

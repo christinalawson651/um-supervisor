@@ -7,18 +7,29 @@ import { DecisionRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
+
+const CLINICAL_WIDGETS = [
+  { id: 'Approved', title: 'Approved' }, { id: 'Denied', title: 'Denied' }, { id: 'Partial', title: 'Partial' },
+  { id: 'Auto-Approved', title: 'Auto-Approved' }, { id: 'MD Review', title: 'MD Review' }, { id: 'P2P Rate', title: 'P2P Rate' },
+  { id: 'drilldown', title: 'Decision Drilldown by Service' },
+];
 
 @Component({
   selector: 'app-clinical-tab',
   standalone: true,
-  imports: [Icon, WidgetActions],
+  imports: [Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Clinical Decision Insights</h2>
       <span class="section-note">Decision quality remains strong across service types</span>
+      <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     <div class="dstats">
       @for (s of decisionStats(); track s.label; let i = $index) {
@@ -88,6 +99,8 @@ import { Lookback } from '../shared/lookback';
     .clickable { cursor: pointer; }
     .sortable { cursor: pointer; user-select: none; }
     .sortable:hover { color: var(--ink-soft); }
+    .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
+    .cz-btn { margin-left: auto; flex-shrink: 0; }
   `],
 })
 export class ClinicalTab {
@@ -97,10 +110,10 @@ export class ClinicalTab {
   private exporter = inject(Exporter);
   readonly decKeys = ['dec.approved', 'dec.denied', 'dec.partial', 'dec.auto', 'dec.md', 'dec.p2p'];
 
-  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
+  readonly vis = new WidgetVisibility('zyter-um-clinical-widgets-v1', CLINICAL_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportStat(s: { label: string; value: string }) {
     this.exporter.open({ title: s.label, name: `clinical-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[s.label, s.value]] });

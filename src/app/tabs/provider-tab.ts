@@ -6,19 +6,28 @@ import { ProviderRow } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 import { Exporter } from '../shared/exporter';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
+const PROVIDER_WIDGETS = [
+  { id: 'oon', title: 'Out-of-Network Requests' }, { id: 'providers', title: 'Top Requesting Providers' },
+];
+
 @Component({
   selector: 'app-provider-tab',
   standalone: true,
-  imports: [Icon, WidgetActions],
+  imports: [Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Provider &amp; Network Insights</h2>
       <span class="section-note">Provider performance and network utilization</span>
+      <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     @if (!isHidden('oon')) {
       <div class="oon clickable" (click)="metrics.open('prov.oon')">
@@ -76,6 +85,8 @@ import { Lookback } from '../shared/lookback';
     .clickable { cursor: pointer; }
     .sortable { cursor: pointer; user-select: none; }
     .sortable:hover { color: var(--ink-soft); }
+    .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
+    .cz-btn { margin-left: auto; flex-shrink: 0; }
   `],
 })
 export class ProviderTab {
@@ -86,10 +97,10 @@ export class ProviderTab {
   private lookback = inject(Lookback);
   private exporter = inject(Exporter);
 
-  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
+  readonly vis = new WidgetVisibility('zyter-um-provider-widgets-v1', PROVIDER_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportOon() {
     this.exporter.open({ title: 'Out-of-Network Requests', name: 'oon-requests_2026-07-17', columns: ['Metric', 'Value'], rows: [['Out-of-Network Requests', this.oonRequests()]] });

@@ -7,6 +7,8 @@ import { Exporter } from '../shared/exporter';
 import { RiskCase, RiskTile } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL } from '../data/case-pool';
 import { lobOf } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
@@ -14,18 +16,26 @@ import { Lookback } from '../shared/lookback';
 
 const ACUITY_DRIVERS = ['High-acuity ICU', 'Transplant', 'Oncology'];
 const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
+const RISK_WIDGETS = [
+  { id: 'SLA Breach Risk', title: 'SLA Breach Risk' }, { id: 'High-Dollar (>$50k)', title: 'High-Dollar (>$50k)' },
+  { id: 'High-Acuity', title: 'High-Acuity' }, { id: 'Escalated Today', title: 'Escalated Today' },
+  { id: 'table', title: 'Authorizations Requiring Attention' },
+];
 
 @Component({
   selector: 'app-risk-tab',
   standalone: true,
-  imports: [Icon, WidgetActions],
+  imports: [Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Risk &amp; Escalation Panel</h2>
       <button class="btn primary" [disabled]="selected().size === 0" (click)="escalateSelected()">
         <z-icon name="arrowup" [size]="14"></z-icon> Escalate selected@if (selected().size) { ({{ selected().size }}) }
       </button>
+      <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     <div class="rtiles">
       @for (t of riskTiles(); track t.label; let i = $index) {
@@ -110,6 +120,8 @@ const TILE_KEYS = ['sla', 'highdollar', 'acuity', 'escalated'] as const;
     .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
     .clickable { cursor: pointer; }
     .rtile.clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
+    .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
+    .cz-btn { margin-left: auto; flex-shrink: 0; }
   `],
 })
 export class RiskTab {
@@ -123,10 +135,10 @@ export class RiskTab {
 
   readonly selected = signal<Set<string>>(new Set());
 
-  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
+  readonly vis = new WidgetVisibility('zyter-um-risk-widgets-v1', RISK_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportTile(t: RiskTile) {
     this.exporter.open({ title: t.label, name: `risk-${t.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value', 'Detail'], rows: [[t.label, t.value, t.footer]] });

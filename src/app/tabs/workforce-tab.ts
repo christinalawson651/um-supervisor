@@ -14,14 +14,24 @@ import { Lookback } from '../shared/lookback';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
 import { Exporter } from '../shared/exporter';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 
 interface DisplayQueue extends QueueCard { baseName: string; lob?: string; }
 type QueueSort = 'volume' | 'breach' | 'name';
 
+// Fixed queue definitions (not the dynamic per-LOB split names) so the picker always operates on
+// the 7 real queues regardless of whether Split by LOB or a top-bar LOB is currently narrowing them.
+const WORKFORCE_WIDGETS = [
+  { id: 'Intake', title: 'Intake' }, { id: 'Clinical Review', title: 'Clinical Review' }, { id: 'MD Review', title: 'MD Review' },
+  { id: 'RFI Pending', title: 'RFI Pending' }, { id: 'OON Review', title: 'OON Review' }, { id: 'Concurrent Review', title: 'Concurrent Review' },
+  { id: 'Pending P2P', title: 'Pending P2P' }, { id: 'workload', title: 'Workload' },
+];
+
 @Component({
   selector: 'app-workforce-tab',
   standalone: true,
-  imports: [Icon, FormsModule, WidgetActions],
+  imports: [Icon, FormsModule, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Workforce &amp; Queue Management</h2>
@@ -30,8 +40,11 @@ type QueueSort = 'volume' | 'breach' | 'name';
         <button class="btn outline" (click)="balance()"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
         <button class="btn outline esc" (click)="escalate()"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
         <button class="btn outline" (click)="openAssignmentHistory()"><z-icon name="clock" [size]="14"></z-icon> Assignment History</button>
+        <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
       </div>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     <div class="qhint">Cards show <b>unclaimed authorizations available to pull next</b> — work already claimed by a nurse shows in Workload below. Bars show how long each has been waiting. Click a band to see those authorizations. <b>Breach</b> = past the SLA deadline.</div>
 
@@ -53,9 +66,9 @@ type QueueSort = 'volume' | 'breach' | 'name';
 
     <div class="queues">
       @for (q of displayQueues(); track q.name) {
-        @if (!isHidden(q.name)) {
+        @if (!isHidden(q.baseName)) {
         <div class="qcard">
-          <z-widget-actions (exportClick)="exportQueue(q)" (removeClick)="hide(q.name)"></z-widget-actions>
+          <z-widget-actions (exportClick)="exportQueue(q)" (removeClick)="hide(q.baseName)"></z-widget-actions>
           <div class="qtop">
             <span class="qname">{{ q.name }}</span>
             <span class="qcount">{{ q.count }}</span>
@@ -173,6 +186,9 @@ type QueueSort = 'volume' | 'breach' | 'name';
   `,
   styles: [`
     .esc { color: var(--amber-fg); border-color: var(--gray-300); }
+    .tab-head { flex-wrap: wrap; row-gap: 8px; }
+    .tab-head > .flex { flex-wrap: wrap; row-gap: 8px; }
+    .cz-btn { margin-left: 8px; }
     .qhint { font-size: 12px; color: var(--gray-500); margin-bottom: 12px; } .qhint b { color: var(--ink-soft); }
     .seg > span { cursor: pointer; }
     .legend span { cursor: pointer; } .legend span:hover { color: var(--ink-soft); }
@@ -237,10 +253,10 @@ export class WorkforceTab {
   private bal = inject(Balance);
   private exporter = inject(Exporter);
 
-  // ---- per-card "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
+  readonly vis = new WidgetVisibility('zyter-um-workforce-widgets-v1', WORKFORCE_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportQueue(q: DisplayQueue) {
     this.exporter.open({

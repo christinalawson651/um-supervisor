@@ -5,18 +5,25 @@ import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Exporter } from '../shared/exporter';
 import { ConcurrentRow } from '../data/dashboard.models';
 import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
+
+const CONCURRENT_WIDGETS = [{ id: 'table', title: 'Concurrent Review Monitoring' }];
 
 @Component({
   selector: 'app-concurrent-tab',
   standalone: true,
-  imports: [WidgetActions],
+  imports: [WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Concurrent Review Monitoring</h2>
       <span class="section-note">Active inpatient authorizations under review</span>
+      <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     @if (!isHidden('table')) {
     <div class="panel">
@@ -54,6 +61,8 @@ import { Lookback } from '../shared/lookback';
     .clickable { cursor: pointer; }
     .panel { position: relative; }
     .panel:hover z-widget-actions { opacity: 1; }
+    .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
+    .cz-btn { margin-left: auto; flex-shrink: 0; }
   `],
 })
 export class ConcurrentTab {
@@ -64,10 +73,10 @@ export class ConcurrentTab {
   private lookback = inject(Lookback);
   private exporter = inject(Exporter);
 
-  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or the panel's × ----
+  readonly vis = new WidgetVisibility('zyter-um-concurrent-widgets-v1', CONCURRENT_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportTable() {
     this.exporter.open({

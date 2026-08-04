@@ -7,18 +7,28 @@ import { HighDollarCase } from '../data/dashboard.models';
 import { nbaFor } from '../data/um-status';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
+
+const FINANCIAL_WIDGETS = [
+  { id: 'Estimated Pending Cost', title: 'Estimated Pending Cost' }, { id: 'Cost Avoided (MTD)', title: 'Cost Avoided (MTD)' },
+  { id: 'LOS Variance', title: 'LOS Variance' }, { id: 'high-dollar', title: 'High-Dollar Authorizations' },
+];
 
 @Component({
   selector: 'app-financial-tab',
   standalone: true,
-  imports: [Icon, WidgetActions],
+  imports: [Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="tab-head">
       <h2>Financial / Cost Indicators</h2>
       <span class="section-note">Cost management and high-dollar authorization tracking</span>
+      <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
+
+    <z-widget-customize [vis]="vis"></z-widget-customize>
 
     <div class="grid-3">
       @for (m of financials(); track m.label; let i = $index) {
@@ -63,6 +73,8 @@ import { Lookback } from '../shared/lookback';
     .metric-tile.clickable:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); }
     .metric-tile, .tbl-head { position: relative; }
     .metric-tile:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
+    .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
+    .cz-btn { margin-left: auto; flex-shrink: 0; }
   `],
 })
 export class FinancialTab {
@@ -74,10 +86,10 @@ export class FinancialTab {
   private exporter = inject(Exporter);
   readonly finKeys = ['fin.pending', 'fin.avoided', 'fin.los'];
 
-  // ---- per-tile "Remove from view" — session-only, like Pulse's widgets but with no saved-view persistence ----
-  private hiddenTiles = signal<Set<string>>(new Set());
-  isHidden(id: string) { return this.hiddenTiles().has(id); }
-  hide(id: string) { this.hiddenTiles.update((s) => new Set(s).add(id)); }
+  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
+  readonly vis = new WidgetVisibility('zyter-um-financial-widgets-v1', FINANCIAL_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   exportMetric(m: { label: string; value: string }) {
     this.exporter.open({ title: m.label, name: `financial-${m.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[m.label, m.value]] });
