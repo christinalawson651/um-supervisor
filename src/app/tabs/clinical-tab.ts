@@ -2,9 +2,13 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
-import { DecisionRow } from '../data/dashboard.models';
+import { DecisionRow, DecisionStat } from '../data/dashboard.models';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Icon } from '../shared/icon';
+import { CASE_POOL, CaseRec, GUIDELINE_BY_PROCEDURE } from '../data/case-pool';
+import { lobOf } from '../data/case-fields';
+import { LobFilter } from '../shared/lob-filter';
+import { Lookback } from '../shared/lookback';
 
 @Component({
   selector: 'app-clinical-tab',
@@ -17,7 +21,7 @@ import { Icon } from '../shared/icon';
     </div>
 
     <div class="dstats">
-      @for (s of data.decisionStats; track s.label; let i = $index) {
+      @for (s of decisionStats(); track s.label; let i = $index) {
         <div class="dstat clickable" [attr.data-tone]="s.tone" (click)="metrics.open(decKeys[i])">
           <div class="dic"><z-icon [name]="s.icon" [size]="20" [stroke]="1.8"></z-icon></div>
           <div class="dval">{{ s.value }}</div>
@@ -83,9 +87,48 @@ export class ClinicalTab {
   metrics = inject(Metrics);
   readonly decKeys = ['dec.approved', 'dec.denied', 'dec.partial', 'dec.auto', 'dec.md', 'dec.p2p'];
 
+  // ---- shared top-bar filters — same treatment as every other converted tab ----
+  private lobFilter = inject(LobFilter);
+  private lookback = inject(Lookback);
+  private passes(c: CaseRec): boolean {
+    return (this.lobFilter.value() === 'all' || lobOf(c.authId) === this.lobFilter.value())
+      && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted));
+  }
+  private decided = CASE_POOL.filter((c) => c.phase === 'decided');
+  private fDecided = computed(() => this.decided.filter((c) => this.passes(c)));
+
+  /** The 6 headline tiles, recomputed live from the case pool (real counts, reactive to LOB + Lookback). */
+  readonly decisionStats = computed((): DecisionStat[] => {
+    const cs = this.fDecided();
+    const total = cs.length || 1;
+    const pct = (n: number) => Math.round((n / total) * 100);
+    const count = (fn: (c: CaseRec) => boolean) => cs.filter(fn).length;
+    return [
+      { value: `${pct(count((c) => c.decision === 'Approved'))}%`, label: 'Approved', icon: 'check', tone: 'green' },
+      { value: `${pct(count((c) => c.decision === 'Denied'))}%`, label: 'Denied', icon: 'xcircle', tone: 'red' },
+      { value: `${pct(count((c) => c.decision === 'Partial'))}%`, label: 'Partial', icon: 'minus', tone: 'amber' },
+      { value: `${pct(count((c) => c.tags.includes('auto')))}%`, label: 'Auto-Approved', icon: 'bolt', tone: 'teal' },
+      { value: `${pct(count((c) => c.tags.includes('mdReview')))}%`, label: 'MD Review', icon: 'user', tone: 'blue' },
+      { value: `${pct(count((c) => c.tags.includes('p2p')))}%`, label: 'P2P Rate', icon: 'phone', tone: 'purple' as any },
+    ];
+  });
+
+  /** Per-procedure approval rate + volume, grouped live from the case pool (guideline is the only non-derived field — a fixed per-procedure label, not something that varies by LOB/date). */
+  readonly decisionRows = computed((): DecisionRow[] => {
+    const byProc = new Map<string, CaseRec[]>();
+    for (const c of this.fDecided()) { if (!byProc.has(c.procedure)) byProc.set(c.procedure, []); byProc.get(c.procedure)!.push(c); }
+    return [...byProc.entries()].map(([procedure, group]) => ({
+      procedure,
+      serviceType: group[0].serviceType,
+      guideline: GUIDELINE_BY_PROCEDURE[procedure] ?? 'Internal Criteria',
+      approvalRate: Math.round((group.filter((c) => c.decision === 'Approved').length / group.length) * 100),
+      volume: group.length,
+    })).sort((a, b) => b.volume - a.volume);
+  });
+
   readonly sortKey = signal<keyof DecisionRow | ''>('');
   readonly sortDir = signal<SortDir>(1);
-  readonly sortedRows = computed(() => compareRows(this.data.decisionRows, this.sortKey(), this.sortDir()));
+  readonly sortedRows = computed(() => compareRows(this.decisionRows(), this.sortKey(), this.sortDir()));
   sortBy(k: keyof DecisionRow) {
     if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
     else { this.sortKey.set(k); this.sortDir.set(1); }

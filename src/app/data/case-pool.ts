@@ -34,28 +34,29 @@ const LAST = ['Adams', 'Brown', 'Clark', 'Davis', 'Evans', 'Foster', 'Garcia', '
   'Kim', 'Lopez', 'Martin', 'Nguyen', 'O’Brien', 'Patel', 'Quinn', 'Reed', 'Silva', 'Thompson',
   'Underwood', 'Valdez', 'Williams', 'Young', 'Zhang', 'Bennett', 'Carter', 'Diaz', 'Ellis', 'Fisher'];
 
-interface Proc { name: string; type: CaseRec['serviceType']; cost: number; tat: number; }
+interface Proc { name: string; type: CaseRec['serviceType']; cost: number; tat: number; guideline: string; }
 const PROCS: Proc[] = [
-  { name: 'Total Knee Replacement',  type: 'Inpatient',  cost: 42000,  tat: 2.4 },
-  { name: 'Lumbar Fusion',           type: 'Inpatient',  cost: 68000,  tat: 2.9 },
-  { name: 'Hip Replacement',         type: 'Inpatient',  cost: 46000,  tat: 2.6 },
-  { name: 'Cardiac Bypass (CABG)',   type: 'Inpatient',  cost: 285000, tat: 4.1 },
-  { name: 'Spinal Fusion (3-level)', type: 'Inpatient',  cost: 127000, tat: 3.4 },
-  { name: 'Bariatric Surgery',       type: 'Inpatient',  cost: 58000,  tat: 3.1 },
-  { name: 'NICU Stay',               type: 'Inpatient',  cost: 198000, tat: 6.0 },
-  { name: 'MRI Brain w/ Contrast',   type: 'Outpatient', cost: 2400,   tat: 0.4 },
-  { name: 'MRI Lumbar Spine',        type: 'Outpatient', cost: 2600,   tat: 0.8 },
-  { name: 'CT Abdomen',              type: 'Outpatient', cost: 3200,   tat: 1.2 },
-  { name: 'Cardiac Catheterization', type: 'Outpatient', cost: 18500,  tat: 1.9 },
-  { name: 'Colonoscopy',             type: 'Outpatient', cost: 2100,   tat: 0.6 },
-  { name: 'Physical Therapy (12v)',  type: 'Outpatient', cost: 1800,   tat: 0.3 },
-  { name: 'Cataract Surgery',        type: 'Outpatient', cost: 4200,   tat: 0.5 },
-  { name: 'Chemotherapy Cycle',      type: 'Outpatient', cost: 34000,  tat: 1.8 },
-  { name: 'Echocardiogram',          type: 'Outpatient', cost: 2800,   tat: 1.4 },
-  { name: 'Sleep Study',             type: 'Outpatient', cost: 3600,   tat: 2.0 },
-  { name: 'Behavioral Health IOP',   type: 'Behavioral', cost: 9600,   tat: 2.2 },
-  { name: 'Behavioral Health PHP',   type: 'Behavioral', cost: 14500,  tat: 2.5 },
+  { name: 'Total Knee Replacement',  type: 'Inpatient',  cost: 42000,  tat: 2.4, guideline: 'XYZ 2024' },
+  { name: 'Lumbar Fusion',           type: 'Inpatient',  cost: 68000,  tat: 2.9, guideline: 'ABCD A-0420' },
+  { name: 'Hip Replacement',         type: 'Inpatient',  cost: 46000,  tat: 2.6, guideline: 'XYZ 2024' },
+  { name: 'Cardiac Bypass (CABG)',   type: 'Inpatient',  cost: 285000, tat: 4.1, guideline: 'XYZ 2024' },
+  { name: 'Spinal Fusion (3-level)', type: 'Inpatient',  cost: 127000, tat: 3.4, guideline: 'ABCD A-0420' },
+  { name: 'Bariatric Surgery',       type: 'Inpatient',  cost: 58000,  tat: 3.1, guideline: 'ABCD A-0103' },
+  { name: 'NICU Stay',               type: 'Inpatient',  cost: 198000, tat: 6.0, guideline: 'AIM Guidelines' },
+  { name: 'MRI Brain w/ Contrast',   type: 'Outpatient', cost: 2400,   tat: 0.4, guideline: 'AIM Guidelines' },
+  { name: 'MRI Lumbar Spine',        type: 'Outpatient', cost: 2600,   tat: 0.8, guideline: 'AIM Guidelines' },
+  { name: 'CT Abdomen',              type: 'Outpatient', cost: 3200,   tat: 1.2, guideline: 'AIM Guidelines' },
+  { name: 'Cardiac Catheterization', type: 'Outpatient', cost: 18500,  tat: 1.9, guideline: 'XYZ 2024' },
+  { name: 'Colonoscopy',             type: 'Outpatient', cost: 2100,   tat: 0.6, guideline: 'ABCD A-0103' },
+  { name: 'Physical Therapy (12v)',  type: 'Outpatient', cost: 1800,   tat: 0.3, guideline: 'ABCD A-0103' },
+  { name: 'Cataract Surgery',        type: 'Outpatient', cost: 4200,   tat: 0.5, guideline: 'XYZ 2024' },
+  { name: 'Chemotherapy Cycle',      type: 'Outpatient', cost: 34000,  tat: 1.8, guideline: 'AIM Guidelines' },
+  { name: 'Echocardiogram',          type: 'Outpatient', cost: 2800,   tat: 1.4, guideline: 'AIM Guidelines' },
+  { name: 'Sleep Study',             type: 'Outpatient', cost: 3600,   tat: 2.0, guideline: 'AIM Guidelines' },
+  { name: 'Behavioral Health IOP',   type: 'Behavioral', cost: 9600,   tat: 2.2, guideline: 'LOCUS Criteria' },
+  { name: 'Behavioral Health PHP',   type: 'Behavioral', cost: 14500,  tat: 2.5, guideline: 'LOCUS Criteria' },
 ];
+export const GUIDELINE_BY_PROCEDURE: Record<string, string> = Object.fromEntries(PROCS.map((p) => [p.name, p.guideline]));
 export const NURSES = ['Maria Gonzalez, RN', 'Jessica Williams, RN', 'Andrew Mitchell, RN',
   'Sarah Mitchell, RN', 'Emily Chen, RN', 'Robert Kim, RN'];
 
