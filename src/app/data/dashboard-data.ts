@@ -397,6 +397,13 @@ export class DashboardData {
     );
   }
 
+  /** Add one case to a named queue — pairs with decrementQueue() for a "move to queue" action. */
+  incrementQueue(name: string) {
+    this.queues.update((qs) =>
+      qs.map((q) => (q.name === name ? { ...q, count: q.count + 1 } : q)),
+    );
+  }
+
   dismissRecommendation(title: string) {
     this.aiRecommendations.update((r) => r.filter((x) => x.title !== title));
   }

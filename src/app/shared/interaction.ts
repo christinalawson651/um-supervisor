@@ -49,6 +49,7 @@ export interface ExplorerData {
   rows: (string | number)[][]; // ALL contributing cases
   exportName: string;
   memberColumn?: number;       // index of the Member column (renders clickable)
+  showQueueMove?: boolean;     // shows a "Move to queue" bulk action (pending-phase cases only)
 }
 
 @Injectable({ providedIn: 'root' })

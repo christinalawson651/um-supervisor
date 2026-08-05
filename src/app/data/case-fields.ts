@@ -101,6 +101,68 @@ export function urgencyScore(c: CaseRec): number {
   return score + c.tatH;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Intake & Documentation Quality — all deterministic per authId (same pattern as mdReviewerOf/
+// determinationReasonOf above), not stored fields on CaseRec, so nothing else has to change shape.
+// ---------------------------------------------------------------------------------------------
+
+/** How the request arrived. */
+export const INTAKE_CHANNELS = ['Fax', 'Portal', 'Phone', 'EDI', 'Email'];
+export function intakeChannelOf(c: CaseRec): string {
+  return INTAKE_CHANNELS[Number(c.authId.slice(-2)) % INTAKE_CHANNELS.length];
+}
+
+/** How the request was routed to a queue/reviewer. Late correlates with the case already being
+ *  at-risk or breached — routing delay is a real contributor to those, not an unrelated stat. */
+export type RoutingStatus = 'Smart' | 'Manual' | 'Late';
+export function routingStatusOf(c: CaseRec): RoutingStatus {
+  if (c.tags.includes('atRisk') || c.tags.includes('breached')) return 'Late';
+  return Number(c.authId.slice(-2)) % 3 === 0 ? 'Manual' : 'Smart';
+}
+
+/** Duplicate submission detection — only ~9% of pending work is ever flagged; resolved/unresolved
+ *  only means anything for cases that are actually flagged as duplicates. */
+export function isDuplicateOf(c: CaseRec): boolean { return Number(c.authId.slice(-2)) % 11 === 0; }
+export function duplicateResolvedOf(c: CaseRec): boolean { return Number(c.authId.slice(-1)) % 2 === 0; }
+
+/** Missing-information category — broader than missingFieldOf() (Clinical Justification, Provider
+ *  NPI, etc. in dashboard-data.ts's Top Missing Fields table): this groups by *where* the gap is
+ *  (the intake form itself vs. clinicals vs. the provider record), for the Intake tab's own panel. */
+export type MissingInfoCategory = 'Intake Form — Illegible' | 'Intake Form — Missing Fields' | 'Clinicals Missing' | 'Provider Info Missing' | 'None';
+export function missingInfoCategoryOf(c: CaseRec): MissingInfoCategory {
+  if (!c.tags.includes('incompleteDoc')) return 'None';
+  const cats: MissingInfoCategory[] = ['Intake Form — Illegible', 'Intake Form — Missing Fields', 'Clinicals Missing', 'Provider Info Missing'];
+  return cats[Number(c.authId.slice(-2)) % cats.length];
+}
+
+/** Review timing — when the request was submitted relative to the service, distinct from
+ *  authTypeOf()'s IP/OP/RX service type. Concurrent Review tracks the existing 'concurrent' tag
+ *  exactly (inpatient stays already under continued-stay review) so the two views never disagree. */
+export type ReviewType = 'Pre-Auth' | 'Concurrent Review' | 'Retro';
+export function reviewTypeOf(c: CaseRec): ReviewType {
+  if (c.tags.includes('concurrent')) return 'Concurrent Review';
+  return Number(c.authId.slice(-2)) % 9 === 0 ? 'Retro' : 'Pre-Auth';
+}
+
+/** Provider-side data issues — Out of Network reuses the existing 'oon' tag (same cases the OON
+ *  Review queue and Provider tab already track) rather than inventing a second, disagreeing flag. */
+export type ProviderIssue = 'None' | 'Incomplete' | 'Out of Network';
+export function providerIssueOf(c: CaseRec): ProviderIssue {
+  if (c.tags.includes('oon')) return 'Out of Network';
+  return Number(c.authId.slice(-2)) % 8 === 0 ? 'Incomplete' : 'None';
+}
+
+/** Automated intake processing outcome — only meaningful for cases still sitting in the Intake
+ *  queue itself (freshly submitted, not yet triaged); everything past Intake processed normally. */
+export type IntakeProcessingStatus = 'Completed' | 'Failed' | 'No Shell Created';
+export function intakeProcessingStatusOf(c: CaseRec): IntakeProcessingStatus {
+  if (!c.tags.includes('intake')) return 'Completed';
+  const n = Number(c.authId.slice(-2));
+  if (n % 12 === 0) return 'No Shell Created';
+  if (n % 7 === 0) return 'Failed';
+  return 'Completed';
+}
+
 // ---- Age in queue (shared by Workforce's age bars and the case pool's own return-to-queue logic) ----
 export function ageH(authId: string): number { return 6 + (Number(authId.slice(-2)) % 90); }
 export function bandOf(authId: string, breached: boolean): 'fresh' | 'day2' | 'over48' | 'breach' {

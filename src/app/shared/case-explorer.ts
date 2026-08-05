@@ -15,6 +15,7 @@ import { pendReason } from './metrics';
 const PAGE = 12;
 
 type QuickSort = 'default' | 'urgency' | 'cost' | 'tat' | 'oldest';
+const QUEUE_NAMES = ['Intake', 'Clinical Review', 'MD Review', 'RFI Pending', 'OON Review', 'Concurrent Review', 'Pending P2P'];
 const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => number }[] = [
   { id: 'urgency', label: 'Urgency (expedited first)', col: (c) => c.indexOf('Urgency') },
   { id: 'cost', label: 'Cost (highest first)', col: (c) => c.findIndex((h) => /cost/i.test(h)) },
@@ -60,8 +61,16 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
             @if (isCaseList()) {
               @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
               <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
+              <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected(e)">Escalate selected</button>
             }
             <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
+            @if (e.showQueueMove) {
+              <select class="qsel" [ngModel]="queueTarget()" (ngModelChange)="queueTarget.set($event)">
+                <option value="">Move to queue…</option>
+                @for (qn of QUEUE_NAMES; track qn) { <option [value]="qn">{{ qn }}</option> }
+              </select>
+              <button class="btn outline sm" [disabled]="!selected().size || !queueTarget()" (click)="moveSelectedToQueue(e)">Move</button>
+            }
             <button class="btn outline sm" (click)="openAssignmentHistory()">Assignment History</button>
             <button class="btn outline sm" (click)="exportAll(e)">Export all ({{ filtered().length }})</button>
           </div>
@@ -162,6 +171,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
       color: var(--gray-500); }
     .pnum { font-weight:600; color:var(--ink-soft); }
     .btn[disabled] { opacity:.45; cursor:default; }
+    .qsel { padding:7px 10px; border-radius:8px; border:1px solid var(--gray-300); font-size:12.5px; color:var(--ink-soft); }
   `],
 })
 export class CaseExplorer {
@@ -178,6 +188,8 @@ export class CaseExplorer {
   readonly sortDir = signal<1 | -1>(1);
   readonly quickSort = signal<QuickSort>('default');
   readonly selected = signal<Set<string>>(new Set());
+  readonly queueTarget = signal('');
+  readonly QUEUE_NAMES = QUEUE_NAMES;
 
   constructor() {
     // reset view state whenever a new metric is opened
@@ -189,6 +201,7 @@ export class CaseExplorer {
       this.sortDir.set(1);
       this.quickSort.set('default');
       this.selected.set(new Set());
+      this.queueTarget.set('');
     });
   }
 
@@ -310,6 +323,66 @@ export class CaseExplorer {
         this.ix.toast(`${assignedIds.length} authorization(s) reassigned to ${target}.`);
         this.data.addHistory('swap', 'Authorizations reassigned', `${assignedIds.length} authorization(s) → ${target}`);
         this.selected.set(new Set());
+      },
+    });
+  }
+
+  escalateSelected(e: { columns: string[]; rows: (string | number)[][]; memberColumn?: number }) {
+    const ids = [...this.selected()];
+    if (!ids.length) return;
+    const iMember = e.memberColumn ?? 1;
+    const iStatus = e.columns.indexOf('Status');
+    const iUrgency = e.columns.indexOf('Urgency');
+    const rowByAuth = new Map(e.rows.map((r) => [this.rowId(r), r]));
+
+    const candidates = ids.map((id) => {
+      const row = rowByAuth.get(id);
+      const rec = CASE_POOL.find((c) => c.authId === id);
+      const status = row && iStatus >= 0 ? String(row[iStatus]) : (rec?.status ?? 'Authorization');
+      const urgency = row && iUrgency >= 0 ? String(row[iUrgency]) : (rec ? urgencyOf(rec) : 'Standard');
+      return {
+        authId: id, member: row ? String(row[iMember]) : (rec?.member ?? ''),
+        detail: `${status} · ${urgency}`, riskLabel: urgency,
+        risk: (urgency === 'Expedited' ? 'amber' : 'green') as 'red' | 'amber' | 'green',
+      };
+    });
+    this.esc.open({
+      title: `Escalate ${ids.length} authorization${ids.length > 1 ? 's' : ''}`,
+      candidates, targets: ESCALATE_TARGETS,
+      apply: (_ids, who) => {
+        this.ix.toast(`${ids.length} authorization(s) escalated to ${who}.`, 'warn');
+        this.data.addHistory('arrowup', 'Authorizations escalated', `${ids.length} authorization(s) → ${who}`);
+        this.selected.set(new Set());
+      },
+    });
+  }
+
+  /** Move the selected pending authorizations to a different queue — a plain aggregate simulation
+   *  (queue counts only), same "counts move, individual records don't" model as Reassign/Balance. */
+  moveSelectedToQueue(e: { columns: string[]; rows: (string | number)[][] }) {
+    const ids = [...this.selected()];
+    const target = this.queueTarget();
+    if (!ids.length || !target) return;
+    const iStatus = e.columns.indexOf('Status');
+    const rowByAuth = new Map(e.rows.map((r) => [this.rowId(r), r]));
+    const fromCounts = new Map<string, number>();
+    ids.forEach((id) => {
+      const row = rowByAuth.get(id);
+      const from = row && iStatus >= 0 ? String(row[iStatus]) : null;
+      if (from && from !== target) fromCounts.set(from, (fromCounts.get(from) ?? 0) + 1);
+    });
+    const breakdown = [...fromCounts.entries()].map(([from, count]) => ({ count, label: count === 1 ? 'authorization' : 'authorizations', target: `${from} → ${target}` }));
+    this.ix.ask({
+      title: `Move ${ids.length} authorization${ids.length > 1 ? 's' : ''} to ${target}`,
+      body: `Move these authorizations to the ${target} queue:`,
+      breakdown, confirmLabel: 'Move', tone: 'teal',
+      onConfirm: () => {
+        fromCounts.forEach((count, from) => { for (let i = 0; i < count; i++) this.data.decrementQueue(from); });
+        for (let i = 0; i < ids.length; i++) this.data.incrementQueue(target);
+        this.ix.toast(`${ids.length} authorization(s) moved to ${target}.`);
+        this.data.addHistory('swap', 'Authorizations moved to queue', `${ids.length} authorization(s) → ${target}`);
+        this.selected.set(new Set());
+        this.queueTarget.set('');
       },
     });
   }
