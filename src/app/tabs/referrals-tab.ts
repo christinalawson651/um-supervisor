@@ -35,7 +35,7 @@ import { Nav } from '../shared/nav';
               <td>{{ r.received }}</td>
               <td><span class="badge" [class.amber]="r.status==='Pending intake'" [class.blue]="r.status==='Assessment scheduled'"
                     [class.green]="r.status==='Care plan active'">{{ r.status }}</span></td>
-              <td><button class="btn outline teal sm" (click)="nav.go('cm'); $event.stopPropagation()">View in CM →</button></td>
+              <td><button class="btn outline teal sm" (click)="viewInCm(r); $event.stopPropagation()">View in CM →</button></td>
             </tr>
           }
         </tbody>
@@ -85,7 +85,15 @@ export class ReferralsTab {
         { label: 'SLA', value: r.sla, tone: r.slaTone },
         { label: 'Assigned To', value: r.assignedTo },
       ],
-      actions: [{ label: 'View in CM', tone: 'teal', run: () => this.nav.go('cm') }],
+      actions: [{ label: 'View in CM', tone: 'teal', run: () => this.viewInCm(r) }],
     });
+  }
+
+  /** Switches into the CM module and opens this member's chart there — not just the bare CM
+   *  Supervisor Dashboard, which would otherwise leave the supervisor to go search for the member. */
+  viewInCm(r: Referral) {
+    this.ix.closeDrawer();
+    this.nav.go('cm');
+    this.members.openByName(r.member);
   }
 }
