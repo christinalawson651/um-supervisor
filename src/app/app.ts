@@ -14,7 +14,7 @@ import { Exporter } from './shared/exporter';
 import { Lookback } from './shared/lookback';
 import { LobFilter } from './shared/lob-filter';
 import { REFERRALS } from './data/referrals';
-import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows, liveMissingFields, liveProviderInsights, liveHighDollarCases } from './data/dashboard-data';
+import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows, liveMissingFields, liveProviderInsights, liveCostInsights } from './data/dashboard-data';
 
 import { OverviewDashboard } from './modules/overview-dashboard';
 import { CmDashboard } from './modules/cm-dashboard';
@@ -27,7 +27,7 @@ import { RiskTab } from './tabs/risk-tab';
 import { ConcurrentTab } from './tabs/concurrent-tab';
 import { IntakeTab } from './tabs/intake-tab';
 import { ProviderTab } from './tabs/provider-tab';
-import { FinancialTab } from './tabs/financial-tab';
+import { CostTab } from './tabs/cost-tab';
 import { AuditTab } from './tabs/audit-tab';
 import { AiTab } from './tabs/ai-tab';
 import { ReferralsTab } from './tabs/referrals-tab';
@@ -43,7 +43,7 @@ const TABS = [
   'Concurrent Review Monitoring',
   'Intake & Documentation Quality',
   'Provider & Network Insights',
-  'Financial / Cost Indicators',
+  'Cost & Utilization Insights',
   'Audit & Compliance',
   'CM Referrals',
 ] as const;
@@ -78,7 +78,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   imports: [
     Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard,
     WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
-    IntakeTab, ProviderTab, FinancialTab, AuditTab, AiTab, ReferralsTab,
+    IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
@@ -184,8 +184,8 @@ export class App {
         rows = liveMissingFields(lob, days).map((f) => [f.field, f.count, f.pct]); break;
       case 6: name = 'providers'; columns = ['Provider/Facility', 'Specialty', 'Network Status', 'Total Requests', 'OON Requests', 'Approval Rate %', 'Denial Rate %', 'Incomplete Rate %', 'Avg Response (days)', 'Expedited Rate %', 'Primary Insight'];
         rows = liveProviderInsights(lob, days).map((p) => [p.provider, p.specialty, p.networkStatus, p.totalRequests, p.oonRequests, p.approvalRate, p.denialRate, p.incompleteRate, p.avgResponseDays, p.expeditedRate, p.primaryInsight]); break;
-      case 7: name = 'high-dollar-authorizations'; columns = ['Auth ID', 'Member', 'Procedure', 'Estimated Cost', 'Status'];
-        rows = liveHighDollarCases(lob, days, 50).map((c) => [c.authId, c.member, c.procedure, c.cost, c.status]); break;
+      case 7: name = 'cost-utilization'; columns = ['Member', 'Service', 'Provider/Facility', 'Network Status', 'Est. Requested Cost', 'Est. Approved Cost', 'LOS', 'Certified Days', 'Uncertified Days', 'Cost Exposure', 'Assigned To', 'Primary Insight'];
+        rows = liveCostInsights(lob, days).map((r) => [r.member, r.service, r.provider, r.networkStatus, r.requestedCost, r.approvedCost, r.los ?? '', r.certifiedDays ?? '', r.uncertifiedDays ?? '', r.costExposure, r.assignedTo, r.primaryInsight]); break;
       case 8: name = 'audit-flags'; columns = ['ID', 'Type', 'Description', 'Date', 'Severity'];
         rows = d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]); break;
       case 9: name = 'cm-referrals'; columns = ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'Status'];

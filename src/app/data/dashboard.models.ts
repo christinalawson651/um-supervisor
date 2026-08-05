@@ -90,12 +90,30 @@ export interface ProviderInsightRow {
   goldCard: boolean;           // performance-earned prior-auth exemption (computed: clean record + strong approval rate)
 }
 
-export interface HighDollarCase {
+export type CostFlag = 'highCost' | 'oonExposure' | 'uncertifiedDays' | 'extendedStay' | 'highCostDrug' | 'costVariance' | 'duplicateService';
+
+export interface CostInsightRow {
   authId: string;
   member: string;
-  procedure: string;
-  cost: string;
-  status: string;
+  service: string;             // procedure / service description
+  serviceType: string;         // Inpatient / Outpatient / Behavioral
+  provider: string;
+  networkStatus: string;
+  requestedCost: number;
+  approvedCost: number;        // modeled estimate — not a real decision (case is still pending)
+  costVariance: number;        // requestedCost - approvedCost
+  los: number | null;          // current day of stay — only populated for concurrent-review inpatient cases
+  certifiedDays: number | null;
+  uncertifiedDays: number | null;
+  expectedDischarge: string | null;
+  costExposure: number;        // headline dollar amount at risk — max of the triggered flag's exposure
+  flags: CostFlag[];
+  insights: string[];          // human-readable sentence per flag, same order as `flags`
+  primaryInsight: string;      // insights[0], or a clean-bill message when no flags
+  needsAttention: boolean;
+  assignedTo: string;
+  urgency: string;
+  queue: string;                // current pending queue — internal, supports Reassign/Route actions
 }
 
 export interface AuditFlag {

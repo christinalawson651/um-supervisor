@@ -1,13 +1,14 @@
 import { Injectable, signal, effect, computed } from '@angular/core';
 import {
   Kpi, QueueCard, NurseRow, TatBucket, TatStat, DecisionStat, DecisionRow,
-  ConcurrentRow, QualityBar, MissingField, ProviderInsightRow, ProviderFlag, HighDollarCase,
-  AuditFlag, AiRecommendation, RiskCase, RiskTile,
+  ConcurrentRow, QualityBar, MissingField, ProviderInsightRow, ProviderFlag,
+  AuditFlag, AiRecommendation, RiskCase, RiskTile, CostInsightRow, CostFlag,
 } from './dashboard.models';
 import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
 import {
   ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf,
-  providerMetaOf, providerResponseDaysOf, rfiOriginStageOf,
+  providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf,
+  isDuplicateOf, duplicateResolvedOf,
 } from './case-fields';
 
 /**
@@ -220,7 +221,7 @@ export class DashboardData {
   // liveProviderInsights() (below the class) is the real source now; OON Requests uses Metrics.count('prov.oon').
 
   // ---------- Financial / Cost Indicators ----------
-  // liveFinancials()/liveHighDollarCases() (below the class) are the real source now.
+  // liveCostInsights() (below the class) is the real source now.
 
   // ---------- Audit & Compliance ----------
   // liveComplianceBars() (below the class) is the real source now. auditFlags stays a curated,
@@ -584,32 +585,92 @@ export function liveMissingFields(lob?: string, withinDays?: number): MissingFie
     .sort((a, b) => b.count - a.count);
 }
 
-export function liveFinancials(lob?: string, withinDays?: number): { value: string; label: string; icon: string }[] {
-  const pendingCs = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
-  const decidedCs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
-  const pendingCost = pendingCs.reduce((s, c) => s + c.cost, 0);
-  const avoidedCost = decidedCs.filter((c) => c.decision === 'Denied' || c.decision === 'Partial').reduce((s, c) => s + c.cost, 0);
-  const fmtM = (n: number) => `$${(n / 1_000_000).toFixed(1)}M`;
-  // LOS variance is only meaningful for cases that actually carry LOS data — the 'concurrent'-tagged
-  // inpatient stays — not every decided case, since only those have a real length-of-stay field.
-  const concurrent = liveConcurrentRows(lob, withinDays);
-  const n = concurrent.length || 1;
-  const avgLos = concurrent.reduce((s, r) => s + parseInt(r.los), 0) / n;
-  const avgExp = concurrent.reduce((s, r) => s + parseInt(r.expectedLos), 0) / n;
-  const variance = avgLos - avgExp;
-  return [
-    { value: fmtM(pendingCost), label: 'Estimated Pending Cost', icon: 'dollar' },
-    { value: fmtM(avoidedCost), label: 'Cost Avoided (MTD)', icon: 'shield' },
-    { value: `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}d`, label: 'LOS Variance', icon: 'barchart' },
-  ];
+const HIGH_COST_THRESHOLD = 50000;
+const DRUG_COST_THRESHOLD = 10000;
+
+/** Deterministic, per-case "modeled approval rate" — not a real decision (these are pending cases),
+ *  just a stable estimate of what fraction of the requested cost would likely be approved, so the
+ *  worklist can show a plausible requested-vs-approved variance before a decision exists. Skewed so
+ *  most requests are modeled near full approval (realistic — most UM requests aren't contentious)
+ *  and only a minority land in the low-factor band that's actually worth flagging as variance. */
+function approvalFactorOf(authId: string): number {
+  const h = Number(authId.slice(-2)) % 100;
+  return h < 20 ? 0.5 + (h / 20) * 0.15 : 0.85 + ((h - 20) / 80) * 0.15;
 }
 
-export function liveHighDollarCases(lob?: string, withinDays?: number, limit = 10): HighDollarCase[] {
-  return CASE_POOL
-    .filter((c) => c.cost >= 50000 && inScope(c, lob, withinDays))
-    .sort((a, b) => b.cost - a.cost)
-    .slice(0, limit)
-    .map((c) => ({ authId: c.authId, member: c.member, procedure: c.procedure, cost: `$${Math.round(c.cost / 1000)}K`, status: c.status }));
+/**
+ * Cost & Utilization Insights — one row per ACTIVE (pending) authorization with a cost-exposure
+ * flag. Reuses `concurrentRowFor` for the LOS/certified/uncertified fields on 'concurrent'-tagged
+ * inpatient stays (single source of truth with Concurrent Review Monitoring) rather than
+ * re-deriving that math here; non-inpatient/non-concurrent cases simply have no LOS data.
+ */
+export function liveCostInsights(lob?: string, withinDays?: number): CostInsightRow[] {
+  const cases = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
+
+  return cases.map((c) => {
+    const meta = providerMetaOf(c.provider);
+    const requestedCost = c.cost;
+    const approvedCost = Math.round(requestedCost * approvalFactorOf(c.authId));
+    const costVariance = requestedCost - approvedCost;
+
+    // `concurrent` is a queue tag, not a service-type guarantee — a handful of non-inpatient cases
+    // sit in the Concurrent Review queue too. LOS/certified-day fields only make sense for actual
+    // inpatient stays, so gate on both rather than the tag alone (unlike liveConcurrentRows, which
+    // is intentionally queue-scoped for its own worklist and out of scope to change here).
+    const cr = c.tags.includes('concurrent') && c.serviceType === 'Inpatient' ? concurrentRowFor(c) : null;
+    const los = cr ? parseInt(cr.los) : null;
+    const expectedLos = cr ? parseInt(cr.expectedLos) : null;
+    const certifiedDays = cr ? cr.totalCertifiedDays : null;
+    const uncertifiedDays = cr ? cr.uncertifiedDays : null;
+    const expectedDischarge = cr ? cr.expectedDischarge : null;
+    const avoidableDays = los !== null && expectedLos !== null ? Math.max(0, los - expectedLos) : 0;
+    const costPerDay = cr && los ? requestedCost / los : 0;
+
+    const flags: CostFlag[] = [];
+    const insights: string[] = [];
+    const flag = (f: CostFlag, msg: string) => { flags.push(f); insights.push(msg); };
+
+    if (requestedCost >= HIGH_COST_THRESHOLD) {
+      flag('highCost', `Estimated cost of $${Math.round(requestedCost / 1000)}K exceeds the $${HIGH_COST_THRESHOLD / 1000}K supervisor-review threshold`);
+    }
+    if (c.tags.includes('oon')) {
+      flag('oonExposure', `Out-of-network request estimated at $${Math.round(requestedCost / 1000)}K — confirm a network-access exception is documented`);
+    }
+    if (uncertifiedDays) {
+      flag('uncertifiedDays', `${uncertifiedDays} uncertified inpatient day(s) estimated at $${Math.round(uncertifiedDays * costPerDay).toLocaleString()}`);
+    }
+    if (avoidableDays > 0) {
+      flag('extendedStay', `Current stay exceeds expected LOS by ${avoidableDays} day(s) — estimated $${Math.round(avoidableDays * costPerDay).toLocaleString()} avoidable-day exposure`);
+    }
+    const svcCat = serviceCategoryOf(c);
+    if ((svcCat === 'Pharmacy' || svcCat === 'DME / Home Health') && requestedCost >= DRUG_COST_THRESHOLD) {
+      flag('highCostDrug', `High-cost ${svcCat === 'Pharmacy' ? 'drug' : 'DME'} request at $${Math.round(requestedCost / 1000)}K exceeds the supervisor-review threshold`);
+    }
+    if (costVariance >= Math.max(5000, requestedCost * 0.15)) {
+      flag('costVariance', `Requested-vs-approved cost variance estimated at $${costVariance.toLocaleString()}`);
+    }
+    if (isDuplicateOf(c) && !duplicateResolvedOf(c)) {
+      flag('duplicateService', `Potential duplicate-service authorization identified — $${Math.round(requestedCost / 1000)}K at risk`);
+    }
+
+    const exposures: number[] = [];
+    if (flags.includes('uncertifiedDays')) exposures.push(Math.round((uncertifiedDays ?? 0) * costPerDay));
+    if (flags.includes('extendedStay')) exposures.push(Math.round(avoidableDays * costPerDay));
+    if (flags.includes('oonExposure') || flags.includes('duplicateService') || flags.includes('highCost') || flags.includes('highCostDrug')) exposures.push(requestedCost);
+    if (flags.includes('costVariance')) exposures.push(costVariance);
+    const costExposure = exposures.length ? Math.max(...exposures) : 0;
+
+    return {
+      authId: c.authId, member: c.member, service: c.procedure, serviceType: c.serviceType,
+      provider: c.provider, networkStatus: c.tags.includes('oon') ? 'Out-of-Network' : meta.networkStatus,
+      requestedCost, approvedCost, costVariance,
+      los, certifiedDays, uncertifiedDays, expectedDischarge,
+      costExposure, flags, insights,
+      primaryInsight: insights[0] ?? 'Cost profile within expected range',
+      needsAttention: flags.length > 0,
+      assignedTo: c.nurse, urgency: urgencyOf(c), queue: c.status,
+    };
+  }).sort((a, b) => b.costExposure - a.costExposure);
 }
 
 /**
