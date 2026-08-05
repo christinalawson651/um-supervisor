@@ -12,6 +12,9 @@ import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Reassign } from '../shared/reassign';
+import { Members } from '../shared/members';
+
+const PAGE = 12;
 
 const COST_WIDGETS = [
   { id: 'flags', title: 'Needs-Attention Summary' },
@@ -71,12 +74,12 @@ const fmt = (n: number) => `$${n.toLocaleString()}`;
         @if (activeFilter()) {
           <span class="filter-chip">Filtered: {{ filterLabel() }} <button class="clr" (click)="clearFilter()">&times;</button></span>
         }
-        <select class="prog-filter" [value]="serviceTypeFilter()" (change)="serviceTypeFilter.set($any($event.target).value)">
+        <select class="prog-filter" [value]="serviceTypeFilter()" (change)="setServiceType($any($event.target).value)">
           <option value="all">All Service Types</option>
           @for (s of serviceTypes(); track s) { <option [value]="s">{{ s }}</option> }
         </select>
         <input class="search-box" type="text" placeholder="Search member, service or provider…"
-          [value]="search()" (input)="search.set($any($event.target).value)" />
+          [value]="search()" (input)="setSearch($any($event.target).value)" />
         <z-widget-actions (exportClick)="exportGrid()" (removeClick)="hide('grid')"></z-widget-actions>
       </div>
       <table class="z-table compact">
@@ -97,8 +100,8 @@ const fmt = (n: number) => `$${n.toLocaleString()}`;
           </tr>
         </thead>
         <tbody>
-          @for (r of displayRows(); track r.authId) {
-            <tr class="clickable" [class.attn]="r.needsAttention" (click)="open(r)">
+          @for (r of pagedRows(); track r.authId) {
+            <tr class="clickable" [class.attn]="r.needsAttention" (click)="open(r)" (dblclick)="openChart(r, $event)" title="Double-click to open member chart">
               <td class="strong">{{ r.member }}</td>
               <td>{{ r.service }}<span class="svc-type">{{ r.serviceType }}</span></td>
               <td>{{ r.provider }}</td>
@@ -119,6 +122,15 @@ const fmt = (n: number) => `$${n.toLocaleString()}`;
           }
         </tbody>
       </table>
+      @if (displayRows().length) {
+        <div class="pager">
+          <span>Showing {{ rangeStart() }}–{{ rangeEnd() }} of {{ displayRows().length }}</span>
+          <span class="spacer"></span>
+          <button class="btn outline sm" [disabled]="page() === 0" (click)="prev()">‹ Prev</button>
+          <span class="pnum">Page {{ page() + 1 }} of {{ totalPages() }}</span>
+          <button class="btn outline sm" [disabled]="page() >= totalPages() - 1" (click)="next()">Next ›</button>
+        </div>
+      }
     </div>
     }
   `,
@@ -164,6 +176,9 @@ const fmt = (n: number) => `$${n.toLocaleString()}`;
     .insight { max-width: 240px; font-size: 12.5px; color: var(--ink-soft); }
     .insight.ok { color: var(--green-fg); }
     .empty { text-align: center; color: var(--gray-500); padding: 24px; }
+    .pager { display: flex; align-items: center; gap: 12px; padding: 12px 16px; font-size: 12.5px; color: var(--ink-soft); }
+    .pager .spacer { flex: 1; }
+    .pnum { font-weight: 600; color: var(--ink); }
   `],
 })
 export class CostTab {
@@ -174,6 +189,7 @@ export class CostTab {
   private exporter = inject(Exporter);
   private esc = inject(Escalate);
   private rx = inject(Reassign);
+  private members = inject(Members);
 
   readonly tiles = FLAG_TILES;
   readonly vis = new WidgetVisibility('zyter-um-cost-widgets-v1', COST_WIDGETS);
@@ -195,10 +211,10 @@ export class CostTab {
 
   readonly needsAttentionOnly = signal(true);
   readonly activeFilter = signal<CostFlag | null>(null);
-  showNeedsAttention() { this.activeFilter.set(null); this.needsAttentionOnly.set(true); }
-  showAll() { this.activeFilter.set(null); this.needsAttentionOnly.set(false); }
-  toggleFilter(flag: CostFlag) { this.activeFilter.set(this.activeFilter() === flag ? null : flag); }
-  clearFilter() { this.activeFilter.set(null); }
+  showNeedsAttention() { this.activeFilter.set(null); this.needsAttentionOnly.set(true); this.page.set(0); }
+  showAll() { this.activeFilter.set(null); this.needsAttentionOnly.set(false); this.page.set(0); }
+  toggleFilter(flag: CostFlag) { this.activeFilter.set(this.activeFilter() === flag ? null : flag); this.page.set(0); }
+  clearFilter() { this.activeFilter.set(null); this.page.set(0); }
   filterLabel(): string { return this.tiles.find((t) => t.flag === this.activeFilter())?.label ?? ''; }
 
   tileCount(flag: CostFlag) { return this.rows().filter((r) => r.flags.includes(flag)).length; }
@@ -208,12 +224,15 @@ export class CostTab {
   sortBy(k: keyof CostInsightRow) {
     if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
     else { this.sortKey.set(k); this.sortDir.set(1); }
+    this.page.set(0);
   }
   caret(k: keyof CostInsightRow) { return caretFor(this.sortKey(), k, this.sortDir()); }
 
   readonly search = signal('');
   readonly serviceTypeFilter = signal('all');
   readonly serviceTypes = computed(() => [...new Set(this.rows().map((r) => r.serviceType))].sort());
+  setSearch(v: string) { this.search.set(v); this.page.set(0); }
+  setServiceType(v: string) { this.serviceTypeFilter.set(v); this.page.set(0); }
 
   readonly displayRows = computed(() => {
     const flag = this.activeFilter();
@@ -225,6 +244,24 @@ export class CostTab {
     if (q) rs = rs.filter((r) => r.member.toLowerCase().includes(q) || r.service.toLowerCase().includes(q) || r.provider.toLowerCase().includes(q));
     return compareRows(rs, this.sortKey(), this.sortDir());
   });
+
+  // ---- Pagination — the worklist can hold all 247 active authorizations at once ("All Active"),
+  // so it's paged like the shared Case Explorer (same page size, same Prev/Next pattern). ----
+  readonly page = signal(0);
+  readonly totalPages = computed(() => Math.max(1, Math.ceil(this.displayRows().length / PAGE)));
+  readonly pagedRows = computed(() => this.displayRows().slice(this.page() * PAGE, this.page() * PAGE + PAGE));
+  rangeStart() { return this.displayRows().length === 0 ? 0 : this.page() * PAGE + 1; }
+  rangeEnd() { return Math.min(this.displayRows().length, (this.page() + 1) * PAGE); }
+  prev() { this.page.update((p) => Math.max(0, p - 1)); }
+  next() { this.page.update((p) => Math.min(this.totalPages() - 1, p + 1)); }
+
+  /** Double-click shortcut straight to the member's chart (Member 360) — single click opens this
+   *  tab's own cost drawer instead, so close that first to avoid both overlays stacking. */
+  openChart(r: CostInsightRow, e: MouseEvent) {
+    e.stopPropagation();
+    this.ix.closeDrawer();
+    this.members.openByName(r.member);
+  }
 
   exportFlags() {
     this.exporter.open({
