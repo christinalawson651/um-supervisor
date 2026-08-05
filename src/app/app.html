@@ -99,15 +99,17 @@
         }
 
         <!-- Tab bar -->
-        <nav class="tabbar">
-          @for (t of tabs; track t; let i = $index) {
-            <button class="tab" [class.active]="selected() === i" (click)="select(i)">{{ t }}</button>
-          }
+        <div class="tabbar-row">
+          <nav class="tabbar" #tabbar>
+            @for (t of tabs; track t; let i = $index) {
+              <button class="tab" [class.active]="selected() === i" (click)="select(i)">{{ t }}</button>
+            }
+          </nav>
           <div class="tab-scroll">
-            <button><z-icon name="chevron" [size]="14" [stroke]="2.5"></z-icon></button>
-            <button class="flip"><z-icon name="chevron" [size]="14" [stroke]="2.5"></z-icon></button>
+            <button (click)="scrollTabs(-220)" title="Scroll tabs left"><z-icon name="chevron" [size]="14" [stroke]="2.5" class="left"></z-icon></button>
+            <button (click)="scrollTabs(220)" title="Scroll tabs right"><z-icon name="chevron" [size]="14" [stroke]="2.5" class="right"></z-icon></button>
           </div>
-        </nav>
+        </div>
 
         <!-- Tab content -->
         <section class="content">

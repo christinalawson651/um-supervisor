@@ -1,4 +1,4 @@
-import { Component, signal, computed, inject } from '@angular/core';
+import { Component, signal, computed, inject, ViewChild, ElementRef } from '@angular/core';
 import { Icon } from './shared/icon';
 import { Overlays } from './shared/overlays';
 import { CaseExplorer } from './shared/case-explorer';
@@ -97,6 +97,11 @@ export class App {
   readonly selected = signal(0);
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
   readonly kpiCollapsed = signal(false); // collapsible for screen real estate
+
+  @ViewChild('tabbar') private tabbarEl?: ElementRef<HTMLElement>;
+  scrollTabs(delta: number) {
+    this.tabbarEl?.nativeElement.scrollBy({ left: delta, behavior: 'smooth' });
+  }
 
   // ---- lookback period on the KPI tiles (shared across modules) ----
   private lookback = inject(Lookback);
