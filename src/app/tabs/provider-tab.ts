@@ -67,15 +67,20 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       <div class="panel-pad tbl-head">
         <h3 class="panel-title">Providers &amp; Facilities</h3>
         <div class="view-toggle">
-          <button class="seg" [class.active]="!activeFilter() && needsAttentionOnly()" (click)="showNeedsAttention()">Needs Attention ({{ needsAttentionCount() }})</button>
-          <button class="seg" [class.active]="!activeFilter() && !needsAttentionOnly()" (click)="showAll()">All Providers ({{ rows().length }})</button>
+          <button class="seg" [class.active]="!activeFilter() && designationFilter() === 'all' && needsAttentionOnly()" (click)="showNeedsAttention()">Needs Attention ({{ needsAttentionCount() }})</button>
+          <button class="seg" [class.active]="!activeFilter() && designationFilter() === 'all' && !needsAttentionOnly()" (click)="showAll()">All Providers ({{ rows().length }})</button>
         </div>
-        @if (activeFilter()) {
+        @if (activeFilter() || designationFilter() !== 'all') {
           <span class="filter-chip">Filtered: {{ filterLabel() }} <button class="clr" (click)="clearFilter()">&times;</button></span>
         }
         <select class="prog-filter" [value]="specialtyFilter()" (change)="specialtyFilter.set($any($event.target).value)">
           <option value="all">All Specialties</option>
           @for (s of specialties(); track s) { <option [value]="s">{{ s }}</option> }
+        </select>
+        <select class="prog-filter" [value]="designationFilter()" (change)="setDesignation($any($event.target).value)">
+          <option value="all">All Designations</option>
+          <option value="vip">VIP ({{ vipCount() }})</option>
+          <option value="goldCard">Gold Card ({{ goldCardCount() }})</option>
         </select>
         <input class="search-box" type="text" placeholder="Search provider or facility…"
           [value]="search()" (input)="search.set($any($event.target).value)" />
@@ -201,11 +206,15 @@ export class ProviderTab {
 
   readonly needsAttentionOnly = signal(true);
   readonly activeFilter = signal<ProviderFlag | null>(null);
-  showNeedsAttention() { this.activeFilter.set(null); this.needsAttentionOnly.set(true); }
-  showAll() { this.activeFilter.set(null); this.needsAttentionOnly.set(false); }
-  toggleFilter(flag: ProviderFlag) { this.activeFilter.set(this.activeFilter() === flag ? null : flag); }
-  clearFilter() { this.activeFilter.set(null); }
-  filterLabel(): string { return this.tiles.find((t) => t.flag === this.activeFilter())?.label ?? ''; }
+  showNeedsAttention() { this.activeFilter.set(null); this.designationFilter.set('all'); this.needsAttentionOnly.set(true); }
+  showAll() { this.activeFilter.set(null); this.designationFilter.set('all'); this.needsAttentionOnly.set(false); }
+  toggleFilter(flag: ProviderFlag) { this.activeFilter.set(this.activeFilter() === flag ? null : flag); this.designationFilter.set('all'); }
+  clearFilter() { this.activeFilter.set(null); this.designationFilter.set('all'); }
+  filterLabel(): string {
+    const d = this.designationFilter();
+    if (d !== 'all') return d === 'vip' ? 'VIP' : 'Gold Card';
+    return this.tiles.find((t) => t.flag === this.activeFilter())?.label ?? '';
+  }
 
   tileCount(flag: ProviderFlag) { return this.rows().filter((r) => r.flags.includes(flag)).length; }
 
@@ -220,10 +229,19 @@ export class ProviderTab {
   readonly search = signal('');
   readonly specialtyFilter = signal('all');
   readonly specialties = computed(() => [...new Set(this.rows().map((r) => r.specialty))].sort());
+
+  readonly designationFilter = signal<'all' | 'vip' | 'goldCard'>('all');
+  readonly vipCount = computed(() => this.rows().filter((r) => r.vip).length);
+  readonly goldCardCount = computed(() => this.rows().filter((r) => r.goldCard).length);
+  setDesignation(v: string) { this.designationFilter.set(v as 'all' | 'vip' | 'goldCard'); this.activeFilter.set(null); }
+
   readonly displayRows = computed(() => {
     const flag = this.activeFilter();
+    const desig = this.designationFilter();
     let rs = this.rows();
-    rs = flag ? rs.filter((r) => r.flags.includes(flag)) : this.needsAttentionOnly() ? rs.filter((r) => r.needsAttention) : rs;
+    if (flag) rs = rs.filter((r) => r.flags.includes(flag));
+    else if (desig !== 'all') rs = rs.filter((r) => (desig === 'vip' ? r.vip : r.goldCard));
+    else if (this.needsAttentionOnly()) rs = rs.filter((r) => r.needsAttention);
     const spec = this.specialtyFilter();
     if (spec !== 'all') rs = rs.filter((r) => r.specialty === spec);
     const q = this.search().trim().toLowerCase();
