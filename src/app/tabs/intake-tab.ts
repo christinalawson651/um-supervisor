@@ -64,45 +64,47 @@ const PROCESSING_ORDER: IntakeProcessingStatus[] = ['Completed', 'Failed', 'No S
       }
     </div>
 
-    <!-- Intake Channel Mix -->
-    @if (!isHidden('channel-mix')) {
-    <div class="panel mt-6">
-      <div class="panel-pad tbl-head"><h3 class="panel-title">Intake Channel Mix</h3>
-        <z-widget-actions (exportClick)="exportChannelMix()" (removeClick)="hide('channel-mix')"></z-widget-actions>
-      </div>
-      <div class="ilist">
-        @for (c of channelMix(); track c.channel) {
-          <div class="irow clk" (click)="drillChannel(c.channel)">
-            <div class="ilab">{{ c.channel }}</div>
-            <div class="ibar-track"><div class="ibar-fill teal" [style.width.%]="c.pct"></div></div>
-            <div class="icount">{{ c.count }} · {{ c.pct }}%</div>
-          </div>
-        }
-      </div>
-    </div>
-    }
-
-    <!-- Routing Status -->
-    @if (!isHidden('routing')) {
-    <div class="panel mt-6">
-      <div class="panel-pad tbl-head"><h3 class="panel-title">Routing Status</h3>
-        <z-widget-actions (exportClick)="exportRouting()" (removeClick)="hide('routing')"></z-widget-actions>
-      </div>
-      <table class="z-table">
-        <thead><tr><th>Routing</th><th class="num">Standard</th><th class="num">Expedited</th><th class="num">Total</th></tr></thead>
-        <tbody>
-          @for (r of routingRows(); track r.status) {
-            <tr>
-              <td class="strong"><span class="badge" [class.green]="r.status==='Smart'" [class.blue]="r.status==='Manual'" [class.red]="r.status==='Late'">{{ r.status }}</span></td>
-              <td class="num clk" (click)="drillRouting(r.status, 'Standard')">{{ r.standard }}</td>
-              <td class="num clk" (click)="drillRouting(r.status, 'Expedited')">{{ r.expedited }}</td>
-              <td class="num clk strong" (click)="drillRouting(r.status)">{{ r.total }}</td>
-            </tr>
+    <div class="grid-2 mt-6">
+      <!-- Intake Channel Mix -->
+      @if (!isHidden('channel-mix')) {
+      <div class="panel">
+        <div class="panel-pad tbl-head"><h3 class="panel-title">Intake Channel Mix</h3>
+          <z-widget-actions (exportClick)="exportChannelMix()" (removeClick)="hide('channel-mix')"></z-widget-actions>
+        </div>
+        <div class="ilist narrow">
+          @for (c of channelMix(); track c.channel) {
+            <div class="irow clk" (click)="drillChannel(c.channel)">
+              <div class="ilab">{{ c.channel }}</div>
+              <div class="ibar-track"><div class="ibar-fill teal" [style.width.%]="c.pct"></div></div>
+              <div class="icount">{{ c.count }} · {{ c.pct }}%</div>
+            </div>
           }
-        </tbody>
-      </table>
+        </div>
+      </div>
+      }
+
+      <!-- Routing Status -->
+      @if (!isHidden('routing')) {
+      <div class="panel">
+        <div class="panel-pad tbl-head"><h3 class="panel-title">Routing Status</h3>
+          <z-widget-actions (exportClick)="exportRouting()" (removeClick)="hide('routing')"></z-widget-actions>
+        </div>
+        <table class="z-table">
+          <thead><tr><th>Routing</th><th class="num">Standard</th><th class="num">Expedited</th><th class="num">Total</th></tr></thead>
+          <tbody>
+            @for (r of routingRows(); track r.status) {
+              <tr>
+                <td class="strong"><span class="badge" [class.green]="r.status==='Smart'" [class.blue]="r.status==='Manual'" [class.red]="r.status==='Late'">{{ r.status }}</span></td>
+                <td class="num clk" (click)="drillRouting(r.status, 'Standard')">{{ r.standard }}</td>
+                <td class="num clk" (click)="drillRouting(r.status, 'Expedited')">{{ r.expedited }}</td>
+                <td class="num clk strong" (click)="drillRouting(r.status)">{{ r.total }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      }
     </div>
-    }
 
     <div class="grid-2 mt-6">
       <!-- Duplicates -->
@@ -140,49 +142,52 @@ const PROCESSING_ORDER: IntakeProcessingStatus[] = ['Completed', 'Failed', 'No S
       }
     </div>
 
-    <!-- Missing Information -->
-    @if (!isHidden('missing-info')) {
-    <div class="panel mt-6">
-      <div class="panel-pad tbl-head"><h3 class="panel-title">Missing Information</h3>
-        <z-widget-actions (exportClick)="exportMissingInfo()" (removeClick)="hide('missing-info')"></z-widget-actions>
-      </div>
-      <div class="ilist">
-        @for (m of missingInfoRows(); track m.category) {
-          <div class="irow clk" (click)="drillMissingInfo(m.category)">
-            <div class="ilab">{{ m.category }}</div>
-            <div class="ibar-track"><div class="ibar-fill amber" [style.width.%]="m.pct"></div></div>
-            <div class="icount">{{ m.count }} · {{ m.pct }}%</div>
-          </div>
-        }
-        @if (!missingInfoRows().length) { <div class="iempty">No incomplete submissions in the current scope.</div> }
-      </div>
-    </div>
-    }
-
-    @if (!isHidden('missing-fields')) {
-    <div class="panel mt-6">
-      <div class="panel-pad tbl-head"><h3 class="panel-title">Top Missing Fields</h3>
-        <z-widget-actions (exportClick)="exportMissingFields()" (removeClick)="hide('missing-fields')"></z-widget-actions>
-      </div>
-      <table class="z-table">
-        <thead>
-          <tr><th>Field</th><th>Missing Count</th><th>% of Submissions</th></tr>
-        </thead>
-        <tbody>
-          @for (f of missingFields(); track f.field) {
-            <tr class="clickable" (click)="openField(f)">
-              <td class="strong">{{ f.field }}</td>
-              <td class="num">{{ f.count }}</td>
-              <td>
-                <span class="mini-bar"><span [style.width.%]="f.pct"></span></span>
-                <span class="pct">{{ f.pct }}%</span>
-              </td>
-            </tr>
+    <div class="grid-2 mt-6">
+      <!-- Missing Information -->
+      @if (!isHidden('missing-info')) {
+      <div class="panel">
+        <div class="panel-pad tbl-head"><h3 class="panel-title">Missing Information</h3>
+          <z-widget-actions (exportClick)="exportMissingInfo()" (removeClick)="hide('missing-info')"></z-widget-actions>
+        </div>
+        <div class="ilist narrow">
+          @for (m of missingInfoRows(); track m.category) {
+            <div class="irow clk" (click)="drillMissingInfo(m.category)">
+              <div class="ilab">{{ m.category }}</div>
+              <div class="ibar-track"><div class="ibar-fill amber" [style.width.%]="m.pct"></div></div>
+              <div class="icount">{{ m.count }} · {{ m.pct }}%</div>
+            </div>
           }
-        </tbody>
-      </table>
+          @if (!missingInfoRows().length) { <div class="iempty">No incomplete submissions in the current scope.</div> }
+        </div>
+      </div>
+      }
+
+      <!-- Top Missing Fields -->
+      @if (!isHidden('missing-fields')) {
+      <div class="panel">
+        <div class="panel-pad tbl-head"><h3 class="panel-title">Top Missing Fields</h3>
+          <z-widget-actions (exportClick)="exportMissingFields()" (removeClick)="hide('missing-fields')"></z-widget-actions>
+        </div>
+        <table class="z-table">
+          <thead>
+            <tr><th>Field</th><th>Missing Count</th><th>% of Submissions</th></tr>
+          </thead>
+          <tbody>
+            @for (f of missingFields(); track f.field) {
+              <tr class="clickable" (click)="openField(f)">
+                <td class="strong">{{ f.field }}</td>
+                <td class="num">{{ f.count }}</td>
+                <td>
+                  <span class="mini-bar"><span [style.width.%]="f.pct"></span></span>
+                  <span class="pct">{{ f.pct }}%</span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      }
     </div>
-    }
 
     <div class="grid-2 mt-6">
       <!-- Auth Type / Review Timing -->
@@ -257,6 +262,7 @@ const PROCESSING_ORDER: IntakeProcessingStatus[] = ['Completed', 'Failed', 'No S
 
     .ilist { padding: 6px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
     .ilist.pad { padding: 6px 20px 20px; }
+    .ilist.narrow .irow { grid-template-columns: minmax(100px, 160px) 1fr 76px; gap: 10px; }
     .irow { display: grid; grid-template-columns: minmax(140px, 220px) 1fr 90px; align-items: center; gap: 14px;
       padding: 6px 8px; border-radius: 6px; }
     .irow:hover { background: var(--gray-100); }
