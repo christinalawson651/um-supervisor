@@ -3,12 +3,13 @@ import {
   Kpi, QueueCard, NurseRow, TatBucket, TatStat, DecisionStat, DecisionRow,
   ConcurrentRow, QualityBar, MissingField, ProviderInsightRow, ProviderFlag,
   AuditFlag, AiRecommendation, RiskCase, RiskTile, CostInsightRow, CostFlag,
+  IrrCaseRow, RegComplianceRow,
 } from './dashboard.models';
 import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
 import {
   ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf,
   providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf,
-  isDuplicateOf, duplicateResolvedOf,
+  isDuplicateOf, duplicateResolvedOf, MD_REVIEWERS, LOBS,
 } from './case-fields';
 
 /**
@@ -687,6 +688,68 @@ export function liveComplianceBars(lob?: string, withinDays?: number): QualityBa
     { label: 'Guideline Adherence', pct: pctOf(decided.filter((c) => !c.tags.includes('appeal')).length, decided.length), tone: 'teal', icon: '' },
     { label: 'Decision Rationale Documented', pct: pctOf(approved.filter((c) => !c.tags.includes('auto') && !c.tags.includes('incompleteDoc')).length, approved.length), tone: 'teal', icon: '' },
   ];
+}
+
+// ---- Inter-Rater Reliability — no real secondary-reviewer concept exists in this data model, so
+// which decided cases were IRR-sampled and whether the auditor agreed are both deterministic,
+// modeled estimates per authId (same pattern as approvalFactorOf for Cost Insights), not derived
+// from real audit records. Sampling is weighted toward denials/partials — the real-world audit
+// focus, since those carry the most appeal/compliance risk — and agreement is modeled slightly
+// lower for that same higher-risk group, which is why denials show a somewhat lower IRR rate. ----
+function irrSampledOf(c: CaseRec): boolean {
+  // Auto-approved decisions have no human reviewer (c.nurse === '—') — IRR is agreement BETWEEN
+  // raters, so there's no one to compare the auditor against.
+  if (c.tags.includes('auto') || c.nurse === '—') return false;
+  const n = Number(c.authId.slice(-2));
+  return c.decision === 'Denied' || c.decision === 'Partial' ? n % 5 < 2 : n % 10 === 0;
+}
+function irrAgreeOf(c: CaseRec): boolean {
+  const n = Number(c.authId.slice(-2)) % 100;
+  return c.decision === 'Denied' || c.decision === 'Partial' ? n >= 5 : n >= 1;
+}
+
+export function liveIrrSample(lob?: string, withinDays?: number): IrrCaseRow[] {
+  return CASE_POOL
+    .filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays) && irrSampledOf(c))
+    .map((c) => ({
+      authId: c.authId, member: c.member, procedure: c.procedure, decision: c.decision,
+      reviewer: c.nurse, auditor: MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length],
+      agree: irrAgreeOf(c),
+    }));
+}
+
+// ---- Regulatory TAT compliance by program (LOB) — each program has its own statutory decision
+// window rather than one blanket SLA. There's no real decision-date field to measure turnaround
+// against (only `submitted`), so `turnaroundDaysOf` is a modeled estimate per authId, same pattern
+// as elsewhere in this file. Thresholds and citations are real (validate exact subsections with
+// Compliance — directional only, same caveat as the member-notification regulatory reference). ----
+const REG_THRESHOLDS: Record<string, { standardDays: number; expeditedHours: number; citation: string }> = {
+  'Medicaid': { standardDays: 14, expeditedHours: 72, citation: '42 CFR §438.210' },
+  'Medicare Advantage': { standardDays: 14, expeditedHours: 72, citation: '42 CFR §422.568' },
+  'Commercial PPO': { standardDays: 15, expeditedHours: 72, citation: 'ERISA §2560.503-1' },
+  'ACA Exchange': { standardDays: 15, expeditedHours: 72, citation: 'ACA §2719' },
+};
+function turnaroundDaysOf(c: CaseRec): number {
+  const n = Number(c.authId.slice(-2));
+  return c.tags.includes('expedited') ? n % 5 : n % 18;
+}
+function isRegCompliant(c: CaseRec): boolean {
+  const threshold = REG_THRESHOLDS[lobOf(c.authId)];
+  const days = turnaroundDaysOf(c);
+  return c.tags.includes('expedited') ? days <= threshold.expeditedHours / 24 : days <= threshold.standardDays;
+}
+
+export function liveRegCompliance(withinDays?: number): RegComplianceRow[] {
+  return LOBS.map((lob) => {
+    const cs = CASE_POOL.filter((c) => c.phase === 'decided' && lobOf(c.authId) === lob && inScope(c, undefined, withinDays));
+    const compliant = cs.filter(isRegCompliant).length;
+    return { lob, compliant, total: cs.length, pct: pctOf(compliant, cs.length), ...REG_THRESHOLDS[lob] };
+  });
+}
+
+/** The actual breaching cases for one program — backs the compliance breakdown's drill-down. */
+export function regBreachesFor(lob: string, withinDays?: number): CaseRec[] {
+  return CASE_POOL.filter((c) => c.phase === 'decided' && lobOf(c.authId) === lob && inScope(c, undefined, withinDays) && !isRegCompliant(c));
 }
 
 /**

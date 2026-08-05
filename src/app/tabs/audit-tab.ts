@@ -1,5 +1,5 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { DashboardData, liveComplianceBars } from '../data/dashboard-data';
+import { Component, computed, inject } from '@angular/core';
+import { DashboardData, liveComplianceBars, liveIrrSample, liveRegCompliance, regBreachesFor, inScope } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
@@ -9,11 +9,20 @@ import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
+import { CASE_POOL, CaseRec } from '../data/case-pool';
+import { COLUMNS, toRow } from '../shared/metrics';
 
 const AUDIT_WIDGETS = [
-  { id: 'Documentation Completeness', title: 'Documentation Completeness' }, { id: 'Guideline Adherence', title: 'Guideline Adherence' },
-  { id: 'Decision Rationale Documented', title: 'Decision Rationale Documented' }, { id: 'audit-flags', title: 'Audit Flags' },
+  { id: 'quality', title: 'Internal Quality' },
+  { id: 'irr', title: 'Inter-Rater Reliability' },
+  { id: 'irrByReviewer', title: 'IRR Agreement by Reviewer' },
+  { id: 'regTat', title: 'Regulatory TAT Compliance by Program' },
+  { id: 'audit-flags', title: 'Audit Flags' },
 ];
+
+const REG_TARGET_PCT = 90;
+const IRR_TARGET_PCT = 90;
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 @Component({
   selector: 'app-audit-tab',
@@ -22,24 +31,92 @@ const AUDIT_WIDGETS = [
   template: `
     <div class="tab-head">
       <h2>Audit &amp; Compliance</h2>
-      <span class="section-note">Compliance metrics and audit trail</span>
+      <span class="section-note">Internal quality review and regulatory compliance evidence — click a tile to drill in</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
 
     <z-widget-customize [vis]="vis"></z-widget-customize>
 
-    <div class="grid-3">
-      @for (b of complianceBars(); track b.label; let i = $index) {
-        @if (!isHidden(b.label)) {
-          <div class="panel panel-pad bar-block clickable" (click)="metrics.open(barKeys[i])">
-            <z-widget-actions (exportClick)="exportBar(b)" (removeClick)="hide(b.label)"></z-widget-actions>
-            <div class="clab">{{ b.label }}</div>
-            <div class="cval">{{ b.pct }}%</div>
-            <div class="pbar"><span [style.width.%]="b.pct"></span></div>
+    @if (!isHidden('quality')) {
+    <div class="panel">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Internal Quality</h3>
+        <z-widget-actions (exportClick)="exportQuality()" (removeClick)="hide('quality')"></z-widget-actions>
+      </div>
+      <div class="tile-row panel-pad">
+        @for (b of complianceBars(); track b.label; let i = $index) {
+          <div class="tile" (click)="metrics.open(barKeys[i])">
+            <div class="tile-val">{{ b.pct }}%</div>
+            <div class="tile-lab">{{ b.label }}</div>
           </div>
         }
-      }
+      </div>
     </div>
+    }
+
+    @if (!isHidden('irr')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Inter-Rater Reliability (IRR)</h3>
+        <z-widget-actions (exportClick)="exportIrr()" (removeClick)="hide('irr')"></z-widget-actions>
+      </div>
+      <div class="tile-row kpi-row panel-pad">
+        <div class="tile" (click)="drillIrrAll()">
+          <div class="tile-val">{{ irrAgreementRate() }}%</div>
+          <div class="tile-lab">IRR Agreement Rate</div>
+        </div>
+        <div class="tile" (click)="drillReviewersBelow()">
+          <div class="tile-ic" [class.hot]="reviewersBelowThreshold() > 0"></div>
+          <div class="tile-val">{{ reviewersBelowThreshold() }}</div>
+          <div class="tile-lab">Reviewers Below {{ irrTarget }}% Threshold</div>
+        </div>
+        <div class="tile" (click)="drillDenialSample()">
+          <div class="tile-val">{{ denialSampleCoverage() }}%</div>
+          <div class="tile-lab">Denial/Partial Sample Coverage</div>
+        </div>
+      </div>
+    </div>
+    }
+
+    @if (!isHidden('irrByReviewer')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">IRR Agreement by Reviewer</h3>
+        <z-widget-actions (exportClick)="exportIrrByReviewer()" (removeClick)="hide('irrByReviewer')"></z-widget-actions>
+      </div>
+      <div class="ilist">
+        @for (r of irrByReviewer(); track r.reviewer) {
+          <div class="irow clk" (click)="drillReviewer(r.reviewer)">
+            <div class="ilab">{{ r.reviewer }}</div>
+            <div class="ibar-track"><div class="ibar-fill" [class.amber]="r.pct < irrTarget" [class.teal]="r.pct >= irrTarget" [style.width.%]="r.pct"></div></div>
+            <div class="icount">{{ r.agree }}/{{ r.sampled }} · {{ r.pct }}%</div>
+          </div>
+        }
+      </div>
+    </div>
+    }
+
+    @if (!isHidden('regTat')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Regulatory TAT Compliance by Program</h3>
+        <span class="section-note sm">Standard decision window / expedited window, per program's own statutory requirement</span>
+        <z-widget-actions (exportClick)="exportRegTat()" (removeClick)="hide('regTat')"></z-widget-actions>
+      </div>
+      <div class="tile-row kpi-row panel-pad no-bottom">
+        <div class="tile" (click)="drillProgramsBelow()">
+          <div class="tile-ic" [class.hot]="programsBelow() > 0"></div>
+          <div class="tile-val">{{ programsBelow() }}</div>
+          <div class="tile-lab">Programs Below {{ regTarget }}% Target</div>
+        </div>
+      </div>
+      <div class="ilist">
+        @for (r of regCompliance(); track r.lob) {
+          <div class="irow clk" (click)="drillLob(r.lob)">
+            <div class="ilab">{{ r.lob }}<span class="cite">{{ r.standardDays }}d / {{ r.expeditedHours }}h · {{ r.citation }}</span></div>
+            <div class="ibar-track"><div class="ibar-fill" [class.amber]="r.pct < regTarget" [class.teal]="r.pct >= regTarget" [style.width.%]="r.pct"></div></div>
+            <div class="icount">{{ r.compliant }}/{{ r.total }} · {{ r.pct }}%</div>
+          </div>
+        }
+      </div>
+    </div>
+    }
 
     @if (!isHidden('audit-flags')) {
     <div class="panel mt-6">
@@ -70,14 +147,41 @@ const AUDIT_WIDGETS = [
     }
   `,
   styles: [`
-    .clab { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
-    .cval { font-size: 26px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
-    .clickable { cursor: pointer; }
-    .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
-    .bar-block, .tbl-head { position: relative; }
-    .bar-block:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
     .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
     .cz-btn { margin-left: auto; flex-shrink: 0; }
+    .tbl-head { position: relative; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .tbl-head:hover z-widget-actions { opacity: 1; }
+    .panel-title { margin-right: auto; }
+    .section-note.sm { font-size: 12px; margin-right: auto; }
+
+    .tile-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .kpi-row { grid-template-columns: repeat(3, 1fr); }
+    .tile-row.no-bottom { padding-bottom: 4px; }
+    .tile {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
+      cursor: pointer; background: #fff; transition: border-color .15s, box-shadow .15s;
+    }
+    .tile:hover { box-shadow: var(--shadow); }
+    .tile-ic.hot { width: 10px; height: 10px; border-radius: 999px; background: var(--amber); }
+    .tile-val { font-size: 22px; font-weight: 700; color: var(--ink); }
+    .tile-lab { font-size: 11px; color: var(--gray-500); font-weight: 600; line-height: 1.3; }
+
+    .ilist { padding: 6px 20px 20px; display: flex; flex-direction: column; gap: 8px; }
+    .irow { display: grid; grid-template-columns: minmax(140px, 220px) 1fr 90px; align-items: center; gap: 14px;
+      padding: 6px 8px; border-radius: 8px; }
+    .irow.clk { cursor: pointer; }
+    .irow.clk:hover { background: var(--gray-100); }
+    .ilab { font-size: 13px; color: var(--ink); font-weight: 500; display: flex; flex-direction: column; }
+    .cite { font-size: 10.5px; color: var(--gray-500); font-weight: 600; margin-top: 1px; }
+    .ibar-track { height: 8px; background: var(--gray-100); border-radius: 4px; overflow: hidden; }
+    .ibar-fill { height: 100%; border-radius: 4px; }
+    .ibar-fill.teal { background: var(--teal-600); }
+    .ibar-fill.amber { background: var(--amber); }
+    .icount { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--gray-500); }
+
+    .clickable { cursor: pointer; }
+    .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
   `],
 })
 export class AuditTab {
@@ -88,20 +192,130 @@ export class AuditTab {
   private lookback = inject(Lookback);
   private exporter = inject(Exporter);
   readonly barKeys = ['audit.doc', 'audit.guideline', 'audit.rationale'];
+  readonly regTarget = REG_TARGET_PCT;
+  readonly irrTarget = IRR_TARGET_PCT;
 
-  readonly complianceBars = computed(() => {
-    const lob = this.lobFilter.value();
-    const period = this.lookback.period();
-    return liveComplianceBars(lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays());
-  });
-
-  // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
-  readonly vis = new WidgetVisibility('zyter-um-audit-widgets-v1', AUDIT_WIDGETS);
+  readonly vis = new WidgetVisibility('zyter-um-audit-widgets-v2', AUDIT_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
 
-  exportBar(b: { label: string; pct: number }) {
-    this.exporter.open({ title: b.label, name: `audit-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[b.label, `${b.pct}%`]] });
+  private scopeArgs(): [string | undefined, number | undefined] {
+    const lob = this.lobFilter.value();
+    const period = this.lookback.period();
+    return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];
+  }
+  private withinDays(): number | undefined {
+    const period = this.lookback.period();
+    return period === '30d' ? undefined : this.lookback.windowDays();
+  }
+
+  readonly complianceBars = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    return liveComplianceBars(lob, days);
+  });
+
+  // ---- Inter-Rater Reliability ----
+  readonly irrSample = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    return liveIrrSample(lob, days);
+  });
+  readonly irrAgreementRate = computed(() => {
+    const s = this.irrSample();
+    return s.length ? Math.round((s.filter((r) => r.agree).length / s.length) * 100) : 0;
+  });
+  readonly irrByReviewer = computed(() => {
+    const s = this.irrSample();
+    return [...new Set(s.map((r) => r.reviewer))]
+      .map((reviewer) => {
+        const rs = s.filter((r) => r.reviewer === reviewer);
+        const agree = rs.filter((r) => r.agree).length;
+        return { reviewer, sampled: rs.length, agree, pct: rs.length ? Math.round((agree / rs.length) * 100) : 0 };
+      })
+      .sort((a, b) => a.pct - b.pct);
+  });
+  readonly reviewersBelowThreshold = computed(() => this.irrByReviewer().filter((r) => r.sampled >= 3 && r.pct < this.irrTarget).length);
+  readonly denialSampleCoverage = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    const allDenials = CASE_POOL.filter((c) => c.phase === 'decided' && (c.decision === 'Denied' || c.decision === 'Partial') && inScope(c, lob, days));
+    const sampled = this.irrSample().filter((r) => r.decision === 'Denied' || r.decision === 'Partial');
+    return allDenials.length ? Math.round((sampled.length / allDenials.length) * 100) : 0;
+  });
+
+  // ---- Regulatory TAT compliance by program ----
+  readonly regCompliance = computed(() => liveRegCompliance(this.withinDays()));
+  readonly programsBelow = computed(() => this.regCompliance().filter((r) => r.pct < this.regTarget).length);
+
+  private casesByAuthIds(ids: Set<string>): CaseRec[] {
+    const [lob, days] = this.scopeArgs();
+    return CASE_POOL.filter((c) => ids.has(c.authId) && inScope(c, lob, days));
+  }
+  private openCases(title: string, cs: CaseRec[], exportSlug: string, context?: string) {
+    this.ix.openExplorer({
+      title, context: context ?? `${cs.length} authorization(s)`,
+      columns: COLUMNS, rows: cs.map(toRow),
+      exportName: `audit-${exportSlug}_2026-07-17`, memberColumn: 1,
+    });
+  }
+
+  drillIrrAll() {
+    const cs = this.casesByAuthIds(new Set(this.irrSample().map((r) => r.authId)));
+    this.openCases('IRR-Sampled Decisions', cs, 'irr-sample', `${cs.length} decision(s) sampled for Inter-Rater Reliability review`);
+  }
+  drillReviewer(reviewer: string) {
+    const ids = new Set(this.irrSample().filter((r) => r.reviewer === reviewer).map((r) => r.authId));
+    this.openCases(`IRR Sample — ${reviewer}`, this.casesByAuthIds(ids), `irr-${slug(reviewer)}`);
+  }
+  drillReviewersBelow() {
+    const names = new Set(this.irrByReviewer().filter((r) => r.sampled >= 3 && r.pct < this.irrTarget).map((r) => r.reviewer));
+    const ids = new Set(this.irrSample().filter((r) => names.has(r.reviewer)).map((r) => r.authId));
+    this.openCases('IRR Sample — Reviewers Below Threshold', this.casesByAuthIds(ids), 'irr-below-threshold');
+  }
+  drillDenialSample() {
+    const [lob, days] = this.scopeArgs();
+    const cs = CASE_POOL.filter((c) => c.phase === 'decided' && (c.decision === 'Denied' || c.decision === 'Partial') && inScope(c, lob, days));
+    this.openCases('Denials & Partial Approvals', cs, 'denials-partials', `${cs.length} denial/partial decision(s) — IRR-sampled subset shown via the icons noted on export`);
+  }
+
+  drillLob(lob: string) {
+    const cs = regBreachesFor(lob, this.withinDays());
+    this.openCases(`${lob} — Regulatory TAT Breaches`, cs, `reg-${slug(lob)}`, `${cs.length} decision(s) exceeded ${lob}'s regulatory decision window`);
+  }
+  drillProgramsBelow() {
+    const below = this.regCompliance().filter((r) => r.pct < this.regTarget).map((r) => r.lob);
+    const cs = below.flatMap((lob) => regBreachesFor(lob, this.withinDays()));
+    this.openCases('Regulatory TAT Breaches — Programs Below Target', cs, 'reg-below-target');
+  }
+
+  exportQuality() {
+    this.exporter.open({
+      title: 'Internal Quality', name: 'audit-internal-quality_2026-07-17',
+      columns: ['Metric', 'Value'], rows: this.complianceBars().map((b) => [b.label, `${b.pct}%`]),
+    });
+  }
+  exportIrr() {
+    this.exporter.open({
+      title: 'Inter-Rater Reliability', name: 'audit-irr_2026-07-17',
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['IRR Agreement Rate', `${this.irrAgreementRate()}%`],
+        ['Reviewers Below Threshold', this.reviewersBelowThreshold()],
+        ['Denial/Partial Sample Coverage', `${this.denialSampleCoverage()}%`],
+      ],
+    });
+  }
+  exportIrrByReviewer() {
+    this.exporter.open({
+      title: 'IRR Agreement by Reviewer', name: 'audit-irr-by-reviewer_2026-07-17',
+      columns: ['Reviewer', 'Agreements', 'Sampled', 'Agreement Rate %'],
+      rows: this.irrByReviewer().map((r) => [r.reviewer, r.agree, r.sampled, r.pct]),
+    });
+  }
+  exportRegTat() {
+    this.exporter.open({
+      title: 'Regulatory TAT Compliance by Program', name: 'audit-reg-tat_2026-07-17',
+      columns: ['Program', 'Standard Window (days)', 'Expedited Window (hours)', 'Citation', 'Compliant', 'Total', 'Compliance %'],
+      rows: this.regCompliance().map((r) => [r.lob, r.standardDays, r.expeditedHours, r.citation, r.compliant, r.total, r.pct]),
+    });
   }
   exportFlags() {
     this.exporter.open({
