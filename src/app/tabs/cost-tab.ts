@@ -1,8 +1,7 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { DashboardData, liveCostInsights } from '../data/dashboard-data';
+import { Component, computed, inject } from '@angular/core';
+import { DashboardData, liveCostInsights, inScope } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
-import { CostInsightRow, CostFlag } from '../data/dashboard.models';
-import { compareRows, caretFor, SortDir } from '../shared/sort';
+import { CostFlag } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
@@ -10,15 +9,14 @@ import { WidgetCustomize } from '../shared/widget-customize';
 import { Exporter } from '../shared/exporter';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
-import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
-import { Reassign } from '../shared/reassign';
-import { Members } from '../shared/members';
-
-const PAGE = 12;
+import { CASE_POOL, CaseRec } from '../data/case-pool';
+import { COLUMNS, toRow } from '../shared/metrics';
 
 const COST_WIDGETS = [
+  { id: 'kpis', title: 'Cost Overview' },
   { id: 'flags', title: 'Needs-Attention Summary' },
-  { id: 'grid', title: 'Authorization Worklist' },
+  { id: 'byService', title: 'Cost Exposure by Service Type' },
+  { id: 'byNetwork', title: 'Cost Exposure by Network Status' },
 ];
 
 interface FlagTile { flag: CostFlag; label: string; icon: string; }
@@ -33,6 +31,7 @@ const FLAG_TILES: FlagTile[] = [
 ];
 
 const fmt = (n: number) => `$${n.toLocaleString()}`;
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 @Component({
   selector: 'app-cost-tab',
@@ -41,19 +40,49 @@ const fmt = (n: number) => `$${n.toLocaleString()}`;
   template: `
     <div class="tab-head">
       <h2>Cost &amp; Utilization Insights</h2>
-      <span class="section-note">Which active authorizations may create unusually high cost, payment exposure, or avoidable utilization</span>
+      <span class="section-note">Which active authorizations may create unusually high cost, payment exposure, or avoidable utilization — click a tile to drill in</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
     <z-widget-customize [vis]="vis"></z-widget-customize>
 
-    @if (!isHidden('flags')) {
+    @if (!isHidden('kpis')) {
     <div class="panel">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Cost Overview</h3>
+        <z-widget-actions (exportClick)="exportKpis()" (removeClick)="hide('kpis')"></z-widget-actions>
+      </div>
+      <div class="tile-row kpi-row panel-pad">
+        <div class="tile" (click)="drillAll()">
+          <div class="tile-ic"><z-icon name="folder" [size]="16" [stroke]="1.8"></z-icon></div>
+          <div class="tile-val">{{ totalActive() }}</div>
+          <div class="tile-lab">Active Authorizations</div>
+        </div>
+        <div class="tile" (click)="drillNeedsAttention()">
+          <div class="tile-ic hot"><z-icon name="alert" [size]="16" [stroke]="1.8"></z-icon></div>
+          <div class="tile-val">{{ needsAttentionCount() }}</div>
+          <div class="tile-lab">Needing Attention</div>
+        </div>
+        <div class="tile" (click)="drillNeedsAttention()">
+          <div class="tile-ic hot"><z-icon name="dollar" [size]="16" [stroke]="1.8"></z-icon></div>
+          <div class="tile-val">{{ fmt(totalExposure()) }}</div>
+          <div class="tile-lab">Total Cost Exposure (Estimate)</div>
+        </div>
+        <div class="tile no-clk">
+          <div class="tile-ic"><z-icon name="swap" [size]="16" [stroke]="1.8"></z-icon></div>
+          <div class="tile-val">{{ avgVariancePct() }}%</div>
+          <div class="tile-lab">Avg Requested-vs-Approved Variance</div>
+        </div>
+      </div>
+    </div>
+    }
+
+    @if (!isHidden('flags')) {
+    <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Needs-Attention Summary</h3>
         <z-widget-actions (exportClick)="exportFlags()" (removeClick)="hide('flags')"></z-widget-actions>
       </div>
       <div class="tile-row panel-pad">
         @for (t of tiles; track t.flag) {
-          <div class="tile" [class.active]="activeFilter() === t.flag" (click)="toggleFilter(t.flag)">
+          <div class="tile" (click)="drillFlag(t.flag)">
             <div class="tile-ic" [class.hot]="tileCount(t.flag) > 0"><z-icon [name]="t.icon" [size]="16" [stroke]="1.8"></z-icon></div>
             <div class="tile-val">{{ tileCount(t.flag) }}</div>
             <div class="tile-lab">{{ t.label }}</div>
@@ -63,76 +92,40 @@ const fmt = (n: number) => `$${n.toLocaleString()}`;
     </div>
     }
 
-    @if (!isHidden('grid')) {
-    <div class="panel mt-6">
-      <div class="panel-pad tbl-head">
-        <h3 class="panel-title">Authorization Worklist</h3>
-        <div class="view-toggle">
-          <button class="seg" [class.active]="!activeFilter() && needsAttentionOnly()" (click)="showNeedsAttention()">Needs Attention ({{ needsAttentionCount() }})</button>
-          <button class="seg" [class.active]="!activeFilter() && !needsAttentionOnly()" (click)="showAll()">All Active ({{ rows().length }})</button>
+    <div class="grid-2 mt-6">
+      @if (!isHidden('byService')) {
+      <div class="panel">
+        <div class="panel-pad tbl-head"><h3 class="panel-title">Cost Exposure by Service Type</h3>
+          <z-widget-actions (exportClick)="exportByService()" (removeClick)="hide('byService')"></z-widget-actions>
         </div>
-        @if (activeFilter()) {
-          <span class="filter-chip">Filtered: {{ filterLabel() }} <button class="clr" (click)="clearFilter()">&times;</button></span>
-        }
-        <select class="prog-filter" [value]="serviceTypeFilter()" (change)="setServiceType($any($event.target).value)">
-          <option value="all">All Service Types</option>
-          @for (s of serviceTypes(); track s) { <option [value]="s">{{ s }}</option> }
-        </select>
-        <input class="search-box" type="text" placeholder="Search member, service or provider…"
-          [value]="search()" (input)="setSearch($any($event.target).value)" />
-        <z-widget-actions (exportClick)="exportGrid()" (removeClick)="hide('grid')"></z-widget-actions>
+        <div class="ilist">
+          @for (s of byServiceType(); track s.type) {
+            <div class="irow clk" (click)="drillServiceType(s.type)">
+              <div class="ilab">{{ s.type }}</div>
+              <div class="ibar-track"><div class="ibar-fill teal" [style.width.%]="s.pct"></div></div>
+              <div class="icount">{{ s.count }} · {{ s.pct }}%</div>
+            </div>
+          }
+        </div>
       </div>
-      <table class="z-table compact">
-        <thead>
-          <tr>
-            <th class="sortable" (click)="sortBy('member')">Member{{ caret('member') }}</th>
-            <th class="sortable" (click)="sortBy('service')">Service{{ caret('service') }}</th>
-            <th class="sortable" (click)="sortBy('provider')">Provider/Facility{{ caret('provider') }}</th>
-            <th class="sortable" (click)="sortBy('networkStatus')">Network Status{{ caret('networkStatus') }}</th>
-            <th class="sortable num" (click)="sortBy('requestedCost')">Est. Requested{{ caret('requestedCost') }}</th>
-            <th class="sortable num" (click)="sortBy('approvedCost')">Est. Approved{{ caret('approvedCost') }}</th>
-            <th class="sortable num" (click)="sortBy('los')">LOS{{ caret('los') }}</th>
-            <th class="sortable num" (click)="sortBy('certifiedDays')">Certified{{ caret('certifiedDays') }}</th>
-            <th class="sortable num" (click)="sortBy('uncertifiedDays')">Uncertified{{ caret('uncertifiedDays') }}</th>
-            <th class="sortable num" (click)="sortBy('costExposure')">Cost Exposure{{ caret('costExposure') }}</th>
-            <th class="sortable" (click)="sortBy('assignedTo')">Assigned To{{ caret('assignedTo') }}</th>
-            <th>Primary Insight</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (r of pagedRows(); track r.authId) {
-            <tr class="clickable" [class.attn]="r.needsAttention" (click)="open(r)" (dblclick)="openChart(r, $event)" title="Double-click to open member chart">
-              <td class="strong">{{ r.member }}</td>
-              <td>{{ r.service }}<span class="svc-type">{{ r.serviceType }}</span></td>
-              <td>{{ r.provider }}</td>
-              <td><span class="badge" [class.green]="r.networkStatus === 'In-Network'" [class.blue]="r.networkStatus === 'Delegated'"
-                    [class.red]="r.networkStatus === 'Out-of-Network' || r.networkStatus === 'Exception'">{{ r.networkStatus }}</span></td>
-              <td class="num" [class.danger]="r.flags.includes('highCost') || r.flags.includes('highCostDrug')">{{ fmt(r.requestedCost) }}</td>
-              <td class="num">{{ fmt(r.approvedCost) }}</td>
-              <td class="num">{{ r.los ?? '—' }}</td>
-              <td class="num">{{ r.certifiedDays ?? '—' }}</td>
-              <td class="num" [class.danger]="!!r.uncertifiedDays">{{ r.uncertifiedDays ?? '—' }}</td>
-              <td class="num" [class.danger]="r.costExposure > 0">{{ r.costExposure > 0 ? fmt(r.costExposure) : '—' }}</td>
-              <td>{{ r.assignedTo }}</td>
-              <td class="insight" [class.ok]="!r.needsAttention">{{ r.primaryInsight }}</td>
-            </tr>
-          }
-          @if (!displayRows().length) {
-            <tr><td colspan="12" class="empty">No authorizations match this view.</td></tr>
-          }
-        </tbody>
-      </table>
-      @if (displayRows().length) {
-        <div class="pager">
-          <span>Showing {{ rangeStart() }}–{{ rangeEnd() }} of {{ displayRows().length }}</span>
-          <span class="spacer"></span>
-          <button class="btn outline sm" [disabled]="page() === 0" (click)="prev()">‹ Prev</button>
-          <span class="pnum">Page {{ page() + 1 }} of {{ totalPages() }}</span>
-          <button class="btn outline sm" [disabled]="page() >= totalPages() - 1" (click)="next()">Next ›</button>
+      }
+      @if (!isHidden('byNetwork')) {
+      <div class="panel">
+        <div class="panel-pad tbl-head"><h3 class="panel-title">Cost Exposure by Network Status</h3>
+          <z-widget-actions (exportClick)="exportByNetwork()" (removeClick)="hide('byNetwork')"></z-widget-actions>
         </div>
+        <div class="ilist">
+          @for (s of byNetworkStatus(); track s.status) {
+            <div class="irow clk" (click)="drillNetworkStatus(s.status)">
+              <div class="ilab">{{ s.status }}</div>
+              <div class="ibar-track"><div class="ibar-fill amber" [style.width.%]="s.pct"></div></div>
+              <div class="icount">{{ s.count }} · {{ s.pct }}%</div>
+            </div>
+          }
+        </div>
+      </div>
       }
     </div>
-    }
   `,
   styles: [`
     .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
@@ -142,43 +135,33 @@ const fmt = (n: number) => `$${n.toLocaleString()}`;
     .panel-title { margin-right: auto; }
 
     .tile-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
+    .kpi-row { grid-template-columns: repeat(4, 1fr); }
     .tile {
       display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
       border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
       cursor: pointer; background: #fff; transition: border-color .15s, box-shadow .15s;
     }
     .tile:hover { box-shadow: var(--shadow); }
-    .tile.active { border-color: var(--teal-700); box-shadow: 0 0 0 1px var(--teal-700) inset; }
+    .tile.no-clk { cursor: default; }
+    .tile.no-clk:hover { box-shadow: none; }
     .tile-ic { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
       background: var(--gray-100); color: var(--gray-500); }
     .tile-ic.hot { background: var(--amber-bg); color: var(--amber-fg); }
     .tile-val { font-size: 20px; font-weight: 700; color: var(--ink); }
     .tile-lab { font-size: 11px; color: var(--gray-500); font-weight: 600; line-height: 1.3; }
 
-    .view-toggle { display: flex; gap: 4px; background: var(--gray-100); border-radius: 8px; padding: 3px; }
-    .seg { border: none; background: transparent; padding: 5px 10px; border-radius: 6px; font-size: 12.5px;
-      font-weight: 600; color: var(--ink-soft); cursor: pointer; }
-    .seg.active { background: #fff; color: var(--teal-700); box-shadow: var(--shadow); }
-    .filter-chip { font-size: 12px; color: var(--teal-900); background: var(--teal-50); border: 1px solid var(--teal-100);
-      border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
-    .filter-chip .clr { border: none; background: none; cursor: pointer; color: var(--teal-900); font-size: 14px; line-height: 1; padding: 0; }
-    .prog-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
-      font-size: 12.5px; color: var(--ink-soft); margin-left: auto; }
-    .search-box { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12.5px;
-      width: 200px; outline: none; }
-    .search-box:focus { border-color: var(--teal-600); }
-
-    .svc-type { display: block; font-size: 10.5px; color: var(--gray-500); font-weight: 600; margin-top: 1px; }
-    .clickable { cursor: pointer; }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { color: var(--ink-soft); }
-    tr.attn { border-left: 3px solid var(--amber); }
-    .insight { max-width: 240px; font-size: 12.5px; color: var(--ink-soft); }
-    .insight.ok { color: var(--green-fg); }
-    .empty { text-align: center; color: var(--gray-500); padding: 24px; }
-    .pager { display: flex; align-items: center; gap: 12px; padding: 12px 16px; font-size: 12.5px; color: var(--ink-soft); }
-    .pager .spacer { flex: 1; }
-    .pnum { font-weight: 600; color: var(--ink); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+    .ilist { padding: 6px 20px 20px; display: flex; flex-direction: column; gap: 8px; }
+    .irow { display: grid; grid-template-columns: minmax(100px, 150px) 1fr 70px; align-items: center; gap: 10px;
+      padding: 6px 8px; border-radius: 8px; }
+    .irow.clk { cursor: pointer; }
+    .irow.clk:hover { background: var(--gray-100); }
+    .ilab { font-size: 13px; color: var(--ink); font-weight: 500; }
+    .ibar-track { height: 8px; background: var(--gray-100); border-radius: 4px; overflow: hidden; }
+    .ibar-fill { height: 100%; border-radius: 4px; }
+    .ibar-fill.teal { background: var(--teal-600); }
+    .ibar-fill.amber { background: var(--amber); }
+    .icount { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--gray-500); }
   `],
 })
 export class CostTab {
@@ -187,12 +170,9 @@ export class CostTab {
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
   private exporter = inject(Exporter);
-  private esc = inject(Escalate);
-  private rx = inject(Reassign);
-  private members = inject(Members);
 
   readonly tiles = FLAG_TILES;
-  readonly vis = new WidgetVisibility('zyter-um-cost-widgets-v1', COST_WIDGETS);
+  readonly vis = new WidgetVisibility('zyter-um-cost-widgets-v2', COST_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
   fmt = fmt;
@@ -207,62 +187,81 @@ export class CostTab {
     const [lob, days] = this.scopeArgs();
     return liveCostInsights(lob, days);
   });
-  readonly needsAttentionCount = computed(() => this.rows().filter((r) => r.needsAttention).length);
 
-  readonly needsAttentionOnly = signal(true);
-  readonly activeFilter = signal<CostFlag | null>(null);
-  showNeedsAttention() { this.activeFilter.set(null); this.needsAttentionOnly.set(true); this.page.set(0); }
-  showAll() { this.activeFilter.set(null); this.needsAttentionOnly.set(false); this.page.set(0); }
-  toggleFilter(flag: CostFlag) { this.activeFilter.set(this.activeFilter() === flag ? null : flag); this.page.set(0); }
-  clearFilter() { this.activeFilter.set(null); this.page.set(0); }
-  filterLabel(): string { return this.tiles.find((t) => t.flag === this.activeFilter())?.label ?? ''; }
+  readonly totalActive = computed(() => this.rows().length);
+  readonly needsAttentionCount = computed(() => this.rows().filter((r) => r.needsAttention).length);
+  readonly totalExposure = computed(() => this.rows().reduce((s, r) => s + r.costExposure, 0));
+  readonly avgVariancePct = computed(() => {
+    const cs = this.rows().filter((r) => r.requestedCost > 0);
+    if (!cs.length) return 0;
+    return Math.round((cs.reduce((s, r) => s + r.costVariance / r.requestedCost, 0) / cs.length) * 100);
+  });
 
   tileCount(flag: CostFlag) { return this.rows().filter((r) => r.flags.includes(flag)).length; }
 
-  readonly sortKey = signal<keyof CostInsightRow | ''>('costExposure');
-  readonly sortDir = signal<SortDir>(-1);
-  sortBy(k: keyof CostInsightRow) {
-    if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
-    else { this.sortKey.set(k); this.sortDir.set(1); }
-    this.page.set(0);
-  }
-  caret(k: keyof CostInsightRow) { return caretFor(this.sortKey(), k, this.sortDir()); }
-
-  readonly search = signal('');
-  readonly serviceTypeFilter = signal('all');
-  readonly serviceTypes = computed(() => [...new Set(this.rows().map((r) => r.serviceType))].sort());
-  setSearch(v: string) { this.search.set(v); this.page.set(0); }
-  setServiceType(v: string) { this.serviceTypeFilter.set(v); this.page.set(0); }
-
-  readonly displayRows = computed(() => {
-    const flag = this.activeFilter();
-    let rs = this.rows();
-    rs = flag ? rs.filter((r) => r.flags.includes(flag)) : this.needsAttentionOnly() ? rs.filter((r) => r.needsAttention) : rs;
-    const svc = this.serviceTypeFilter();
-    if (svc !== 'all') rs = rs.filter((r) => r.serviceType === svc);
-    const q = this.search().trim().toLowerCase();
-    if (q) rs = rs.filter((r) => r.member.toLowerCase().includes(q) || r.service.toLowerCase().includes(q) || r.provider.toLowerCase().includes(q));
-    return compareRows(rs, this.sortKey(), this.sortDir());
+  readonly byServiceType = computed(() => {
+    const attn = this.rows().filter((r) => r.needsAttention);
+    const total = attn.length || 1;
+    return [...new Set(this.rows().map((r) => r.serviceType))]
+      .map((type) => { const count = attn.filter((r) => r.serviceType === type).length; return { type, count, pct: Math.round((count / total) * 100) }; })
+      .sort((a, b) => b.count - a.count);
   });
 
-  // ---- Pagination — the worklist can hold all 247 active authorizations at once ("All Active"),
-  // so it's paged like the shared Case Explorer (same page size, same Prev/Next pattern). ----
-  readonly page = signal(0);
-  readonly totalPages = computed(() => Math.max(1, Math.ceil(this.displayRows().length / PAGE)));
-  readonly pagedRows = computed(() => this.displayRows().slice(this.page() * PAGE, this.page() * PAGE + PAGE));
-  rangeStart() { return this.displayRows().length === 0 ? 0 : this.page() * PAGE + 1; }
-  rangeEnd() { return Math.min(this.displayRows().length, (this.page() + 1) * PAGE); }
-  prev() { this.page.update((p) => Math.max(0, p - 1)); }
-  next() { this.page.update((p) => Math.min(this.totalPages() - 1, p + 1)); }
+  readonly byNetworkStatus = computed(() => {
+    const attn = this.rows().filter((r) => r.needsAttention);
+    const total = attn.length || 1;
+    return [...new Set(this.rows().map((r) => r.networkStatus))]
+      .map((status) => { const count = attn.filter((r) => r.networkStatus === status).length; return { status, count, pct: Math.round((count / total) * 100) }; })
+      .sort((a, b) => b.count - a.count);
+  });
 
-  /** Double-click shortcut straight to the member's chart (Member 360) — single click opens this
-   *  tab's own cost drawer instead, so close that first to avoid both overlays stacking. */
-  openChart(r: CostInsightRow, e: MouseEvent) {
-    e.stopPropagation();
-    this.ix.closeDrawer();
-    this.members.openByName(r.member);
+  private casesByAuthIds(ids: Set<string>): CaseRec[] {
+    const [lob, days] = this.scopeArgs();
+    return CASE_POOL.filter((c) => ids.has(c.authId) && inScope(c, lob, days));
   }
 
+  private openCases(title: string, cs: CaseRec[], exportSlug: string, context?: string) {
+    this.ix.openExplorer({
+      title, context: context ?? `${cs.length} authorization(s)`,
+      columns: COLUMNS, rows: cs.map(toRow),
+      exportName: `cost-${exportSlug}_2026-07-17`, memberColumn: 1,
+    });
+  }
+
+  drillAll() {
+    const cs = this.casesByAuthIds(new Set(this.rows().map((r) => r.authId)));
+    this.openCases('All Active Authorizations', cs, 'all-active');
+  }
+  drillNeedsAttention() {
+    const cs = this.casesByAuthIds(new Set(this.rows().filter((r) => r.needsAttention).map((r) => r.authId)));
+    this.openCases('Authorizations Needing Attention', cs, 'needs-attention');
+  }
+  drillFlag(flag: CostFlag) {
+    const label = this.tiles.find((t) => t.flag === flag)?.label ?? flag;
+    const cs = this.casesByAuthIds(new Set(this.rows().filter((r) => r.flags.includes(flag)).map((r) => r.authId)));
+    this.openCases(label, cs, flag, `${cs.length} authorization(s) — ${label}`);
+  }
+  drillServiceType(type: string) {
+    const cs = this.casesByAuthIds(new Set(this.rows().filter((r) => r.needsAttention && r.serviceType === type).map((r) => r.authId)));
+    this.openCases(`${type} — Needing Attention`, cs, `svc-${slug(type)}`);
+  }
+  drillNetworkStatus(status: string) {
+    const cs = this.casesByAuthIds(new Set(this.rows().filter((r) => r.needsAttention && r.networkStatus === status).map((r) => r.authId)));
+    this.openCases(`${status} — Needing Attention`, cs, `net-${slug(status)}`);
+  }
+
+  exportKpis() {
+    this.exporter.open({
+      title: 'Cost Overview', name: 'cost-overview_2026-07-17',
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['Active Authorizations', this.totalActive()],
+        ['Needing Attention', this.needsAttentionCount()],
+        ['Total Cost Exposure (Estimate)', fmt(this.totalExposure())],
+        ['Avg Requested-vs-Approved Variance', `${this.avgVariancePct()}%`],
+      ],
+    });
+  }
   exportFlags() {
     this.exporter.open({
       title: 'Needs-Attention Summary', name: 'cost-needs-attention_2026-07-17',
@@ -270,89 +269,18 @@ export class CostTab {
       rows: this.tiles.map((t) => [t.label, this.tileCount(t.flag)]),
     });
   }
-  exportGrid() {
+  exportByService() {
     this.exporter.open({
-      title: 'Authorization Worklist', name: 'cost-utilization_2026-07-17',
-      columns: ['Member', 'Service', 'Provider/Facility', 'Network Status', 'Est. Requested Cost', 'Est. Approved Cost', 'LOS', 'Certified Days', 'Uncertified Days', 'Cost Exposure', 'Assigned To', 'Primary Insight'],
-      rows: this.displayRows().map((r) => [r.member, r.service, r.provider, r.networkStatus, r.requestedCost, r.approvedCost, r.los ?? '', r.certifiedDays ?? '', r.uncertifiedDays ?? '', r.costExposure, r.assignedTo, r.primaryInsight]),
+      title: 'Cost Exposure by Service Type', name: 'cost-by-service-type_2026-07-17',
+      columns: ['Service Type', 'Count', '% of Needs-Attention'],
+      rows: this.byServiceType().map((s) => [s.type, s.count, s.pct]),
     });
   }
-
-  private reassignOne(r: CostInsightRow) {
-    const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
-    this.rx.open({
-      title: `Reassign ${r.member}`,
-      cases: [{ authId: r.authId, member: r.member, type: r.serviceType, queue: r.queue, priority: r.urgency, owner: r.assignedTo !== '—' ? r.assignedTo : 'Unassigned' }],
-      nurses, preselectAll: true,
-      apply: (_ids, target, mode) => {
-        if (mode === 'queue') {
-          this.data.decrementQueue(r.queue); this.data.incrementQueue(target);
-          this.ix.toast(`${r.member} moved to ${target}.`);
-          this.data.addHistory('swap', 'Authorization moved to queue', `${r.member} → ${target}`);
-          return;
-        }
-        this.data.moveOneCase(r.assignedTo !== '—' ? r.assignedTo : null, target);
-        this.ix.toast(`${r.member} reassigned to ${target}.`);
-        this.data.addHistory('swap', 'Authorization reassigned', `${r.member} → ${target}`);
-      },
-    });
-  }
-
-  private escalateOne(r: CostInsightRow) {
-    this.esc.open({
-      title: `Escalate ${r.member}`,
-      candidates: [{ authId: r.authId, member: r.member, detail: `${r.service} · ${fmt(r.requestedCost)} · ${r.primaryInsight}`, riskLabel: r.urgency, risk: r.urgency === 'Expedited' ? 'amber' : 'green' }],
-      targets: ESCALATE_TARGETS,
-      apply: (_ids, who) => {
-        this.ix.toast(`${r.member} escalated to ${who} for medical-director review.`, 'warn');
-        this.data.addHistory('arrowup', 'Cost review escalated', `${r.member} → ${who}`);
-      },
-    });
-  }
-
-  private routeToOon(r: CostInsightRow) {
-    this.data.decrementQueue(r.queue); this.data.incrementQueue('OON Review');
-    this.ix.toast(`${r.member} routed to OON Review.`, 'warn');
-    this.data.addHistory('mappin', 'Routed to OON review', r.member);
-  }
-
-  private requestDischargePlan(r: CostInsightRow) {
-    this.ix.toast(`Updated discharge plan requested for ${r.member}.`, 'info');
-    this.data.addHistory('mail', 'Discharge plan requested', r.member);
-  }
-
-  private documentReview(r: CostInsightRow) {
-    this.ix.toast(`Financial-exposure review documented for ${r.member}.`);
-    this.data.addHistory('folder', 'Financial-exposure review documented', r.member);
-  }
-
-  open(r: CostInsightRow) {
-    this.ix.openDrawer({
-      title: r.member,
-      subtitle: `${r.service} · ${r.serviceType} · ${r.provider}`,
-      badge: { text: r.needsAttention ? 'Needs Attention' : 'On Track', tone: r.needsAttention ? 'amber' : 'green' },
-      fields: [
-        { label: 'Network Status', value: r.networkStatus, tone: r.networkStatus === 'In-Network' ? 'green' : r.networkStatus === 'Delegated' ? 'blue' : 'red' },
-        { label: 'Estimated Requested Cost', value: fmt(r.requestedCost), tone: r.flags.includes('highCost') || r.flags.includes('highCostDrug') ? 'red' : undefined },
-        { label: 'Estimated Approved Cost', value: fmt(r.approvedCost) },
-        { label: 'Cost Variance', value: fmt(r.costVariance), tone: r.flags.includes('costVariance') ? 'red' : undefined },
-        ...(r.los !== null ? [{ label: 'Current LOS', value: `${r.los} day(s)` }] : []),
-        ...(r.certifiedDays !== null ? [{ label: 'Certified Days', value: `${r.certifiedDays} day(s)` }] : []),
-        ...(r.uncertifiedDays !== null ? [{ label: 'Uncertified Days', value: `${r.uncertifiedDays} day(s)`, tone: r.uncertifiedDays > 0 ? 'red' as const : undefined }] : []),
-        ...(r.expectedDischarge ? [{ label: 'Expected Discharge', value: r.expectedDischarge }] : []),
-        { label: 'Cost Exposure (Estimate)', value: r.costExposure > 0 ? fmt(r.costExposure) : '—', tone: r.costExposure > 0 ? 'amber' as const : undefined },
-        { label: 'Assigned To', value: r.assignedTo },
-        { label: 'Urgency', value: r.urgency },
-      ],
-      table: r.insights.length ? { columns: ['Insight'], rows: r.insights.map((i) => [i]) } : undefined,
-      note: r.primaryInsight,
-      actions: [
-        { label: 'Reassign case', tone: 'teal', run: () => { this.ix.closeDrawer(); this.reassignOne(r); } },
-        { label: 'Escalate for medical-director review', tone: 'amber', run: () => { this.ix.closeDrawer(); this.escalateOne(r); } },
-        ...(r.flags.includes('oonExposure') ? [{ label: 'Route to OON review', tone: 'amber' as const, run: () => this.routeToOon(r) }] : []),
-        ...(r.los !== null ? [{ label: 'Request updated discharge plan', tone: 'teal' as const, run: () => this.requestDischargePlan(r) }] : []),
-        { label: 'Document financial-exposure review', tone: 'teal', run: () => this.documentReview(r) },
-      ],
+  exportByNetwork() {
+    this.exporter.open({
+      title: 'Cost Exposure by Network Status', name: 'cost-by-network-status_2026-07-17',
+      columns: ['Network Status', 'Count', '% of Needs-Attention'],
+      rows: this.byNetworkStatus().map((s) => [s.status, s.count, s.pct]),
     });
   }
 }
