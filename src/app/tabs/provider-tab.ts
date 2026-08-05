@@ -73,6 +73,12 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         @if (activeFilter()) {
           <span class="filter-chip">Filtered: {{ filterLabel() }} <button class="clr" (click)="clearFilter()">&times;</button></span>
         }
+        <select class="prog-filter" [value]="specialtyFilter()" (change)="specialtyFilter.set($any($event.target).value)">
+          <option value="all">All Specialties</option>
+          @for (s of specialties(); track s) { <option [value]="s">{{ s }}</option> }
+        </select>
+        <input class="search-box" type="text" placeholder="Search provider or facility…"
+          [value]="search()" (input)="search.set($any($event.target).value)" />
         <z-widget-actions (exportClick)="exportGrid()" (removeClick)="hide('grid')"></z-widget-actions>
       </div>
       <table class="z-table">
@@ -144,6 +150,11 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .filter-chip { font-size: 12px; color: var(--teal-900); background: var(--teal-50); border: 1px solid var(--teal-100);
       border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
     .filter-chip .clr { border: none; background: none; cursor: pointer; color: var(--teal-900); font-size: 14px; line-height: 1; padding: 0; }
+    .prog-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
+      font-size: 12.5px; color: var(--ink-soft); margin-left: auto; }
+    .search-box { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12.5px;
+      width: 180px; outline: none; }
+    .search-box:focus { border-color: var(--teal-600); }
 
     .clickable { cursor: pointer; }
     .sortable { cursor: pointer; user-select: none; }
@@ -197,10 +208,17 @@ export class ProviderTab {
   }
   caret(k: keyof ProviderInsightRow) { return caretFor(this.sortKey(), k, this.sortDir()); }
 
+  readonly search = signal('');
+  readonly specialtyFilter = signal('all');
+  readonly specialties = computed(() => [...new Set(this.rows().map((r) => r.specialty))].sort());
   readonly displayRows = computed(() => {
     const flag = this.activeFilter();
     let rs = this.rows();
     rs = flag ? rs.filter((r) => r.flags.includes(flag)) : this.needsAttentionOnly() ? rs.filter((r) => r.needsAttention) : rs;
+    const spec = this.specialtyFilter();
+    if (spec !== 'all') rs = rs.filter((r) => r.specialty === spec);
+    const q = this.search().trim().toLowerCase();
+    if (q) rs = rs.filter((r) => r.provider.toLowerCase().includes(q) || r.specialty.toLowerCase().includes(q));
     return compareRows(rs, this.sortKey(), this.sortDir());
   });
 
