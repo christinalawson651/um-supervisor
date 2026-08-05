@@ -335,13 +335,14 @@ export class IntakeTab {
     });
   }
 
-  /** Every new Intake drill opens the standard, full-featured Case Explorer — Reassign selected,
-   *  Escalate selected, Balance, and (here) Move to Queue all come for free from that one component. */
+  /** Every new Intake drill opens the standard, full-featured Case Explorer — Reassign selected
+   *  (with its Assignee/Queue toggle), Escalate selected, and Balance all come for free from that
+   *  one component. */
   private openCases(title: string, cs: CaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
       title, context: context ?? `${cs.length} pending authorization(s)`,
       columns: COLUMNS, rows: cs.map(toRow),
-      exportName: `intake-${exportSlug}_2026-07-17`, memberColumn: 1, showQueueMove: true,
+      exportName: `intake-${exportSlug}_2026-07-17`, memberColumn: 1,
     });
   }
 

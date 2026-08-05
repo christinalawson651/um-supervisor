@@ -283,15 +283,27 @@ export class ConcurrentTab {
     const ids = [...this.selected()];
     if (!ids.length) return;
     const rows = this.concurrentRows().filter((r) => ids.includes(r.authId));
+    // queue is the real queue name (matches DashboardData.queues() for queue-mode moves); the
+    // determination status still shows via `priority` for the panel's pill filter.
     const cases = rows.map((r) => ({
-      authId: r.authId, member: r.member, type: 'Inpatient Concurrent Review', queue: r.status,
+      authId: r.authId, member: r.member, type: 'Inpatient Concurrent Review', queue: 'Concurrent Review',
       priority: r.status, owner: r.reviewer !== '—' ? r.reviewer : 'Unassigned',
     }));
     const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
     this.rx.open({
       title: `Reassign ${ids.length} concurrent review${ids.length > 1 ? 's' : ''}`,
       cases, nurses, preselectAll: true,
-      apply: (assignedIds, target) => {
+      apply: (assignedIds, target, mode) => {
+        if (mode === 'queue') {
+          assignedIds.forEach((id) => {
+            const row = rows.find((r) => r.authId === id);
+            if (row) { this.data.decrementQueue('Concurrent Review'); this.data.incrementQueue(target); }
+          });
+          this.ix.toast(`${assignedIds.length} concurrent review(s) moved to ${target}.`);
+          this.data.addHistory('swap', 'Concurrent reviews moved to queue', `${assignedIds.length} review(s) → ${target}`);
+          this.selected.set(new Set());
+          return;
+        }
         assignedIds.forEach((id) => {
           const row = rows.find((r) => r.authId === id);
           this.data.moveOneCase(row && row.reviewer !== '—' ? row.reviewer : null, target);
@@ -441,9 +453,15 @@ export class ConcurrentTab {
     const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
     this.rx.open({
       title: `Reassign ${r.member}`,
-      cases: [{ authId: r.authId, member: r.member, type: 'Inpatient Concurrent Review', queue: r.status, priority: r.status, owner: r.reviewer !== '—' ? r.reviewer : 'Unassigned' }],
+      cases: [{ authId: r.authId, member: r.member, type: 'Inpatient Concurrent Review', queue: 'Concurrent Review', priority: r.status, owner: r.reviewer !== '—' ? r.reviewer : 'Unassigned' }],
       nurses, preselectAll: true,
-      apply: (_ids, target) => {
+      apply: (_ids, target, mode) => {
+        if (mode === 'queue') {
+          this.data.decrementQueue('Concurrent Review'); this.data.incrementQueue(target);
+          this.ix.toast(`${r.member} moved to ${target}.`);
+          this.data.addHistory('swap', 'Concurrent review moved to queue', `${r.member} → ${target}`);
+          return;
+        }
         this.data.moveOneCase(r.reviewer !== '—' ? r.reviewer : null, target);
         this.ix.toast(`${r.member} reassigned to ${target}.`);
         this.data.addHistory('swap', 'Concurrent review reassigned', `${r.member} → ${target}`);

@@ -489,7 +489,16 @@ export class WorkforceTab {
     this.rx.open({
       title: 'Reassign authorizations',
       cases, nurses,
-      apply: (ids, target) => {
+      apply: (ids, target, mode) => {
+        if (mode === 'queue') {
+          ids.forEach((id) => {
+            const cs = cases.find((x) => x.authId === id);
+            if (cs && cs.queue !== target) { this.data.decrementQueue(cs.queue); this.data.incrementQueue(target); }
+          });
+          this.ix.toast(`${ids.length} authorization(s) moved to ${target}.`);
+          this.data.addHistory('swap', 'Authorizations moved to queue', `${ids.length} authorization(s) → ${target}`);
+          return;
+        }
         ids.forEach((id) => {
           const cs = cases.find((x) => x.authId === id);
           this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);

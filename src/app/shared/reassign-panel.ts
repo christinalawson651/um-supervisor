@@ -2,6 +2,7 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Reassign, ReassignCase, ReassignNurse } from './reassign';
 import { Interaction } from './interaction';
+import { DashboardData } from '../data/dashboard-data';
 
 @Component({
   selector: 'app-reassign-panel',
@@ -41,35 +42,53 @@ import { Interaction } from './interaction';
 
             <!-- RIGHT: target -->
             <div class="col target">
-              <div class="col-head"><span class="ct">Assign to</span></div>
-              @if (recommended(); as rec) {
-                <button class="nrec" [class.on]="target() === rec.name" (click)="target.set(rec.name)">
-                  <div class="nrow"><b>{{ rec.name }}</b><span class="recbadge">★ Recommended</span></div>
-                  <div class="nmeta">Most capacity · {{ rec.active }} active</div>
-                  <div class="ubar"><span [style.width.%]="rec.utilization" [attr.data-t]="tone(rec.utilization)"></span></div>
-                  <div class="upct">{{ rec.utilization }}% utilized</div>
-                </button>
-              }
-              <div class="ovr">Or override:</div>
-              <div class="nlist">
-                @for (n of others(); track n.name) {
-                  <button class="ni" [class.on]="target() === n.name" (click)="target.set(n.name)">
-                    <div class="nrow"><b>{{ n.name }}</b>
-                      @if (n.utilization < 85) { <span class="cap">capacity</span> } @else { <span class="full">near full</span> }</div>
-                    <div class="ubar"><span [style.width.%]="n.utilization" [attr.data-t]="tone(n.utilization)"></span></div>
-                    <div class="upct">{{ n.utilization }}% · {{ n.active }} active</div>
+              <div class="col-head">
+                <span class="ct">Assign to</span>
+                <div class="modetog">
+                  <button class="mtb" [class.on]="mode() === 'assignee'" (click)="setMode('assignee')">Assignee</button>
+                  <button class="mtb" [class.on]="mode() === 'queue'" (click)="setMode('queue')">Queue</button>
+                </div>
+              </div>
+              @if (mode() === 'assignee') {
+                @if (recommended(); as rec) {
+                  <button class="nrec" [class.on]="target() === rec.name" (click)="target.set(rec.name)">
+                    <div class="nrow"><b>{{ rec.name }}</b><span class="recbadge">★ Recommended</span></div>
+                    <div class="nmeta">Most capacity · {{ rec.active }} active</div>
+                    <div class="ubar"><span [style.width.%]="rec.utilization" [attr.data-t]="tone(rec.utilization)"></span></div>
+                    <div class="upct">{{ rec.utilization }}% utilized</div>
                   </button>
                 }
-              </div>
+                <div class="ovr">Or override:</div>
+                <div class="nlist">
+                  @for (n of others(); track n.name) {
+                    <button class="ni" [class.on]="target() === n.name" (click)="target.set(n.name)">
+                      <div class="nrow"><b>{{ n.name }}</b>
+                        @if (n.utilization < 85) { <span class="cap">capacity</span> } @else { <span class="full">near full</span> }</div>
+                      <div class="ubar"><span [style.width.%]="n.utilization" [attr.data-t]="tone(n.utilization)"></span></div>
+                      <div class="upct">{{ n.utilization }}% · {{ n.active }} active</div>
+                    </button>
+                  }
+                </div>
+              } @else {
+                <div class="ovr">Select a queue:</div>
+                <div class="nlist">
+                  @for (qn of queueTargets(); track qn.name) {
+                    <button class="ni qi" [class.on]="target() === qn.name" (click)="target.set(qn.name)">
+                      <div class="nrow"><b>{{ qn.name }}</b></div>
+                      <div class="upct">{{ qn.count }} currently in queue</div>
+                    </button>
+                  }
+                </div>
+              }
             </div>
           </div>
 
           <div class="pf">
-            <span class="fnote">@if (selected().size && target()) { Reassigning <b>{{ selected().size }}</b> authorization(s) → <b>{{ target() }}</b> }
+            <span class="fnote">@if (selected().size && target()) { {{ mode() === 'queue' ? 'Moving' : 'Reassigning' }} <b>{{ selected().size }}</b> authorization(s) → <b>{{ target() }}</b> }
               @else { Select at least one authorization and a target }</span>
             <span class="spacer"></span>
             <button class="btn outline" (click)="rx.close()">Cancel</button>
-            <button class="btn primary" [disabled]="!selected().size || !target()" (click)="apply()">Reassign {{ selected().size || '' }}</button>
+            <button class="btn primary" [disabled]="!selected().size || !target()" (click)="apply()">{{ mode() === 'queue' ? 'Move' : 'Reassign' }} {{ selected().size || '' }}</button>
           </div>
         </div>
       </div>
@@ -86,6 +105,10 @@ import { Interaction } from './interaction';
     .col.target { border-left:1px solid var(--border); background:var(--gray-50); }
     .col-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
     .ct { font-size:13px; font-weight:700; color:var(--ink); } .cn { color:var(--gray-500); font-weight:600; margin-left:4px; }
+    .modetog { display:flex; gap:4px; background:var(--gray-100); border-radius:999px; padding:3px; }
+    .mtb { border:none; background:none; border-radius:999px; padding:4px 12px; font-size:11.5px; font-weight:700; color:var(--gray-500); cursor:pointer; }
+    .mtb.on { background:#fff; color:var(--teal-700); box-shadow:0 1px 2px rgba(16,24,40,.08); }
+    .qi .nrow { justify-content:flex-start; }
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:6px 10px; font-size:12.5px; width:180px; outline:none; }
     .search:focus { border-color:var(--teal-600); }
     .qpills { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
@@ -122,16 +145,18 @@ import { Interaction } from './interaction';
 export class ReassignPanel {
   rx = inject(Reassign);
   private ix = inject(Interaction);
+  private data = inject(DashboardData);
   readonly q = signal('');
   readonly queue = signal('All');
   readonly selected = signal<Set<string>>(new Set());
   readonly target = signal('');
+  readonly mode = signal<'assignee' | 'queue'>('assignee');
 
   constructor() {
     effect(() => {
       const c = this.rx.config();
       // reset + default target to recommended when a new reassign opens
-      this.q.set(''); this.queue.set('All');
+      this.q.set(''); this.queue.set('All'); this.mode.set('assignee');
       this.selected.set(c?.preselectAll ? new Set(c.cases.map((x) => x.authId)) : new Set());
       const rec = c ? [...c.nurses].sort((a, b) => a.utilization - b.utilization)[0] : null;
       this.target.set(rec ? rec.name : '');
@@ -146,6 +171,14 @@ export class ReassignPanel {
   });
   readonly recommended = computed(() => { const c = this.rx.config(); return c ? [...c.nurses].sort((a, b) => a.utilization - b.utilization)[0] : null; });
   readonly others = computed(() => { const c = this.rx.config(); const rec = this.recommended(); return c ? c.nurses.filter((n) => n.name !== rec?.name).sort((a, b) => a.utilization - b.utilization) : []; });
+  /** Live queue counts from the same source the rest of the app reads — not a static list. */
+  readonly queueTargets = computed(() => this.data.queues().map((q) => ({ name: q.name, count: q.count })));
+
+  setMode(m: 'assignee' | 'queue') {
+    this.mode.set(m);
+    if (m === 'queue') { this.target.set(''); }
+    else { const rec = this.recommended(); this.target.set(rec ? rec.name : ''); }
+  }
 
   tone(u: number) { return u >= 90 ? 'red' : u < 80 ? 'green' : 'amber'; }
   toggle(id: string) { this.selected.update((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
@@ -158,6 +191,18 @@ export class ReassignPanel {
     if (!c) return;
     const ids = [...this.selected()];
     const targetName = this.target();
+
+    if (this.mode() === 'queue') {
+      this.ix.ask({
+        title: `Move ${ids.length} authorization${ids.length > 1 ? 's' : ''}`,
+        body: `Move these authorizations to the ${targetName} queue:`,
+        breakdown: [{ count: ids.length, label: ids.length === 1 ? 'authorization' : 'authorizations', target: targetName }],
+        confirmLabel: 'Move', tone: 'teal',
+        onConfirm: () => { c.apply(ids, targetName, 'queue'); this.rx.close(); },
+      });
+      return;
+    }
+
     const rec = this.recommended();
     const targetNurse = c.nurses.find((n) => n.name === targetName);
     const isOverride = !!rec && targetName !== rec.name;
@@ -170,7 +215,7 @@ export class ReassignPanel {
       body: warn || 'Move these authorizations to:',
       breakdown: [{ count: ids.length, label: ids.length === 1 ? 'authorization' : 'authorizations', target: targetName }],
       confirmLabel: 'Reassign', tone: overCapacity ? 'amber' : 'teal',
-      onConfirm: () => { c.apply(ids, targetName); this.rx.close(); },
+      onConfirm: () => { c.apply(ids, targetName, 'assignee'); this.rx.close(); },
     });
   }
 }
