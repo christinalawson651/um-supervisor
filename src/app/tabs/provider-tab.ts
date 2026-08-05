@@ -100,7 +100,11 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         <tbody>
           @for (p of displayRows(); track p.provider) {
             <tr class="clickable" [class.attn]="p.needsAttention" (click)="open(p)">
-              <td class="strong">{{ p.provider }}</td>
+              <td class="strong">
+                {{ p.provider }}
+                @if (p.vip) { <span class="tag vip" title="Plan-designated strategic partner">VIP</span> }
+                @if (p.goldCard) { <span class="tag gold" title="Clean record + sustained approval rate — eligible for prior-auth exemption">Gold Card</span> }
+              </td>
               <td>{{ p.specialty }}</td>
               <td><span class="badge" [class.green]="p.networkStatus === 'In-Network'" [class.blue]="p.networkStatus === 'Delegated'"
                     [class.red]="p.networkStatus === 'Out-of-Network' || p.networkStatus === 'Exception'">{{ p.networkStatus }}</span></td>
@@ -155,6 +159,11 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .search-box { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12.5px;
       width: 180px; outline: none; }
     .search-box:focus { border-color: var(--teal-600); }
+
+    .tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.03em; vertical-align: middle; }
+    .tag.vip { background: var(--blue-bg); color: var(--blue-fg); }
+    .tag.gold { background: #fef3c7; color: #92400e; }
 
     .clickable { cursor: pointer; }
     .sortable { cursor: pointer; user-select: none; }
@@ -287,6 +296,9 @@ export class ProviderTab {
       subtitle: `${p.specialty} · ${p.kind}${p.npi ? ` · NPI ${p.npi}` : ''}`,
       badge: { text: p.needsAttention ? 'Needs Attention' : 'On Track', tone: p.needsAttention ? 'amber' : 'green' },
       fields: [
+        ...(p.vip || p.goldCard
+          ? [{ label: 'Designations', value: [p.vip ? 'VIP' : null, p.goldCard ? 'Gold Card' : null].filter(Boolean).join(' · '), tone: 'blue' as const }]
+          : []),
         { label: 'Network Status', value: p.networkStatus, tone: p.networkStatus === 'In-Network' ? 'green' : p.networkStatus === 'Delegated' ? 'blue' : 'red' },
         { label: 'Total Requests', value: String(p.totalRequests) },
         { label: 'OON Requests', value: String(p.oonRequests), tone: p.oonRequests > 0 ? 'amber' : undefined },

@@ -86,6 +86,8 @@ export interface ProviderInsightRow {
   insights: string[];          // human-readable sentence per flag, same order as `flags`
   primaryInsight: string;      // insights[0], or a clean-bill message when no flags
   needsAttention: boolean;
+  vip: boolean;                // plan-designated strategic partner (static metadata)
+  goldCard: boolean;           // performance-earned prior-auth exemption (computed: clean record + strong approval rate)
 }
 
 export interface HighDollarCase {

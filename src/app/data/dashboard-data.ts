@@ -642,7 +642,7 @@ export function liveProviderInsights(lob?: string, withinDays?: number): Provide
     const meta = providerMetaOf(provider);
     return {
       provider, specialty: meta.specialty, kind: meta.kind, npi: NPI_BY_PROVIDER[provider] ?? '',
-      networkStatus: meta.networkStatus,
+      networkStatus: meta.networkStatus, vip: meta.vip,
       totalRequests: cs.length,
       oonRequests: cs.filter((c) => c.tags.includes('oon')).length,
       approvalRate: pctOf(decidedCs.filter((c) => c.decision === 'Approved').length, decidedTotal),
@@ -694,6 +694,13 @@ export function liveProviderInsights(lob?: string, withinDays?: number): Provide
       flag('tatDelay', `Averages ${r.avgResponseDays} days to respond to information requests, above the peer average of ${avgResponseDays.toFixed(1)}`);
     }
 
-    return { ...r, flags, insights, primaryInsight: insights[0] ?? 'Performance within expected thresholds', needsAttention: flags.length > 0 };
+    const needsAttention = flags.length > 0;
+    // Gold Card — real-world analog to state prior-auth-exemption programs: a clean record (no
+    // active flags) plus a sustained approval rate over a minimum volume, so a single small sample
+    // can't earn it. Threshold is absolute, not peer-relative, since exemption programs are set by
+    // statute against a fixed bar, not graded on a curve against other providers.
+    const goldCard = !needsAttention && r.approvalRate >= 60 && r.totalRequests >= 20;
+    const primaryInsight = insights[0] ?? (goldCard ? `Gold Card — ${r.approvalRate}% approval rate with a clean record qualifies for prior-auth exemption` : 'Performance within expected thresholds');
+    return { ...r, flags, insights, primaryInsight, needsAttention, goldCard };
   }).sort((a, b) => b.totalRequests - a.totalRequests);
 }

@@ -184,17 +184,24 @@ export function rfiOriginStageOf(c: CaseRec): RfiOriginStage {
 // ---- Provider & Network Insights — provider-level metadata, distinct from per-case fields above.
 // These are fixed attributes of the provider/facility itself (specialty, network status), not
 // derived per-case, so they live in a lookup keyed by provider name rather than a authId-hash fn. ----
-export interface ProviderMeta { specialty: string; kind: 'Individual' | 'Facility'; networkStatus: 'In-Network' | 'Out-of-Network' | 'Delegated' | 'Exception'; }
+export interface ProviderMeta {
+  specialty: string;
+  kind: 'Individual' | 'Facility';
+  networkStatus: 'In-Network' | 'Out-of-Network' | 'Delegated' | 'Exception';
+  /** Plan-designated strategic-partner tag — a business/relationship call (high referral volume,
+   *  key market presence), independent of the performance-driven Gold Card status below. */
+  vip: boolean;
+}
 export const PROVIDER_META: Record<string, ProviderMeta> = {
-  'Dr. Sarah Mitchell': { specialty: 'Orthopedic Surgery', kind: 'Individual', networkStatus: 'In-Network' },
-  'Dr. James Parker': { specialty: 'Cardiology', kind: 'Individual', networkStatus: 'In-Network' },
-  'Dr. Emily Chen': { specialty: 'Behavioral Health', kind: 'Individual', networkStatus: 'In-Network' },
-  'Memorial Orthopedic Group': { specialty: 'Orthopedic Surgery', kind: 'Facility', networkStatus: 'In-Network' },
-  'Regional Heart Center': { specialty: 'Cardiology', kind: 'Facility', networkStatus: 'Delegated' },
-  'Coastal Neurology Associates': { specialty: 'Neurology', kind: 'Facility', networkStatus: 'Out-of-Network' },
+  'Dr. Sarah Mitchell': { specialty: 'Orthopedic Surgery', kind: 'Individual', networkStatus: 'In-Network', vip: false },
+  'Dr. James Parker': { specialty: 'Cardiology', kind: 'Individual', networkStatus: 'In-Network', vip: false },
+  'Dr. Emily Chen': { specialty: 'Behavioral Health', kind: 'Individual', networkStatus: 'In-Network', vip: false },
+  'Memorial Orthopedic Group': { specialty: 'Orthopedic Surgery', kind: 'Facility', networkStatus: 'In-Network', vip: true },
+  'Regional Heart Center': { specialty: 'Cardiology', kind: 'Facility', networkStatus: 'Delegated', vip: false },
+  'Coastal Neurology Associates': { specialty: 'Neurology', kind: 'Facility', networkStatus: 'Out-of-Network', vip: true },
 };
 export function providerMetaOf(name: string): ProviderMeta {
-  return PROVIDER_META[name] ?? { specialty: 'General', kind: 'Individual', networkStatus: 'In-Network' };
+  return PROVIDER_META[name] ?? { specialty: 'General', kind: 'Individual', networkStatus: 'In-Network', vip: false };
 }
 /** Deterministic provider-level avg response time (days) to information requests — a stable
  *  attribute of the provider, not derived per-case like everything else in this file. */
