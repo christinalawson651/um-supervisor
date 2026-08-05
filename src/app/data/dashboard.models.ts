@@ -65,13 +65,27 @@ export interface ConcurrentRow {
 export interface QualityBar { label: string; pct: number; tone: Tone; icon: string; }
 export interface MissingField { field: string; count: number; pct: number; }
 
-export interface ProviderRow {
+export type ProviderFlag = 'oon' | 'missingClinicals' | 'networkDiscrepancy' | 'highIncomplete' | 'highDenialPartial' | 'unusualUtilization' | 'tatDelay';
+
+export interface ProviderInsightRow {
   provider: string;
+  specialty: string;
+  kind: 'Individual' | 'Facility';
   npi: string;
-  requests: number;
+  networkStatus: string;
+  totalRequests: number;
+  oonRequests: number;
   approvalRate: number;
-  rfiRate: number;
-  rfiHigh: boolean;
+  denialRate: number;
+  partialRate: number;
+  incompleteRate: number;
+  expeditedRate: number;
+  avgResponseDays: number;
+  clinicalsAwaiting: number;
+  flags: ProviderFlag[];
+  insights: string[];          // human-readable sentence per flag, same order as `flags`
+  primaryInsight: string;      // insights[0], or a clean-bill message when no flags
+  needsAttention: boolean;
 }
 
 export interface HighDollarCase {

@@ -181,6 +181,29 @@ export function rfiOriginStageOf(c: CaseRec): RfiOriginStage {
   return RFI_ORIGINS[Number(c.authId.slice(-2)) % RFI_ORIGINS.length];
 }
 
+// ---- Provider & Network Insights — provider-level metadata, distinct from per-case fields above.
+// These are fixed attributes of the provider/facility itself (specialty, network status), not
+// derived per-case, so they live in a lookup keyed by provider name rather than a authId-hash fn. ----
+export interface ProviderMeta { specialty: string; kind: 'Individual' | 'Facility'; networkStatus: 'In-Network' | 'Out-of-Network' | 'Delegated' | 'Exception'; }
+export const PROVIDER_META: Record<string, ProviderMeta> = {
+  'Dr. Sarah Mitchell': { specialty: 'Orthopedic Surgery', kind: 'Individual', networkStatus: 'In-Network' },
+  'Dr. James Parker': { specialty: 'Cardiology', kind: 'Individual', networkStatus: 'In-Network' },
+  'Dr. Emily Chen': { specialty: 'Behavioral Health', kind: 'Individual', networkStatus: 'In-Network' },
+  'Memorial Orthopedic Group': { specialty: 'Orthopedic Surgery', kind: 'Facility', networkStatus: 'In-Network' },
+  'Regional Heart Center': { specialty: 'Cardiology', kind: 'Facility', networkStatus: 'Delegated' },
+  'Coastal Neurology Associates': { specialty: 'Neurology', kind: 'Facility', networkStatus: 'Out-of-Network' },
+};
+export function providerMetaOf(name: string): ProviderMeta {
+  return PROVIDER_META[name] ?? { specialty: 'General', kind: 'Individual', networkStatus: 'In-Network' };
+}
+/** Deterministic provider-level avg response time (days) to information requests — a stable
+ *  attribute of the provider, not derived per-case like everything else in this file. */
+export function providerResponseDaysOf(name: string): number {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 97;
+  return 1 + (h % 4); // 1-4 days
+}
+
 // ---- Age in queue (shared by Workforce's age bars and the case pool's own return-to-queue logic) ----
 export function ageH(authId: string): number { return 6 + (Number(authId.slice(-2)) % 90); }
 export function bandOf(authId: string, breached: boolean): 'fresh' | 'day2' | 'over48' | 'breach' {

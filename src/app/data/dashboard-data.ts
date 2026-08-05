@@ -1,11 +1,14 @@
 import { Injectable, signal, effect, computed } from '@angular/core';
 import {
   Kpi, QueueCard, NurseRow, TatBucket, TatStat, DecisionStat, DecisionRow,
-  ConcurrentRow, QualityBar, MissingField, ProviderRow, HighDollarCase,
+  ConcurrentRow, QualityBar, MissingField, ProviderInsightRow, ProviderFlag, HighDollarCase,
   AuditFlag, AiRecommendation, RiskCase, RiskTile,
 } from './dashboard.models';
 import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
-import { ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf } from './case-fields';
+import {
+  ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf,
+  providerMetaOf, providerResponseDaysOf, rfiOriginStageOf,
+} from './case-fields';
 
 /**
  * One inpatient concurrent-review row per real 'concurrent'-tagged case in the pool (LOS/admit/
@@ -214,7 +217,7 @@ export class DashboardData {
   // liveQualityBars()/liveMissingFields() (below the class) are the real source now.
 
   // ---------- Provider & Network Insights ----------
-  // liveProviders() (below the class) is the real source now; OON Requests uses Metrics.count('prov.oon').
+  // liveProviderInsights() (below the class) is the real source now; OON Requests uses Metrics.count('prov.oon').
 
   // ---------- Financial / Cost Indicators ----------
   // liveFinancials()/liveHighDollarCases() (below the class) are the real source now.
@@ -625,12 +628,72 @@ export function liveComplianceBars(lob?: string, withinDays?: number): QualityBa
   ];
 }
 
-export function liveProviders(lob?: string, withinDays?: number): ProviderRow[] {
-  return PROVIDERS.map((provider) => {
+/**
+ * Provider & Network Insights — one aggregate row per provider/facility, plus a peer-relative
+ * "Needs Attention" flag set. Thresholds are relative to the live peer average (not fixed magic
+ * numbers) so the flagging stays sane regardless of LOB/Lookback scope or roster size.
+ */
+export function liveProviderInsights(lob?: string, withinDays?: number): ProviderInsightRow[] {
+  const base = PROVIDERS.map((provider) => {
     const cs = CASE_POOL.filter((c) => c.provider === provider && inScope(c, lob, withinDays));
     const decidedCs = cs.filter((c) => c.phase === 'decided');
-    const approvalRate = decidedCs.length ? pctOf(decidedCs.filter((c) => c.decision === 'Approved').length, decidedCs.length) : 0;
-    const rfiRate = cs.length ? pctOf(cs.filter((c) => c.tags.includes('incompleteDoc')).length, cs.length) : 0;
-    return { provider, npi: NPI_BY_PROVIDER[provider] ?? '', requests: cs.length, approvalRate, rfiRate, rfiHigh: rfiRate >= 20 };
-  }).sort((a, b) => b.requests - a.requests);
+    const total = cs.length || 1;
+    const decidedTotal = decidedCs.length || 1;
+    const meta = providerMetaOf(provider);
+    return {
+      provider, specialty: meta.specialty, kind: meta.kind, npi: NPI_BY_PROVIDER[provider] ?? '',
+      networkStatus: meta.networkStatus,
+      totalRequests: cs.length,
+      oonRequests: cs.filter((c) => c.tags.includes('oon')).length,
+      approvalRate: pctOf(decidedCs.filter((c) => c.decision === 'Approved').length, decidedTotal),
+      denialRate: pctOf(decidedCs.filter((c) => c.decision === 'Denied').length, decidedTotal),
+      partialRate: pctOf(decidedCs.filter((c) => c.decision === 'Partial').length, decidedTotal),
+      incompleteRate: pctOf(cs.filter((c) => c.tags.includes('incompleteDoc')).length, total),
+      expeditedRate: pctOf(cs.filter((c) => c.tags.includes('expedited')).length, total),
+      avgResponseDays: providerResponseDaysOf(provider),
+      clinicalsAwaiting: cs.filter((c) => c.tags.includes('rfi') && rfiOriginStageOf(c) === 'Clinical Review').length,
+    };
+  });
+
+  const avg = (fn: (r: typeof base[number]) => number) => base.reduce((s, r) => s + fn(r), 0) / (base.length || 1);
+  const avgDenialPartial = avg((r) => r.denialRate + r.partialRate);
+  const avgIncomplete = avg((r) => r.incompleteRate);
+  const avgVolume = avg((r) => r.totalRequests);
+  const avgExpedited = avg((r) => r.expeditedRate);
+  const avgClinicalsAwaiting = avg((r) => r.clinicalsAwaiting);
+  const avgResponseDays = avg((r) => r.avgResponseDays);
+
+  return base.map((r) => {
+    const flags: ProviderFlag[] = [];
+    const insights: string[] = [];
+    const flag = (f: ProviderFlag, msg: string) => { flags.push(f); insights.push(msg); };
+
+    if (r.oonRequests > 0 && (r.networkStatus === 'In-Network' || r.networkStatus === 'Delegated')) {
+      flag('oon', `${r.oonRequests} active out-of-network exception${r.oonRequests > 1 ? 's' : ''} despite in-network status`);
+    } else if (r.oonRequests >= 3) {
+      flag('oon', `${r.oonRequests} out-of-network requests this period`);
+    }
+    if (r.clinicalsAwaiting >= Math.max(2, avgClinicalsAwaiting * 1.25)) {
+      flag('missingClinicals', `${r.clinicalsAwaiting} case${r.clinicalsAwaiting > 1 ? 's' : ''} awaiting clinical records`);
+    }
+    if (r.networkStatus === 'Out-of-Network' || r.networkStatus === 'Exception') {
+      flag('networkDiscrepancy', `Network status is ${r.networkStatus} — confirm directory listing matches submitted claims`);
+    }
+    if (r.incompleteRate >= Math.max(10, avgIncomplete * 1.25)) {
+      flag('highIncomplete', `Incomplete-submission rate is ${r.incompleteRate}%, above the peer average of ${Math.round(avgIncomplete)}%`);
+    }
+    if (r.denialRate + r.partialRate >= Math.max(15, avgDenialPartial * 1.25)) {
+      flag('highDenialPartial', `Denial + partial-approval rate is ${r.denialRate + r.partialRate}%, above the peer average of ${Math.round(avgDenialPartial)}%`);
+    }
+    if (r.totalRequests >= avgVolume * 1.4) {
+      flag('unusualUtilization', `Request volume is ${r.totalRequests}, above the peer average of ${Math.round(avgVolume)} — unusual utilization pattern`);
+    } else if (r.expeditedRate >= Math.max(15, avgExpedited * 1.4)) {
+      flag('unusualUtilization', `Expedited-request rate is ${r.expeditedRate}%, above the peer average of ${Math.round(avgExpedited)}%`);
+    }
+    if (r.avgResponseDays >= Math.max(3, avgResponseDays * 1.2)) {
+      flag('tatDelay', `Averages ${r.avgResponseDays} days to respond to information requests, above the peer average of ${avgResponseDays.toFixed(1)}`);
+    }
+
+    return { ...r, flags, insights, primaryInsight: insights[0] ?? 'Performance within expected thresholds', needsAttention: flags.length > 0 };
+  }).sort((a, b) => b.totalRequests - a.totalRequests);
 }
