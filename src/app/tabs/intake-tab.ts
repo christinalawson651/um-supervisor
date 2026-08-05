@@ -1,12 +1,13 @@
-import { Component, computed, inject } from '@angular/core';
-import { DashboardData, liveQualityBars, liveMissingFields, inScope } from '../data/dashboard-data';
+import { Component, computed, inject, signal } from '@angular/core';
+import { DashboardData, liveMissingFields, inScope } from '../data/dashboard-data';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import {
   urgencyOf, INTAKE_CHANNELS, intakeChannelOf, RoutingStatus, routingStatusOf,
   isDuplicateOf, duplicateResolvedOf, MissingInfoCategory, missingInfoCategoryOf,
   ReviewType, reviewTypeOf, providerIssueOf, IntakeProcessingStatus, intakeProcessingStatusOf,
+  IntakeCategory, intakeCategoryOf, rfiOriginStageOf,
 } from '../data/case-fields';
-import { Metrics, COLUMNS, toRow } from '../shared/metrics';
+import { COLUMNS, toRow } from '../shared/metrics';
 import { Interaction } from '../shared/interaction';
 import { MissingField } from '../data/dashboard.models';
 import { Icon } from '../shared/icon';
@@ -35,6 +36,7 @@ const ROUTING_ORDER: RoutingStatus[] = ['Smart', 'Manual', 'Late'];
 const MISSING_INFO_ORDER: MissingInfoCategory[] = ['Intake Form — Illegible', 'Intake Form — Missing Fields', 'Clinicals Missing', 'Provider Info Missing'];
 const REVIEW_TYPE_ORDER: ReviewType[] = ['Pre-Auth', 'Concurrent Review', 'Retro'];
 const PROCESSING_ORDER: IntakeProcessingStatus[] = ['Completed', 'Failed', 'No Shell Created'];
+type CategoryFilter = 'all' | 'Medical' | IntakeCategory;
 
 @Component({
   selector: 'app-intake-tab',
@@ -44,15 +46,23 @@ const PROCESSING_ORDER: IntakeProcessingStatus[] = ['Completed', 'Failed', 'No S
     <div class="tab-head">
       <h2>Intake &amp; Documentation Quality</h2>
       <span class="section-note">Documentation quality is tracking positively</span>
+      <select class="cat-filter" [value]="categoryFilter()" (change)="categoryFilter.set($any($event.target).value)">
+        <option value="all">All Categories</option>
+        <option value="Medical">Medical</option>
+        <option value="IP">IP</option>
+        <option value="OP">OP</option>
+        <option value="RX">RX</option>
+        <option value="Behavioral Health">Behavioral Health</option>
+      </select>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
 
     <z-widget-customize [vis]="vis"></z-widget-customize>
 
     <div class="grid-3">
-      @for (b of qualityBars(); track b.label; let i = $index) {
+      @for (b of displayBars(); track b.label) {
         @if (!isHidden(b.label)) {
-          <div class="panel panel-pad bar-block clickable" (click)="metrics.open(barKeys[i])">
+          <div class="panel panel-pad bar-block clickable" (click)="drillBar(b.label)">
             <z-widget-actions (exportClick)="exportBar(b)" (removeClick)="hide(b.label)"></z-widget-actions>
             <div class="bar-top"><z-icon [name]="b.icon" [size]="15" [stroke]="1.8"></z-icon>{{ b.label }}</div>
             <div class="bar-val" [class.amber]="b.tone==='amber'">{{ b.pct }}%</div>
@@ -256,6 +266,8 @@ const PROCESSING_ORDER: IntakeProcessingStatus[] = ['Completed', 'Failed', 'No S
     .panel { position: relative; }
     .tab-head { flex-wrap: wrap; justify-content: flex-start; gap: 12px 16px; }
     .cz-btn { margin-left: auto; flex-shrink: 0; }
+    .cat-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
+      font-size: 12.5px; color: var(--ink-soft); }
     .tbl-head { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; padding-right: 44px; }
     .section-note.sm { font-size: 12px; color: var(--gray-500); font-weight: 500; }
     .clk { cursor: pointer; }
@@ -290,10 +302,8 @@ const PROCESSING_ORDER: IntakeProcessingStatus[] = ['Completed', 'Failed', 'No S
 })
 export class IntakeTab {
   data = inject(DashboardData);
-  metrics = inject(Metrics);
   private ix = inject(Interaction);
   private exporter = inject(Exporter);
-  readonly barKeys = ['intake.complete', 'intake.auto', 'intake.rfi'];
 
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
@@ -302,23 +312,76 @@ export class IntakeTab {
     const period = this.lookback.period();
     return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];
   }
-  readonly qualityBars = computed(() => liveQualityBars(...this.scopeArgs()));
   readonly missingFields = computed(() => liveMissingFields(...this.scopeArgs()));
 
-  /** Every pending authorization in the current LOB/Lookback scope — the shared base every new
+  /** IP / OP / RX are all "Medical"; Behavioral Health is the separate track — applies to every
+   *  panel below via pendingScoped()/decidedScoped(), so a category choice narrows the whole tab
+   *  consistently, headline bars included. */
+  readonly categoryFilter = signal<CategoryFilter>('all');
+  private byCategory(cs: CaseRec[]): CaseRec[] {
+    const f = this.categoryFilter();
+    if (f === 'all') return cs;
+    if (f === 'Medical') return cs.filter((c) => intakeCategoryOf(c) !== 'Behavioral Health');
+    return cs.filter((c) => intakeCategoryOf(c) === f);
+  }
+
+  /** Every pending authorization in the current LOB/Lookback/Category scope — the shared base every
    *  Intake panel below filters/groups further, so a tile's count and its drill-down never drift. */
   readonly pendingScoped = computed(() => {
     const [lob, days] = this.scopeArgs();
-    return CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, days));
+    return this.byCategory(CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, days)));
   });
+  /** Same idea for decided cases — only "Auto-Approved" needs this (it's a decided-case rate). */
+  readonly decidedScoped = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    return this.byCategory(CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, days)));
+  });
+
+  /** The 3 headline bars, fully self-contained (no longer routed through the shared Metrics
+   *  service/liveQualityBars — those don't know about the category filter). RFIs can be sent at
+   *  any stage of the auth cycle, so "Needing RFI" here only counts ones that originated at
+   *  Intake, not ones raised later during clinical/MD/concurrent review. */
+  readonly displayBars = computed(() => {
+    const pend = this.pendingScoped(); const deci = this.decidedScoped();
+    const pendTotal = pend.length || 1; const deciTotal = deci.length || 1;
+    const complete = pend.filter((c) => !c.tags.includes('incompleteDoc')).length;
+    const auto = deci.filter((c) => c.tags.includes('auto')).length;
+    const rfiIntake = pend.filter((c) => c.tags.includes('rfi') && rfiOriginStageOf(c) === 'Intake').length;
+    return [
+      { label: 'Complete Submissions', pct: Math.round((complete / pendTotal) * 100), tone: 'green', icon: 'check' },
+      { label: 'Auto-Approved', pct: Math.round((auto / deciTotal) * 100), tone: 'teal', icon: 'bolt' },
+      { label: 'Needing RFI', pct: Math.round((rfiIntake / pendTotal) * 100), tone: 'amber', icon: 'mail' },
+    ];
+  });
+  drillBar(label: string) {
+    if (label === 'Complete Submissions') {
+      this.openCases('Complete Submissions', this.pendingScoped().filter((c) => !c.tags.includes('incompleteDoc')), 'complete-submissions');
+    } else if (label === 'Auto-Approved') {
+      const cs = this.decidedScoped().filter((c) => c.tags.includes('auto'));
+      this.openCases('Auto-Approved', cs, 'auto-approved', `${cs.length} decided authorization(s) auto-approved`);
+    } else {
+      this.drillNeedingRfi();
+    }
+  }
+  drillNeedingRfi() {
+    const cs = this.pendingScoped().filter((c) => c.tags.includes('rfi') && rfiOriginStageOf(c) === 'Intake');
+    this.openCases('Needing RFI — Intake', cs, 'needing-rfi-intake', `${cs.length} pending authorization(s) needing information, originated at Intake`);
+  }
 
   // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
   readonly vis = new WidgetVisibility('zyter-um-intake-widgets-v2', INTAKE_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
 
-  exportBar(b: { label: string; pct: number }) {
-    this.exporter.open({ title: b.label, name: `intake-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value'], rows: [[b.label, `${b.pct}%`]] });
+  /** Exports the real cases behind the tile's percentage — not just the single number. */
+  exportBar(b: { label: string }) {
+    const cs = b.label === 'Complete Submissions' ? this.pendingScoped().filter((c) => !c.tags.includes('incompleteDoc'))
+      : b.label === 'Auto-Approved' ? this.decidedScoped().filter((c) => c.tags.includes('auto'))
+      : this.pendingScoped().filter((c) => c.tags.includes('rfi') && rfiOriginStageOf(c) === 'Intake');
+    this.exporter.open({
+      title: b.label, name: `intake-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      columns: COLUMNS, rows: cs.map(toRow),
+    });
   }
   exportMissingFields() {
     this.exporter.open({
@@ -336,8 +399,8 @@ export class IntakeTab {
         { label: 'Submissions Missing This Field', value: String(f.count) },
         { label: '% of All Submissions', value: `${f.pct}%` },
       ],
-      note: 'Aggregated across the month\'s intake volume — see the current RFI Pending queue for the specific open authorizations.',
-      actions: [{ label: 'View RFI Pending queue', tone: 'teal', run: () => this.metrics.open('intake.rfi') }],
+      note: 'Aggregated across the month\'s intake volume — see the current Needing RFI (Intake) list for the specific open authorizations.',
+      actions: [{ label: 'View Needing RFI (Intake)', tone: 'teal', run: () => this.drillNeedingRfi() }],
     });
   }
 

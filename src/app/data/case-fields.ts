@@ -163,6 +163,24 @@ export function intakeProcessingStatusOf(c: CaseRec): IntakeProcessingStatus {
   return 'Completed';
 }
 
+/** Which UM benefit category the case falls under — IP/OP/RX are all "Medical"; Behavioral Health
+ *  is the separate, non-medical track. Distinct from authTypeOf() (which folds Behavioral into OP). */
+export type IntakeCategory = 'IP' | 'OP' | 'RX' | 'Behavioral Health';
+export function intakeCategoryOf(c: CaseRec): IntakeCategory {
+  if (serviceCategoryOf(c) === 'Behavioral Health') return 'Behavioral Health';
+  if (serviceCategoryOf(c) === 'Pharmacy') return 'RX';
+  return c.serviceType === 'Inpatient' ? 'IP' : 'OP';
+}
+
+/** RFIs can be sent at any stage of the auth cycle, not just from a dedicated RFI queue — this is
+ *  which stage actually triggered the request. The Intake tab's "Needing RFI" should only count
+ *  ones that originated at Intake, not ones raised later during clinical/MD/concurrent review. */
+export type RfiOriginStage = 'Intake' | 'Clinical Review' | 'MD Review' | 'Concurrent Review';
+const RFI_ORIGINS: RfiOriginStage[] = ['Intake', 'Clinical Review', 'MD Review', 'Concurrent Review'];
+export function rfiOriginStageOf(c: CaseRec): RfiOriginStage {
+  return RFI_ORIGINS[Number(c.authId.slice(-2)) % RFI_ORIGINS.length];
+}
+
 // ---- Age in queue (shared by Workforce's age bars and the case pool's own return-to-queue logic) ----
 export function ageH(authId: string): number { return 6 + (Number(authId.slice(-2)) % 90); }
 export function bandOf(authId: string, breached: boolean): 'fresh' | 'day2' | 'over48' | 'breach' {
