@@ -16,6 +16,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { Exporter } from '../shared/exporter';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
+import { Pto } from '../shared/pto';
 
 interface DisplayQueue extends QueueCard { baseName: string; lob?: string; }
 type QueueSort = 'volume' | 'breach' | 'name';
@@ -40,6 +41,7 @@ const WORKFORCE_WIDGETS = [
         <button class="btn outline" (click)="balance()"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
         <button class="btn outline esc" (click)="escalate()"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
         <button class="btn outline" (click)="openAssignmentHistory()"><z-icon name="clock" [size]="14"></z-icon> Assignment History</button>
+        <button class="btn outline" (click)="openPto()"><z-icon name="calendar" [size]="14"></z-icon> PTO</button>
         <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
       </div>
     </div>
@@ -252,6 +254,7 @@ export class WorkforceTab {
   private esc = inject(Escalate);
   private bal = inject(Balance);
   private exporter = inject(Exporter);
+  private pto = inject(Pto);
 
   // ---- widget visibility — persisted (saved/reset), toggled via the Customize picker or a card's × ----
   readonly vis = new WidgetVisibility('zyter-um-workforce-widgets-v1', WORKFORCE_WIDGETS);
@@ -570,6 +573,26 @@ export class WorkforceTab {
       subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'} & balance event${rows.length === 1 ? '' : 's'} this session`,
       table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
       note: rows.length ? undefined : 'No authorizations have been reassigned or balanced yet this session.',
+    });
+  }
+
+  /** Going-on-PTO handoff — unlike Reassign/Balance this always empties the nurse out completely,
+   *  to teammates on their own team only (never across teams), matching CM's own PTO flow. */
+  openPto() {
+    const people = this.data.nurses().map((n) => ({ name: n.name, team: n.team, active: n.active, utilization: n.utilization }));
+    this.pto.open({
+      title: 'Redistribute authorizations for PTO', itemLabel: 'authorization', people,
+      apply: (person, start, end) => {
+        const nurse = this.data.nurses().find((n) => n.name === person)!;
+        const scope = this.data.nurses().filter((n) => n.team === nurse.team && n.name !== person).map((n) => n.name);
+        const total = nurse.active;
+        for (let i = 0; i < total; i++) {
+          const target = this.data.nurses().filter((n) => scope.includes(n.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a));
+          this.data.moveOneCase(person, target.name);
+        }
+        this.ix.toast(`${total} authorization(s) redistributed from ${person} for PTO (${start} – ${end}).`);
+        this.data.addHistory('calendar', 'PTO authorizations redistributed', `${person} → ${nurse.team} teammates · ${total} authorization(s) · ${start}–${end}`);
+      },
     });
   }
 }

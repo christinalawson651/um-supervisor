@@ -14,6 +14,7 @@ import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
+import { Pto } from '../shared/pto';
 import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
@@ -80,6 +81,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             <button class="btn primary" (click)="cmReassign()"><z-icon name="swap" [size]="14"></z-icon> Reassign</button>
             <button class="btn outline" (click)="cmBalance()"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
             <button class="btn outline esc" (click)="cmEscalate()"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
+            <button class="btn outline" (click)="openPto()"><z-icon name="calendar" [size]="14"></z-icon> PTO</button>
             <button class="btn outline sm" (click)="exportCaseload()">Export</button>
             <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
           </div>
@@ -623,6 +625,7 @@ export class CmDashboard {
   private cmData = inject(CmData);
   private rx = inject(Reassign);
   private esc = inject(Escalate);
+  private pto = inject(Pto);
   readonly tabs = TABS;
   readonly sel = signal(0);
 
@@ -1007,6 +1010,28 @@ export class CmDashboard {
     const byTarget = new Map<string, number>();
     plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
     return [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'member' : 'members', target }));
+  }
+
+  /** Going-on-PTO handoff — unlike Reassign/Balance this always empties the person out completely,
+   *  to teammates on their own team only (never across teams), since that's the whole point of a
+   *  coverage handoff. */
+  openPto() {
+    const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
+    const people = this.cmManagers().map((m) => ({ name: m.name, team: teamOf.get(m.name)!, active: m.active, utilization: m.utilization }));
+    this.pto.open({
+      title: 'Redistribute caseload for PTO', itemLabel: 'member', people,
+      apply: (person, start, end) => {
+        const team = teamOf.get(person)!;
+        const scope = new Set(CARE_MANAGERS.filter((cm) => cm.team === team && cm.name !== person).map((cm) => cm.name));
+        const cases = this.cmData.cases().filter((c) => c.careManager === person);
+        cases.forEach((c) => {
+          const target = this.cmData.managerStats().filter((m) => scope.has(m.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a));
+          this.cmData.reassignCase(c.memberId, target.name);
+        });
+        this.ix.toast(`${cases.length} member(s) redistributed from ${person} for PTO (${start} – ${end}).`);
+        this.data.addHistory('calendar', 'PTO caseload redistributed', `${person} → ${team} teammates · ${cases.length} member(s) · ${start}–${end}`);
+      },
+    });
   }
   /** Bulk Escalate for case(0)'s toolbar — distinct from the per-member `escalate()` used in the Risk & Escalation tab. */
   cmEscalate() {

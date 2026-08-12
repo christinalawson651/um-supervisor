@@ -5,6 +5,7 @@ import { CaseExplorer } from '../shared/case-explorer';
 import { MemberChart } from '../shared/member-chart';
 import { ReassignPanel } from '../shared/reassign-panel';
 import { EscalatePanel } from '../shared/escalate-panel';
+import { PtoPanel } from '../shared/pto-panel';
 import { GlobalSearch } from '../shared/global-search';
 import { ExportDialog } from '../shared/export-dialog';
 import { Interaction } from '../shared/interaction';
@@ -76,7 +77,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   selector: 'app-shell',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard,
     WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab,
   ],
