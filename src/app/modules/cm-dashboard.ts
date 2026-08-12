@@ -69,7 +69,15 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
   standalone: true,
   imports: [KpiStrip, Ring, FormsModule, Icon, WidgetActions, WidgetCustomize],
   template: `
-    <app-kpi-strip [items]="displayKpis()" (drill)="onKpi($event)" />
+    <div class="kpi-toggle-row">
+      <button class="kpi-toggle" (click)="kpiCollapsed.set(!kpiCollapsed())">
+        <z-icon name="chevron" [size]="12" [stroke]="2.5" [class]="'chev ' + (kpiCollapsed() ? '' : 'up')"></z-icon>
+        {{ kpiCollapsed() ? 'Show KPIs' : 'Hide KPIs' }}
+      </button>
+    </div>
+    @if (!kpiCollapsed()) {
+      <app-kpi-strip [items]="displayKpis()" (drill)="onKpi($event)" />
+    }
 
     <nav class="subtabs">
       @for (t of tabs; track t; let i = $index) {
@@ -525,6 +533,12 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     }
   `,
   styles: [`
+    .kpi-toggle-row { display:flex; justify-content:flex-end; padding: 0 0 4px; }
+    .kpi-toggle { border:none; background:none; cursor:pointer; display:flex; align-items:center; gap:4px;
+      font-size:11px; font-weight:600; color:var(--gray-500); padding:2px 4px; }
+    .kpi-toggle:hover { color: var(--teal-700); }
+    .kpi-toggle .chev { transition: transform .15s; }
+    .kpi-toggle .chev.up { transform: rotate(180deg); }
     .sub { font-size:11px; color:var(--gray-500); font-weight:400; margin-top:2px; }
     b.hot { color:#c2410c; } b.warn { color:var(--amber-fg); }
     .pct { margin-left:10px; font-size:12.5px; font-weight:600; color:var(--ink-soft); }
@@ -647,6 +661,7 @@ export class CmDashboard {
   private pto = inject(Pto);
   readonly tabs = TABS;
   readonly sel = signal(0);
+  readonly kpiCollapsed = signal(false);
 
   readonly vis = new WidgetVisibility('zyter-cm-workforce-widgets-v2', CM_WORKFORCE_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
