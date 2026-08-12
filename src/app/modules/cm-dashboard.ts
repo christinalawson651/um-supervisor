@@ -9,7 +9,7 @@ import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
-import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
+import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
@@ -185,21 +185,28 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
       <!-- 1: Intake & Assessment SLA -->
       @case (1) {
-        <div class="tab-head"><h2>Intake &amp; Assessment SLA</h2><span class="section-note">Time-to-outreach and assessment turnaround</span></div>
-        <div class="panel panel-pad"><div class="sla-grid">
-          <div class="donut"><z-ring [value]="96" [size]="120" [thickness]="12" tone="teal"></z-ring><div class="dlab">Intake SLA</div></div>
-          <div class="rows">
-            <div class="srow green"><span><i></i>On track</span><b>108</b></div>
-            <div class="srow amber"><span><i></i>At risk</span><b>14</b></div>
-            <div class="srow red"><span><i></i>Overdue</span><b>5</b></div>
-          </div>
-          <div class="stats">
-            <div class="stat-box"><div class="val">1.4d</div><div class="lab">Avg Time to Outreach</div></div>
-            <div class="stat-box"><div class="val">18</div><div class="lab">Assessments Due (7d)</div></div>
-            <div class="stat-box"><div class="val">5</div><div class="lab">Assessments Overdue</div></div>
-            <div class="stat-box"><div class="val">3.1d</div><div class="lab">Avg Assessment TAT</div></div>
-          </div>
-        </div></div>
+        <div class="tab-head">
+          <div><h2>Intake &amp; Assessment SLA</h2><span class="section-note">Members by lifecycle stage, banded by SLA status</span></div>
+          <button class="btn outline sm" (click)="exportStages()">Export</button>
+        </div>
+        <div class="qhint">Cards show <b>every member currently in that stage</b> of the intake/assessment lifecycle. Bars show SLA status. Click a band to see those members. <b>Overdue</b> = past the stage's SLA.</div>
+        <div class="queues">
+          @for (s of cmStages(); track s.name) {
+            <div class="qcard">
+              <div class="qtop"><span class="qname">{{ s.name }}</span><span class="qcount">{{ s.count }}</span></div>
+              <div class="seg">
+                <span class="s-ontrack" [style.width.%]="s.buckets.onTrack" title="On track" (click)="openStageBand(s.name, 'onTrack')"></span>
+                <span class="s-duesoon" [style.width.%]="s.buckets.dueSoon" title="Due soon" (click)="openStageBand(s.name, 'dueSoon')"></span>
+                <span class="s-overdue" [style.width.%]="s.buckets.overdue" title="Overdue" (click)="openStageBand(s.name, 'overdue')"></span>
+              </div>
+              <div class="legend">
+                <span (click)="openStageBand(s.name, 'onTrack')"><i class="d-ontrack"></i>On track</span>
+                <span (click)="openStageBand(s.name, 'dueSoon')"><i class="d-duesoon"></i>Due soon</span>
+                <span (click)="openStageBand(s.name, 'overdue')"><i class="d-overdue"></i>Overdue</span>
+              </div>
+            </div>
+          }
+        </div>
       }
 
       <!-- 2: Care Plan & Outcomes -->
@@ -430,10 +437,12 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .seg { display:flex; height: 8px; border-radius: 999px; overflow:hidden; background: var(--gray-100); }
     .seg > span { display:block; height:100%; cursor: pointer; }
     .s-fresh { background:#10b981; } .s-day2 { background:#f59e0b; } .s-over48 { background:#f97316; } .s-breach { background:#ef4444; }
+    .s-ontrack { background:#10b981; } .s-duesoon { background:#f59e0b; } .s-overdue { background:#ef4444; }
     .legend { display:flex; gap:14px; margin-top:10px; font-size: 10.5px; color: var(--gray-500); }
     .legend span { display:flex; align-items:center; gap:4px; cursor: pointer; } .legend span:hover { color: var(--ink-soft); }
     .legend i { width:8px; height:8px; border-radius:2px; display:inline-block; }
     .d-fresh { background:#10b981; } .d-day2 { background:#f59e0b; } .d-over48 { background:#f97316; } .d-breach { background:#ef4444; }
+    .d-ontrack { background:#10b981; } .d-duesoon { background:#f59e0b; } .d-overdue { background:#ef4444; }
 
     .seg-toggle { display: inline-flex; border:1px solid var(--gray-300); border-radius:8px; overflow:hidden; margin-left: 8px; }
     .seg-toggle button { border:none; background:#fff; padding:7px 14px; font-size:12px; font-weight:600; color:var(--gray-500); cursor:pointer; }
@@ -534,6 +543,20 @@ export class CmDashboard {
   readonly cmQueues = computed(() => this.cmData.queues());
   readonly cmManagers = computed(() => this.cmData.managerStats());
   readonly cmTeams = computed(() => this.cmData.teamStats());
+
+  // ---- Intake & Assessment SLA (case 1) — lifecycle-stage cards, the same "graphs" shape as the
+  // first pass of Workforce & Caseload, now on the tab that actually owns lifecycle stage. ----
+  readonly cmStages = computed(() => this.cmData.stages());
+  openStageBand(stage: string, band: SlaBand) {
+    const labels: Record<SlaBand, string> = { onTrack: 'On track', dueSoon: 'Due soon', overdue: 'Overdue' };
+    const cases = this.cmData.cases().filter((x) => x.stage === stage && slaBandOf(x) === band);
+    this.openCmCases(`${stage} — ${labels[band]}`, cases, `${slug(stage)}-${slug(band)}`);
+  }
+  exportStages() {
+    this.exporter.open({ title: 'Intake & Assessment SLA', name: 'cm-intake-assessment-sla_2026-07-17',
+      columns: ['Stage', 'Members', 'On Track %', 'Due Soon %', 'Overdue %'],
+      rows: this.cmStages().map((s) => [s.name, s.count, s.buckets.onTrack, s.buckets.dueSoon, s.buckets.overdue]) });
+  }
 
   // ---- how members were assigned (queue draw vs direct) — independent of the operational queues above ----
   readonly assignTeamFilter = signal('all');
