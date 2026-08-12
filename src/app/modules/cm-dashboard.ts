@@ -683,17 +683,33 @@ export class CmDashboard {
     const newReferrals = this.scopedReferrals().length;
     const intakeSlaPct = Math.round(((total - slaAtRisk) / total) * 100);
     return [
-      { icon: 'alert',  value: String(highRisk),  label: 'High-Risk Members', tone: 'red' },
-      { icon: 'shield', value: String(highAcuity), label: 'High-Acuity',       tone: 'amber' },
-      { icon: 'dollar', value: String(highCost),   label: 'High-Cost (>$100k)', tone: 'amber' },
-      { icon: 'clock',  value: String(slaAtRisk),  label: 'SLA At-Risk',       tone: 'red' },
-      { icon: 'folder', value: String(activeCarePlans), label: 'Active Care Plans', tone: 'teal' },
-      { icon: 'inbox',  value: String(newReferrals), label: 'New Referrals',   tone: 'blue' },
-      { icon: 'users',  value: String(cs.length),  label: 'Members Managed',   tone: 'green' },
-      { icon: 'check',  value: `${intakeSlaPct}%`, label: 'Intake SLA',        tone: 'green' },
+      { icon: 'alert',  value: String(highRisk),  label: 'High-Risk Members', tone: 'red', key: 'highRisk' },
+      { icon: 'shield', value: String(highAcuity), label: 'High-Acuity',       tone: 'amber', key: 'highAcuity' },
+      { icon: 'dollar', value: String(highCost),   label: 'High-Cost (>$100k)', tone: 'amber', key: 'highCost' },
+      { icon: 'clock',  value: String(slaAtRisk),  label: 'SLA At-Risk',       tone: 'red', key: 'slaAtRisk' },
+      { icon: 'folder', value: String(activeCarePlans), label: 'Active Care Plans', tone: 'teal', key: 'activeCarePlans' },
+      { icon: 'inbox',  value: String(newReferrals), label: 'New Referrals',   tone: 'blue', key: 'newReferrals' },
+      { icon: 'users',  value: String(cs.length),  label: 'Members Managed',   tone: 'green', key: 'membersManaged' },
+      { icon: 'check',  value: `${intakeSlaPct}%`, label: 'Intake SLA',        tone: 'green', key: 'slaAtRisk' },
     ];
   });
-  onKpi(_: string) { /* KPIs on CM navigate within tabs; no explorer wired yet */ }
+  onKpi(key: string) {
+    const cs = this.scopedCases();
+    switch (key) {
+      case 'highRisk': this.openCmCases('High-Risk Members', cs.filter((c) => c.tags.includes('highRisk')), 'kpi-high-risk'); break;
+      case 'highAcuity': this.openCmCases('High-Acuity Members', cs.filter((c) => c.tags.includes('highAcuity')), 'kpi-high-acuity'); break;
+      case 'highCost': this.openCmCases('High-Cost Members (>$100k)', cs.filter((c) => c.tags.includes('highCost')), 'kpi-high-cost'); break;
+      case 'slaAtRisk': this.openCmCases('SLA At-Risk Members', cs.filter((c) => c.tags.includes('slaAtRisk')), 'kpi-sla-at-risk'); break;
+      case 'activeCarePlans': this.openCmCases('Active Care Plans', cs.filter((c) => c.stage !== 'New Referral'), 'kpi-active-care-plans'); break;
+      case 'membersManaged': this.openCmCases('Members Managed', cs, 'kpi-members-managed'); break;
+      case 'newReferrals': {
+        const rows = this.scopedReferrals();
+        this.ix.openDrawer({ title: 'New Referrals', subtitle: `${rows.length} referral(s) in the last ${this.lookbackLabel()}`,
+          table: { columns: ['Referral ID', 'Member', 'Source', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.member, r.source, r.status, r.received]) } });
+        break;
+      }
+    }
+  }
 
   readonly worklist: CmMemberRow[] = [
     { name: 'Marcus Webb', dx: 'ESRD on dialysis', risk: 8.9, level: 'Critical', acuity: 'High', cost: '$412k', sla: 'Assessment overdue', slaTone: 'red', cm: 'Sara Nguyen, RN' },
