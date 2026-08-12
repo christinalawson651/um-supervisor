@@ -586,12 +586,15 @@ export class WorkforceTab {
         const nurse = this.data.nurses().find((n) => n.name === person)!;
         const scope = this.data.nurses().filter((n) => n.team === nurse.team && n.name !== person).map((n) => n.name);
         const total = nurse.active;
+        const byTarget = new Map<string, number>();
         for (let i = 0; i < total; i++) {
           const target = this.data.nurses().filter((n) => scope.includes(n.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a));
           this.data.moveOneCase(person, target.name);
+          byTarget.set(target.name, (byTarget.get(target.name) ?? 0) + 1);
         }
+        const breakdown = [...byTarget.entries()].map(([to, n]) => `${n} → ${to}`).join(', ');
         this.ix.toast(`${total} authorization(s) redistributed from ${person} for PTO (${start} – ${end}).`);
-        this.data.addHistory('calendar', 'PTO authorizations redistributed', `${person} → ${nurse.team} teammates · ${total} authorization(s) · ${start}–${end}`);
+        this.data.addHistory('calendar', 'PTO authorizations redistributed', `${person} (${nurse.team}), ${start}–${end}: ${breakdown}`);
       },
     });
   }

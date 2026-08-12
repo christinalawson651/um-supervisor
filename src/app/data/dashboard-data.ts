@@ -273,7 +273,7 @@ export class DashboardData {
   readonly history = signal<HistoryEntry[]>(seedReturnHistory());
 
   /** Just the assignment-moving entries (reassign + balance) — the full activity log also includes escalations, etc. */
-  readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance'));
+  readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance' || h.icon === 'calendar'));
 
   addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson') {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

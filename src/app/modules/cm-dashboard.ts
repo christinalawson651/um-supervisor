@@ -82,6 +82,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             <button class="btn outline" (click)="cmBalance()"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
             <button class="btn outline esc" (click)="cmEscalate()"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
             <button class="btn outline" (click)="openPto()"><z-icon name="calendar" [size]="14"></z-icon> PTO</button>
+            <button class="btn outline" (click)="openAssignmentHistory()"><z-icon name="clock" [size]="14"></z-icon> Assignment History</button>
             <button class="btn outline sm" (click)="exportCaseload()">Export</button>
             <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
           </div>
@@ -789,10 +790,13 @@ export class CmDashboard {
           title: `Assign ${n} pending referral${n > 1 ? 's' : ''}`, body: 'Assign pending referrals to care managers with the most capacity:',
           confirmLabel: 'Assign', tone: 'teal',
           onConfirm: () => {
-            let moved = 0;
-            for (let i = 0; i < n; i++) { if (this.cmData.reassignNextPendingReferral()) moved++; }
-            this.ix.toast(`${moved} referral(s) assigned.`);
-            this.data.addHistory('balance', 'Pending referrals assigned', `${opt.split(' — ')[0]} · ${moved} referral(s)`);
+            const moves: { member: string; to: string }[] = [];
+            for (let i = 0; i < n; i++) { const m = this.cmData.reassignNextPendingReferral(); if (m) moves.push(m); }
+            this.ix.toast(`${moves.length} referral(s) assigned.`);
+            const byTarget = new Map<string, number>();
+            moves.forEach((m) => byTarget.set(m.to, (byTarget.get(m.to) ?? 0) + 1));
+            const breakdown = [...byTarget.entries()].map(([to, cnt]) => `${cnt} → ${to}`).join(', ') || 'no moves';
+            this.data.addHistory('balance', 'Pending referrals assigned', `${opt.split(' — ')[0]} · ${breakdown}`);
           },
         });
       },
@@ -872,9 +876,9 @@ export class CmDashboard {
           breakdown: this.summarizeBalance(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
-            plan.forEach(() => this.cmData.reassignBusiestCase(scope));
-            this.ix.toast(`${t.name} balanced — ${opt.split(' — ')[0].toLowerCase()} (${plan.length} member${plan.length > 1 ? 's' : ''} moved).`);
-            this.data.addHistory('balance', 'CM team balanced', `${t.name}: ${opt.split(' — ')[0]} · ${plan.length} member(s) moved`);
+            const moves = plan.map(() => this.cmData.reassignBusiestCase(scope)).filter((m): m is { member: string; from: string; to: string } => !!m);
+            this.ix.toast(`${t.name} balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} member${moves.length > 1 ? 's' : ''} moved).`);
+            this.data.addHistory('balance', 'CM team balanced', `${t.name} · ${opt.split(' — ')[0]} · ${this.summarizeMoves(moves)}`);
           },
         });
       },
@@ -998,13 +1002,20 @@ export class CmDashboard {
           breakdown: this.summarizeBalance(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
-            plan.forEach(() => this.cmData.reassignBusiestCase());
-            this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${plan.length} member${plan.length > 1 ? 's' : ''} moved).`);
-            this.data.addHistory('balance', 'CM caseload balanced', `${opt.split(' — ')[0]} · ${plan.length} member(s) moved`);
+            const moves = plan.map(() => this.cmData.reassignBusiestCase()).filter((m): m is { member: string; from: string; to: string } => !!m);
+            this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} member${moves.length > 1 ? 's' : ''} moved).`);
+            this.data.addHistory('balance', 'CM caseload balanced', `${opt.split(' — ')[0]} · ${this.summarizeMoves(moves)}`);
           },
         });
       },
     });
+  }
+  /** "2 → James Wong, 1 → Angela Ruiz" style breakdown so the history entry proves exactly where cases landed, not just a total count. */
+  private summarizeMoves(moves: { member: string; from: string; to: string }[]): string {
+    if (!moves.length) return 'no moves (already balanced)';
+    const byTarget = new Map<string, number>();
+    moves.forEach((m) => byTarget.set(m.to, (byTarget.get(m.to) ?? 0) + 1));
+    return [...byTarget.entries()].map(([to, n]) => `${n} → ${to}`).join(', ');
   }
   private summarizeBalance(plan: { from: string; to: string }[]): ConfirmBreakdownRow[] {
     const byTarget = new Map<string, number>();
@@ -1024,15 +1035,32 @@ export class CmDashboard {
         const team = teamOf.get(person)!;
         const scope = new Set(CARE_MANAGERS.filter((cm) => cm.team === team && cm.name !== person).map((cm) => cm.name));
         const cases = this.cmData.cases().filter((c) => c.careManager === person);
+        const byTarget = new Map<string, number>();
         cases.forEach((c) => {
           const target = this.cmData.managerStats().filter((m) => scope.has(m.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a));
           this.cmData.reassignCase(c.memberId, target.name);
+          byTarget.set(target.name, (byTarget.get(target.name) ?? 0) + 1);
         });
+        const breakdown = [...byTarget.entries()].map(([to, n]) => `${n} → ${to}`).join(', ');
         this.ix.toast(`${cases.length} member(s) redistributed from ${person} for PTO (${start} – ${end}).`);
-        this.data.addHistory('calendar', 'PTO caseload redistributed', `${person} → ${team} teammates · ${cases.length} member(s) · ${start}–${end}`);
+        this.data.addHistory('calendar', 'PTO caseload redistributed', `${person} (${team}), ${start}–${end}: ${breakdown}`);
       },
     });
   }
+
+  /** Same Assignment History drawer as UM's Workforce & Queue Management — reads the same shared
+   *  session log, so a reassign/balance/PTO move made from either module shows up here with a real
+   *  "N → target" detail, not just a count. */
+  openAssignmentHistory() {
+    const rows = this.data.assignmentHistory();
+    this.ix.openDrawer({
+      title: 'Assignment History',
+      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'}, balance, & PTO event${rows.length === 1 ? '' : 's'} this session`,
+      table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
+      note: rows.length ? undefined : 'No members have been reassigned, balanced, or redistributed for PTO yet this session.',
+    });
+  }
+
   /** Bulk Escalate for case(0)'s toolbar — distinct from the per-member `escalate()` used in the Risk & Escalation tab. */
   cmEscalate() {
     const candidates = this.cmData.cases().filter((c) => c.riskLevel === 'Critical' || c.riskLevel === 'High').slice(0, 25).map((c) => ({

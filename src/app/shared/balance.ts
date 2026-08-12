@@ -36,9 +36,12 @@ export class Balance {
           breakdown: this.summarize(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
-            plan.forEach(() => this.data.reassignBusiest(nurseScope));
-            this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${plan.length} authorization${plan.length > 1 ? 's' : ''} moved).`);
-            this.data.addHistory('balance', 'Workload balanced', `${opt.split(' — ')[0]} · ${plan.length} authorization(s) moved (${scopeNote})`);
+            const moves = plan.map(() => this.data.reassignBusiest(nurseScope)).filter((m): m is { from: string; to: string } => !!m);
+            this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} authorization${moves.length > 1 ? 's' : ''} moved).`);
+            const byTarget = new Map<string, number>();
+            moves.forEach((m) => byTarget.set(m.to, (byTarget.get(m.to) ?? 0) + 1));
+            const breakdown = [...byTarget.entries()].map(([target, count]) => `${count} → ${target}`).join(', ') || 'no moves';
+            this.data.addHistory('balance', 'Workload balanced', `${opt.split(' — ')[0]} (${scopeNote}) · ${breakdown}`);
           },
         });
       },
