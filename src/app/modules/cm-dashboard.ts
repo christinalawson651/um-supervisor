@@ -648,7 +648,7 @@ export class CmDashboard {
 
   // ---- Referrals (30-day intake funnel — includes referrals that never became an active case,
   // so "by source"/"by status" reflects true intake volume, not just the survivors). ----
-  private readonly REFERRAL_COLORS: Record<ReferralSource, string> = { 'UM Referral': '#0d9488', 'Health Plan': '#3b82f6', 'PCP/Provider': '#8b5cf6', 'ER/Hospital': '#f59e0b', 'Self/Family': '#9ca3af' };
+  private readonly REFERRAL_COLORS: Record<ReferralSource, string> = { 'Fax': '#f59e0b', 'Provider Portal': '#3b82f6', 'Call': '#8b5cf6', 'UM Referral': '#0d9488' };
   readonly referralsBySource = computed(() => {
     const total = CM_REFERRAL_INTAKE.length || 1;
     return REFERRAL_SOURCES.map((label) => {
@@ -662,7 +662,7 @@ export class CmDashboard {
   });
   openReferralSource(source: ReferralSource) {
     const rows = CM_REFERRAL_INTAKE.filter((r) => r.source === source);
-    this.ix.openDrawer({ title: `${source} Referrals`, subtitle: `${rows.length} referral(s) in the last 30 days`,
+    this.ix.openDrawer({ title: `Referral Source: ${source}`, subtitle: `${rows.length} referral(s) in the last 30 days`,
       table: { columns: ['Referral ID', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.status, r.received]) } });
   }
   openReferralStatus(status: ReferralStatus) {

@@ -19,9 +19,9 @@ export const ASSESSMENT_TYPES: AssessmentType[] = ['HRA', 'SDOH Screening', 'KDQ
 // The referral FUNNEL — distinct from the active caseload (CM_CASE_POOL), since an active case is
 // by definition an already-accepted referral. This models the fuller pipeline including referrals
 // that were declined, so "by source" and "by approval/denial" reflect real intake volume, not just
-// survivors.
-export type ReferralSource = 'UM Referral' | 'Health Plan' | 'PCP/Provider' | 'ER/Hospital' | 'Self/Family';
-export const REFERRAL_SOURCES: ReferralSource[] = ['UM Referral', 'Health Plan', 'PCP/Provider', 'ER/Hospital', 'Self/Family'];
+// survivors. "Source" here is the intake CHANNEL a referral arrived through, not who originated it.
+export type ReferralSource = 'Fax' | 'Provider Portal' | 'Call' | 'UM Referral';
+export const REFERRAL_SOURCES: ReferralSource[] = ['Fax', 'Provider Portal', 'Call', 'UM Referral'];
 export type ReferralStatus = 'Accepted' | 'CM Declined' | 'Member Declined';
 
 export interface ReferralIntakeRec { id: string; source: ReferralSource; status: ReferralStatus; received: string; }
