@@ -9,7 +9,7 @@ import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
-import { CmData, CmManagerStat, CmStageCard, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
+import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec } from '../data/cm-case-pool';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
@@ -21,9 +21,10 @@ import { WidgetCustomize } from '../shared/widget-customize';
 interface CmMemberRow { name: string; risk: number; level: 'Low'|'Moderate'|'High'|'Critical'; acuity: 'Low'|'Medium'|'High'; cost: string; sla: string; slaTone: string; cm: string; dx: string; }
 
 const CM_WORKFORCE_WIDGETS = [
-  { id: 'New Referral', title: 'New Referral' }, { id: 'Assessment Scheduled', title: 'Assessment Scheduled' },
-  { id: 'Care Plan Development', title: 'Care Plan Development' }, { id: 'Active Monitoring', title: 'Active Monitoring' },
-  { id: 'Care Plan Review Due', title: 'Care Plan Review Due' }, { id: 'workload', title: 'Workload per Care Manager' },
+  { id: 'New Referral Queue', title: 'New Referral Queue' }, { id: 'Outreach Queue', title: 'Outreach Queue' },
+  { id: 'Reassessment Queue', title: 'Reassessment Queue' }, { id: 'Escalation Queue', title: 'Escalation Queue' },
+  { id: 'Discharge Follow-Up Queue', title: 'Discharge Follow-Up Queue' }, { id: 'Documentation Queue', title: 'Documentation Queue' },
+  { id: 'workload', title: 'Workload per Care Manager' },
 ];
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
@@ -57,23 +58,25 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
         <z-widget-customize [vis]="vis"></z-widget-customize>
 
-        <div class="qhint">Cards show each stage's <b>active caseload</b>. Bars show SLA status against the next milestone due date — click a band to see those members.</div>
+        <div class="qhint">Cards show <b>unclaimed work sitting in each queue</b> — a member's overall stage lives in Intake &amp; Assessment SLA / Care Plan &amp; Outcomes instead. Bars show how long each item has waited. Click a band to see those members. <b>Breach</b> = past the queue's SLA.</div>
 
         <div class="queues">
-          @for (s of cmStages(); track s.name) {
-            @if (!isHidden(s.name)) {
+          @for (q of cmQueues(); track q.name) {
+            @if (!isHidden(q.name)) {
             <div class="qcard">
-              <z-widget-actions (exportClick)="exportStage(s)" (removeClick)="hide(s.name)"></z-widget-actions>
-              <div class="qtop"><span class="qname">{{ s.name }}</span><span class="qcount">{{ s.count }}</span></div>
+              <z-widget-actions (exportClick)="exportQueue(q)" (removeClick)="hide(q.name)"></z-widget-actions>
+              <div class="qtop"><span class="qname">{{ q.name }}</span><span class="qcount">{{ q.count }}</span></div>
               <div class="seg">
-                <span class="s-ontrack" [style.width.%]="s.buckets.onTrack" title="On track" (click)="openStageBand(s.name, 'onTrack')"></span>
-                <span class="s-duesoon" [style.width.%]="s.buckets.dueSoon" title="Due soon (≤3 days)" (click)="openStageBand(s.name, 'dueSoon')"></span>
-                <span class="s-overdue" [style.width.%]="s.buckets.overdue" title="Overdue" (click)="openStageBand(s.name, 'overdue')"></span>
+                <span class="s-fresh" [style.width.%]="q.buckets.fresh" title="0–24h in queue" (click)="openQueueBand(q.name, 'fresh')"></span>
+                <span class="s-day2" [style.width.%]="q.buckets.day2" title="24–48h in queue" (click)="openQueueBand(q.name, 'day2')"></span>
+                <span class="s-over48" [style.width.%]="q.buckets.over48" title="Over 48h in queue" (click)="openQueueBand(q.name, 'over48')"></span>
+                <span class="s-breach" [style.width.%]="q.buckets.breach" title="Past SLA deadline" (click)="openQueueBand(q.name, 'breach')"></span>
               </div>
               <div class="legend">
-                <span (click)="openStageBand(s.name, 'onTrack')"><i class="d-ontrack"></i>On Track</span>
-                <span (click)="openStageBand(s.name, 'dueSoon')"><i class="d-duesoon"></i>Due Soon</span>
-                <span (click)="openStageBand(s.name, 'overdue')"><i class="d-overdue"></i>Overdue</span>
+                <span (click)="openQueueBand(q.name, 'fresh')"><i class="d-fresh"></i>0-24h</span>
+                <span (click)="openQueueBand(q.name, 'day2')"><i class="d-day2"></i>24-48h</span>
+                <span (click)="openQueueBand(q.name, 'over48')"><i class="d-over48"></i>&gt;48h</span>
+                <span (click)="openQueueBand(q.name, 'breach')"><i class="d-breach"></i>Breach</span>
               </div>
             </div>
             }
@@ -82,9 +85,16 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
         @if (!isHidden('workload')) {
         <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Workload per Care Manager</h3>
+          <div class="panel-pad tbl-head">
+            <h3 class="pt">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Care Manager' }}</h3>
             <z-widget-actions (exportClick)="exportWorkload()" (removeClick)="hide('workload')"></z-widget-actions>
+            <div class="seg-toggle">
+              <button [class.on]="groupBy() === 'manager'" (click)="groupBy.set('manager')">By Care Manager</button>
+              <button [class.on]="groupBy() === 'team'" (click)="groupBy.set('team')">By Team</button>
+            </div>
           </div>
+
+          @if (groupBy() === 'manager') {
           <table class="z-table">
             <thead><tr>
               <th class="srt" (click)="sortCm('name')">Care Manager{{ caretCm('name') }}</th>
@@ -105,6 +115,39 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
                   <span class="pct">{{ c.utilization }}%</span></td>
                 <td><button class="btn outline sm" (click)="cmReassignOne(c); $event.stopPropagation()">Reassign</button></td></tr>
             }</tbody></table>
+          } @else {
+          <table class="z-table">
+            <thead><tr><th>Team / Care Manager</th><th>Active</th><th>High Risk</th><th>High Acuity</th><th>High Cost</th><th>SLA At-Risk</th><th>Utilization</th><th>Actions</th></tr></thead>
+            <tbody>
+              @for (t of cmTeams(); track t.name) {
+                <tr class="team-row" (click)="toggleTeam(t.name)">
+                  <td class="strong"><span class="chev" [class.open]="expanded().has(t.name)">▸</span> {{ t.name }} <span class="tcount">{{ t.managers.length }} managers</span></td>
+                  <td class="num">{{ t.active }}</td>
+                  <td><b [class.hot]="t.highRisk>0">{{ t.highRisk }}</b></td>
+                  <td><b [class.hot]="t.highAcuity>0">{{ t.highAcuity }}</b></td>
+                  <td><b [class.hot]="t.highCost>0">{{ t.highCost }}</b></td>
+                  <td><b [class.warn]="t.slaAtRisk>0">{{ t.slaAtRisk }}</b></td>
+                  <td><span class="mini-bar" [class.teal]="t.utilization<80" [class.red]="t.utilization>=90"><span [style.width.%]="t.utilization"></span></span>
+                    <span class="pct strong">{{ t.utilization }}%</span></td>
+                  <td><button class="btn outline sm" (click)="cmBalanceTeam(t); $event.stopPropagation()">Balance</button></td></tr>
+                @if (expanded().has(t.name)) {
+                  @for (c of t.managers; track c.name) {
+                    <tr class="nurse-child clk" (click)="openCm(c)">
+                      <td class="child-name">{{ c.name }}<div class="sub">{{ c.discipline }}</div></td>
+                      <td class="num clk" (click)="openCmActive(c); $event.stopPropagation()">{{ c.active }}</td>
+                      <td class="clk" (click)="openCmFlag(c,'highRisk'); $event.stopPropagation()"><b [class.hot]="c.highRisk>0">{{ c.highRisk }}</b></td>
+                      <td class="clk" (click)="openCmFlag(c,'highAcuity'); $event.stopPropagation()"><b [class.hot]="c.highAcuity>0">{{ c.highAcuity }}</b></td>
+                      <td class="clk" (click)="openCmFlag(c,'highCost'); $event.stopPropagation()"><b [class.hot]="c.highCost>0">{{ c.highCost }}</b></td>
+                      <td class="clk" (click)="openCmFlag(c,'slaAtRisk'); $event.stopPropagation()"><b [class.warn]="c.slaAtRisk>0">{{ c.slaAtRisk }}</b></td>
+                      <td><span class="mini-bar" [class.teal]="c.utilization<80" [class.red]="c.utilization>=90"><span [style.width.%]="c.utilization"></span></span>
+                        <span class="pct">{{ c.utilization }}%</span></td>
+                      <td><button class="btn outline sm" (click)="cmReassignOne(c); $event.stopPropagation()">Reassign</button></td></tr>
+                  }
+                }
+              }
+            </tbody>
+          </table>
+          }
         </div>
         }
       }
@@ -350,11 +393,22 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .qname { font-size: 14px; font-weight: 600; color: var(--ink); } .qcount { font-size: 15px; font-weight: 700; color: var(--ink); }
     .seg { display:flex; height: 8px; border-radius: 999px; overflow:hidden; background: var(--gray-100); }
     .seg > span { display:block; height:100%; cursor: pointer; }
-    .s-ontrack { background: #10b981; } .s-duesoon { background: #f59e0b; } .s-overdue { background: #ef4444; }
+    .s-fresh { background:#10b981; } .s-day2 { background:#f59e0b; } .s-over48 { background:#f97316; } .s-breach { background:#ef4444; }
     .legend { display:flex; gap:14px; margin-top:10px; font-size: 10.5px; color: var(--gray-500); }
     .legend span { display:flex; align-items:center; gap:4px; cursor: pointer; } .legend span:hover { color: var(--ink-soft); }
     .legend i { width:8px; height:8px; border-radius:2px; display:inline-block; }
-    .d-ontrack { background:#10b981; } .d-duesoon { background:#f59e0b; } .d-overdue { background:#ef4444; }
+    .d-fresh { background:#10b981; } .d-day2 { background:#f59e0b; } .d-over48 { background:#f97316; } .d-breach { background:#ef4444; }
+
+    .seg-toggle { display: inline-flex; border:1px solid var(--gray-300); border-radius:8px; overflow:hidden; margin-left: 8px; }
+    .seg-toggle button { border:none; background:#fff; padding:7px 14px; font-size:12px; font-weight:600; color:var(--gray-500); cursor:pointer; }
+    .seg-toggle button.on { background:var(--teal-700); color:#fff; }
+    .team-row { cursor:pointer; background:var(--teal-50); }
+    .team-row:hover { background:var(--teal-100); }
+    .team-row .strong { color:var(--teal-900); }
+    .chev { display:inline-block; transition:transform .12s; color:var(--teal-700); margin-right:4px; }
+    .chev.open { transform:rotate(90deg); }
+    .tcount { font-size:11px; font-weight:600; color:var(--gray-500); background:#fff; border:1px solid var(--border); padding:1px 8px; border-radius:999px; margin-left:6px; }
+    .nurse-child td:first-child { padding-left:34px; } .child-name { color:var(--ink-soft); }
   `],
 })
 export class CmDashboard {
@@ -369,7 +423,7 @@ export class CmDashboard {
   readonly tabs = TABS;
   readonly sel = signal(0);
 
-  readonly vis = new WidgetVisibility('zyter-cm-workforce-widgets-v1', CM_WORKFORCE_WIDGETS);
+  readonly vis = new WidgetVisibility('zyter-cm-workforce-widgets-v2', CM_WORKFORCE_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
 
@@ -441,8 +495,23 @@ export class CmDashboard {
   ];
 
   // ---- caseload: real data from CmData, drills, and Reassign/Balance/Escalate actions ----
-  readonly cmStages = computed(() => this.cmData.stages());
+  readonly cmQueues = computed(() => this.cmData.queues());
   readonly cmManagers = computed(() => this.cmData.managerStats());
+  readonly cmTeams = computed(() => this.cmData.teamStats());
+
+  readonly groupBy = signal<'manager' | 'team'>('manager');
+  readonly expanded = signal<Set<string>>(new Set());
+  toggleTeam(name: string) { this.expanded.update((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
+  /** Same strategy as UM's per-team Balance — restricted to this team's care managers. */
+  cmBalanceTeam(t: CmTeamStat) {
+    this.ix.ask({ title: `Balance ${t.name}`, body: `Move members from over-utilized care managers to those with capacity within ${t.name}?`, confirmLabel: 'Balance', tone: 'teal',
+      onConfirm: () => {
+        const names = new Set(t.managers.map((m) => m.name));
+        const moved = this.cmData.reassignBusiestCase(names);
+        if (moved) { this.ix.toast(`${moved.member} reassigned within ${t.name}.`); this.data.addHistory('balance', 'CM team balanced', `${t.name}: ${moved.from} → ${moved.to}`); }
+        else this.ix.toast(`${t.name} is already balanced.`, 'info');
+      } });
+  }
 
   readonly cmSortKey = signal<keyof CmManagerStat | ''>('');
   readonly cmSortDir = signal<SortDir>(1);
@@ -455,10 +524,10 @@ export class CmDashboard {
       columns: ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
       rows: this.cmManagers().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]) });
   }
-  exportStage(s: CmStageCard) {
-    this.exporter.open({ title: s.name, name: `cm-stage-${slug(s.name)}_2026-07-17`,
+  exportQueue(q: CmQueueCard) {
+    this.exporter.open({ title: q.name, name: `cm-queue-${slug(q.name)}_2026-07-17`,
       columns: ['Metric', 'Value'],
-      rows: [['Active', s.count], ['On Track %', s.buckets.onTrack], ['Due Soon %', s.buckets.dueSoon], ['Overdue %', s.buckets.overdue]] });
+      rows: [['Unclaimed', q.count], ['0-24h %', q.buckets.fresh], ['24-48h %', q.buckets.day2], ['>48h %', q.buckets.over48], ['Breach %', q.buckets.breach]] });
   }
   exportWorkload() {
     this.exporter.open({ title: 'Workload per Care Manager', name: 'cm-workload_2026-07-17',
@@ -481,10 +550,10 @@ export class CmDashboard {
     const cases = this.cmData.cases().filter((x) => x.careManager === c.name && x.tags.includes(flag));
     this.openCmCases(`${c.name} — ${flag}`, cases, `${slug(c.name)}-${slug(flag)}`);
   }
-  openStageBand(stage: string, band: SlaBand) {
-    const labels: Record<SlaBand, string> = { onTrack: 'On Track', dueSoon: 'Due Soon (≤3 days)', overdue: 'Overdue' };
-    const cases = this.cmData.cases().filter((x) => x.stage === stage && slaBandOf(x) === band);
-    this.openCmCases(`${stage} — ${labels[band]}`, cases, `${slug(stage)}-${slug(band)}`);
+  openQueueBand(queue: string, band: QueueBand) {
+    const labels: Record<QueueBand, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
+    const cases = this.cmData.cases().filter((x) => x.queue === queue && queueBandOf(x) === band);
+    this.openCmCases(`${queue} — ${labels[band]}`, cases, `${slug(queue)}-${slug(band)}`);
   }
 
   openCm(c: CmManagerStat) {
@@ -508,29 +577,30 @@ export class CmDashboard {
   }
 
   /** Bulk Reassign over the whole caseload — same shared Reassign panel UM uses, with CM's care
-   *  managers as targets and CM's stages as the Queue-mode targets (via the generalized config). */
+   *  managers as targets and CM's real work queues as the Queue-mode targets (via the generalized
+   *  config). Cases with no active queue item show as "No Active Queue" in the panel's filter pills. */
   cmReassign() {
-    const cases: ReassignCase[] = this.cmData.cases().map((c) => ({ authId: c.memberId, member: c.member, type: c.program, queue: c.stage, priority: c.riskLevel, owner: c.careManager }));
+    const cases: ReassignCase[] = this.cmData.cases().map((c) => ({ authId: c.memberId, member: c.member, type: c.program, queue: c.queue ?? 'No Active Queue', priority: c.riskLevel, owner: c.careManager }));
     const nurses = this.cmManagers().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
-    const queueTargets = this.cmStages().map((s) => ({ name: s.name, count: s.count }));
+    const queueTargets = this.cmQueues().map((q) => ({ name: q.name, count: q.count }));
     this.rx.open({
       title: 'Reassign care management members', cases, nurses, queueTargets,
       apply: (ids, target, mode) => {
-        ids.forEach((id) => mode === 'queue' ? this.cmData.reassignStage(id, target) : this.cmData.reassignCase(id, target));
+        ids.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
         this.ix.toast(`${ids.length} member(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
-        this.data.addHistory('swap', mode === 'queue' ? 'CM members moved to stage' : 'CM members reassigned', `${ids.length} member(s) → ${target}`);
+        this.data.addHistory('swap', mode === 'queue' ? 'CM members moved to queue' : 'CM members reassigned', `${ids.length} member(s) → ${target}`);
       },
     });
   }
   /** Row-level Reassign — scoped to one care manager's members, same panel/UX as the bulk version. */
   cmReassignOne(c: CmManagerStat) {
     const cases: ReassignCase[] = this.cmData.cases().filter((x) => x.careManager === c.name)
-      .map((x) => ({ authId: x.memberId, member: x.member, type: x.program, queue: x.stage, priority: x.riskLevel, owner: x.careManager }));
+      .map((x) => ({ authId: x.memberId, member: x.member, type: x.program, queue: x.queue ?? 'No Active Queue', priority: x.riskLevel, owner: x.careManager }));
     const nurses = this.cmManagers().filter((m) => m.name !== c.name).map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
     this.rx.open({
       title: `Reassign a member from ${c.name}`, cases, nurses,
       apply: (ids, target, mode) => {
-        ids.forEach((id) => mode === 'queue' ? this.cmData.reassignStage(id, target) : this.cmData.reassignCase(id, target));
+        ids.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
         this.ix.toast(`${ids.length} member(s) reassigned to ${target}.`);
         this.data.addHistory('swap', 'CM member reassigned', `${ids.length} member(s) → ${target}`);
       },

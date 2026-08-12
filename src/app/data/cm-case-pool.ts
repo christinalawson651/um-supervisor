@@ -3,16 +3,24 @@
 // aggregate/flag/drill into, instead of the hand-authored 5-row static array it had before.
 import { TODAY } from './case-fields';
 
-export interface CareManagerMeta { name: string; discipline: string; }
+export interface CareManagerMeta { name: string; discipline: string; team: string; }
 export const CARE_MANAGERS: CareManagerMeta[] = [
-  { name: 'Sara Nguyen, RN', discipline: 'Complex Care' },
-  { name: 'David Patel, MSW', discipline: 'Behavioral Health' },
-  { name: 'Maria Torres, RN', discipline: 'Transitional Care' },
-  { name: 'James Wong, PharmD', discipline: 'Medication Mgmt' },
-  { name: 'Angela Ruiz, RN', discipline: 'Complex Care' },
+  { name: 'Sara Nguyen, RN', discipline: 'Complex Care', team: 'Complex Care Team' },
+  { name: 'David Patel, MSW', discipline: 'Behavioral Health', team: 'Integrated Care Team' },
+  { name: 'Maria Torres, RN', discipline: 'Transitional Care', team: 'Integrated Care Team' },
+  { name: 'James Wong, PharmD', discipline: 'Medication Mgmt', team: 'Pharmacy & Medication Team' },
+  { name: 'Angela Ruiz, RN', discipline: 'Complex Care', team: 'Complex Care Team' },
 ];
 
+// Case lifecycle stage — the member's overall journey (owned by the Intake & Assessment SLA and
+// Care Plan & Outcomes tabs, not Workforce & Caseload). Kept here as shared infra for when those
+// tabs get the same treatment; Workforce & Caseload no longer renders cards from this.
 export const CM_STAGES = ['New Referral', 'Assessment Scheduled', 'Care Plan Development', 'Active Monitoring', 'Care Plan Review Due'];
+
+// Operational work queues — typical CM staffing queues: where actionable, unclaimed work is
+// sitting right now, independent of a member's overall lifecycle stage. This is what
+// Workforce & Caseload actually manages (staffing/workload), same role UM's 7 auth queues play.
+export const CM_QUEUES = ['New Referral Queue', 'Outreach Queue', 'Reassessment Queue', 'Escalation Queue', 'Discharge Follow-Up Queue', 'Documentation Queue'];
 
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
 export type Acuity = 'Low' | 'Medium' | 'High';
@@ -27,9 +35,12 @@ export interface CmCaseRec {
   riskLevel: RiskLevel;
   acuity: Acuity;
   cost: number;          // annualized $ estimate
-  stage: string;         // one of CM_STAGES
+  stage: string;         // one of CM_STAGES — lifecycle, not workforce queue
   received: string;      // ISO date — referral/enrollment date
   slaDueDate: string;    // ISO date — next SLA milestone due
+  queue: string | null;  // one of CM_QUEUES, or null = no actionable item queued right now
+  queueAgeH: number;     // hours sitting in that queue — only meaningful when queue is set
+  queueBreached: boolean;
   tags: string[];        // 'highRisk' | 'highAcuity' | 'highCost' | 'slaAtRisk'
 }
 
@@ -78,13 +89,19 @@ function buildActive(): CmCaseRec[] {
       if (acuity === 'High') tags.push('highAcuity');
       if (cost >= 100000) tags.push('highCost');
       if (slaOffset < 0) tags.push('slaAtRisk');
+      // A minority of the caseload has an actionable item queued right now — most members are
+      // steady-state active monitoring with nothing currently waiting on staff.
+      const hasQueueWork = (seedRaw % 100) < 45;
+      const queue = hasQueueWork ? CM_QUEUES[(i * 5 + 3) % CM_QUEUES.length] : null;
+      const queueAgeH = 6 + (seedRaw % 90);
+      const queueBreached = hasQueueWork && i % 17 === 0;
       out.push({
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
         dx: DX_POOL[(i * 5 + 2) % DX_POOL.length],
         program: cm.discipline,
         careManager: cm.name,
-        riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, tags,
+        riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, tags,
       });
     }
   });
