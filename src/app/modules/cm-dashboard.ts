@@ -58,7 +58,10 @@ const REFERRAL_BALANCE_STRATEGIES = [
   { label: 'All — assign every pending referral', n: 999 },
 ];
 
-const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Assessments & Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance','AI / NextGen'];
+// AI / NextGen is temporarily hidden — not deleted, just not listed/switched to (same pattern as
+// UM's hidden AI tab in shell.ts). To bring it back, add 'AI / NextGen' at the end here — its
+// @case (9) block below is untouched and already sits at the end of the switch.
+const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance'];
 
 @Component({
   selector: 'app-cm-dashboard',
@@ -402,9 +405,9 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }</tbody></table></div>
       }
 
-      <!-- 5: Assessments & Documentation -->
+      <!-- 5: Documentation -->
       @case (5) {
-        <div class="tab-head"><h2>Assessments &amp; Documentation</h2><span class="section-note">Assessment completion &amp; documentation quality</span></div>
+        <div class="tab-head"><h2>Documentation</h2><span class="section-note">Assessment completion &amp; documentation quality</span></div>
         <div class="grid-3">
           <div class="panel panel-pad bar-block"><div class="bar-top">HRA Completion</div><div class="bar-val">88%</div><div class="pbar"><span style="width:88%"></span></div></div>
           <div class="panel panel-pad bar-block"><div class="bar-top">SDOH Screening</div><div class="bar-val">76%</div><div class="pbar amber"><span style="width:76%"></span></div></div>
