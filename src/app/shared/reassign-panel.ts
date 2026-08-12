@@ -171,8 +171,12 @@ export class ReassignPanel {
   });
   readonly recommended = computed(() => { const c = this.rx.config(); return c ? [...c.nurses].sort((a, b) => a.utilization - b.utilization)[0] : null; });
   readonly others = computed(() => { const c = this.rx.config(); const rec = this.recommended(); return c ? c.nurses.filter((n) => n.name !== rec?.name).sort((a, b) => a.utilization - b.utilization) : []; });
-  /** Live queue counts from the same source the rest of the app reads — not a static list. */
-  readonly queueTargets = computed(() => this.data.queues().map((q) => ({ name: q.name, count: q.count })));
+  /** Live queue counts from the same source the rest of the app reads — not a static list. Callers
+   *  outside UM's queue model (e.g. CM's care-plan stages) pass their own via the config instead. */
+  readonly queueTargets = computed(() => {
+    const c = this.rx.config();
+    return c?.queueTargets ?? this.data.queues().map((q) => ({ name: q.name, count: q.count }));
+  });
 
   setMode(m: 'assignee' | 'queue') {
     this.mode.set(m);

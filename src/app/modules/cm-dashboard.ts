@@ -9,16 +9,30 @@ import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
+import { CmData, CmManagerStat, CmStageCard, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
+import { CARE_MANAGERS, CmCaseRec } from '../data/cm-case-pool';
+import { Reassign, ReassignCase } from '../shared/reassign';
+import { Escalate } from '../shared/escalate';
+import { Icon } from '../shared/icon';
+import { WidgetActions } from '../shared/widget-actions';
+import { WidgetVisibility } from '../shared/widget-visibility';
+import { WidgetCustomize } from '../shared/widget-customize';
 
-interface CaseManager { name: string; discipline: string; active: number; highRisk: number; highAcuity: number; highCost: number; slaAtRisk: number; utilization: number; }
 interface CmMemberRow { name: string; risk: number; level: 'Low'|'Moderate'|'High'|'Critical'; acuity: 'Low'|'Medium'|'High'; cost: string; sla: string; slaTone: string; cm: string; dx: string; }
+
+const CM_WORKFORCE_WIDGETS = [
+  { id: 'New Referral', title: 'New Referral' }, { id: 'Assessment Scheduled', title: 'Assessment Scheduled' },
+  { id: 'Care Plan Development', title: 'Care Plan Development' }, { id: 'Active Monitoring', title: 'Active Monitoring' },
+  { id: 'Care Plan Review Due', title: 'Care Plan Review Due' }, { id: 'workload', title: 'Workload per Care Manager' },
+];
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Assessments & Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance','AI / NextGen'];
 
 @Component({
   selector: 'app-cm-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring, FormsModule],
+  imports: [KpiStrip, Ring, FormsModule, Icon, WidgetActions, WidgetCustomize],
   template: `
     <app-kpi-strip [items]="displayKpis()" (drill)="onKpi($event)" />
 
@@ -33,28 +47,66 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
       @case (0) {
         <div class="tab-head"><h2>Caseload &amp; Workload Balancing</h2>
           <div class="flex gap-8">
+            <button class="btn primary" (click)="cmReassign()"><z-icon name="swap" [size]="14"></z-icon> Reassign</button>
+            <button class="btn outline" (click)="cmBalance()"><z-icon name="balance" [size]="14"></z-icon> Balance</button>
+            <button class="btn outline esc" (click)="cmEscalate()"><z-icon name="arrowup" [size]="14"></z-icon> Escalate</button>
             <button class="btn outline sm" (click)="exportCaseload()">Export</button>
-            <button class="btn primary" (click)="rebalance()">Balance caseloads</button></div></div>
-        <div class="panel"><table class="z-table">
-          <thead><tr>
-            <th class="srt" (click)="sortCm('name')">Care Manager{{ caretCm('name') }}</th>
-            <th class="srt" (click)="sortCm('active')">Active{{ caretCm('active') }}</th>
-            <th class="srt" (click)="sortCm('highRisk')">High Risk{{ caretCm('highRisk') }}</th>
-            <th class="srt" (click)="sortCm('highAcuity')">High Acuity{{ caretCm('highAcuity') }}</th>
-            <th class="srt" (click)="sortCm('highCost')">High Cost{{ caretCm('highCost') }}</th>
-            <th class="srt" (click)="sortCm('slaAtRisk')">SLA At-Risk{{ caretCm('slaAtRisk') }}</th>
-            <th class="srt" (click)="sortCm('utilization')">Utilization{{ caretCm('utilization') }}</th><th>Action</th></tr></thead>
-          <tbody>@for (c of sortedCms(); track c.name) {
-            <tr class="clk" (click)="openCm(c)"><td class="strong">{{ c.name }}<div class="sub">{{ c.discipline }}</div></td>
-              <td class="num">{{ c.active }}</td>
-              <td><b [class.hot]="c.highRisk>=5">{{ c.highRisk }}</b></td>
-              <td><b [class.hot]="c.highAcuity>=4">{{ c.highAcuity }}</b></td>
-              <td><b [class.hot]="c.highCost>=3">{{ c.highCost }}</b></td>
-              <td><b [class.warn]="c.slaAtRisk>0">{{ c.slaAtRisk }}</b></td>
-              <td><span class="mini-bar" [class.teal]="c.utilization<80" [class.red]="c.utilization>=90"><span [style.width.%]="c.utilization"></span></span>
-                <span class="pct">{{ c.utilization }}%</span></td>
-              <td><button class="btn outline sm" (click)="reassign(c); $event.stopPropagation()">Reassign</button></td></tr>
-          }</tbody></table></div>
+            <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
+          </div>
+        </div>
+
+        <z-widget-customize [vis]="vis"></z-widget-customize>
+
+        <div class="qhint">Cards show each stage's <b>active caseload</b>. Bars show SLA status against the next milestone due date — click a band to see those members.</div>
+
+        <div class="queues">
+          @for (s of cmStages(); track s.name) {
+            @if (!isHidden(s.name)) {
+            <div class="qcard">
+              <z-widget-actions (exportClick)="exportStage(s)" (removeClick)="hide(s.name)"></z-widget-actions>
+              <div class="qtop"><span class="qname">{{ s.name }}</span><span class="qcount">{{ s.count }}</span></div>
+              <div class="seg">
+                <span class="s-ontrack" [style.width.%]="s.buckets.onTrack" title="On track" (click)="openStageBand(s.name, 'onTrack')"></span>
+                <span class="s-duesoon" [style.width.%]="s.buckets.dueSoon" title="Due soon (≤3 days)" (click)="openStageBand(s.name, 'dueSoon')"></span>
+                <span class="s-overdue" [style.width.%]="s.buckets.overdue" title="Overdue" (click)="openStageBand(s.name, 'overdue')"></span>
+              </div>
+              <div class="legend">
+                <span (click)="openStageBand(s.name, 'onTrack')"><i class="d-ontrack"></i>On Track</span>
+                <span (click)="openStageBand(s.name, 'dueSoon')"><i class="d-duesoon"></i>Due Soon</span>
+                <span (click)="openStageBand(s.name, 'overdue')"><i class="d-overdue"></i>Overdue</span>
+              </div>
+            </div>
+            }
+          }
+        </div>
+
+        @if (!isHidden('workload')) {
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Workload per Care Manager</h3>
+            <z-widget-actions (exportClick)="exportWorkload()" (removeClick)="hide('workload')"></z-widget-actions>
+          </div>
+          <table class="z-table">
+            <thead><tr>
+              <th class="srt" (click)="sortCm('name')">Care Manager{{ caretCm('name') }}</th>
+              <th class="srt" (click)="sortCm('active')">Active{{ caretCm('active') }}</th>
+              <th class="srt" (click)="sortCm('highRisk')">High Risk{{ caretCm('highRisk') }}</th>
+              <th class="srt" (click)="sortCm('highAcuity')">High Acuity{{ caretCm('highAcuity') }}</th>
+              <th class="srt" (click)="sortCm('highCost')">High Cost{{ caretCm('highCost') }}</th>
+              <th class="srt" (click)="sortCm('slaAtRisk')">SLA At-Risk{{ caretCm('slaAtRisk') }}</th>
+              <th class="srt" (click)="sortCm('utilization')">Utilization{{ caretCm('utilization') }}</th><th>Actions</th></tr></thead>
+            <tbody>@for (c of sortedCms(); track c.name) {
+              <tr class="clk" (click)="openCm(c)"><td class="strong">{{ c.name }}<div class="sub">{{ c.discipline }}</div></td>
+                <td class="num clk" (click)="openCmActive(c); $event.stopPropagation()">{{ c.active }}</td>
+                <td class="clk" (click)="openCmFlag(c,'highRisk'); $event.stopPropagation()"><b [class.hot]="c.highRisk>0">{{ c.highRisk }}</b></td>
+                <td class="clk" (click)="openCmFlag(c,'highAcuity'); $event.stopPropagation()"><b [class.hot]="c.highAcuity>0">{{ c.highAcuity }}</b></td>
+                <td class="clk" (click)="openCmFlag(c,'highCost'); $event.stopPropagation()"><b [class.hot]="c.highCost>0">{{ c.highCost }}</b></td>
+                <td class="clk" (click)="openCmFlag(c,'slaAtRisk'); $event.stopPropagation()"><b [class.warn]="c.slaAtRisk>0">{{ c.slaAtRisk }}</b></td>
+                <td><span class="mini-bar" [class.teal]="c.utilization<80" [class.red]="c.utilization>=90"><span [style.width.%]="c.utilization"></span></span>
+                  <span class="pct">{{ c.utilization }}%</span></td>
+                <td><button class="btn outline sm" (click)="cmReassignOne(c); $event.stopPropagation()">Reassign</button></td></tr>
+            }</tbody></table>
+        </div>
+        }
       }
 
       <!-- 1: Intake & Assessment SLA -->
@@ -285,6 +337,24 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .rt { font-size:13.5px; font-weight:700; margin-bottom:6px; } .rd { font-size:12.5px; color:var(--gray-500); line-height:1.5; margin-bottom:14px; } .rbtn { width:100%; justify-content:center; }
     .ai-bottom { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px; }
     .gauges { display:flex; justify-content:space-around; padding:10px 0; } .g { text-align:center; } .gl { font-size:12px; color:var(--gray-500); font-weight:600; margin-top:10px; }
+
+    /* ---- Workforce & Caseload (case 0) ---- */
+    .esc { color: var(--amber-fg); border-color: var(--gray-300); }
+    .cz-btn { margin-left: 8px; }
+    .qhint { font-size: 12px; color: var(--gray-500); margin-bottom: 12px; } .qhint b { color: var(--ink-soft); }
+    .queues { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .qcard { position: relative; background:#fff; border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
+    .qcard:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
+    .tbl-head { position: relative; }
+    .qtop { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; }
+    .qname { font-size: 14px; font-weight: 600; color: var(--ink); } .qcount { font-size: 15px; font-weight: 700; color: var(--ink); }
+    .seg { display:flex; height: 8px; border-radius: 999px; overflow:hidden; background: var(--gray-100); }
+    .seg > span { display:block; height:100%; cursor: pointer; }
+    .s-ontrack { background: #10b981; } .s-duesoon { background: #f59e0b; } .s-overdue { background: #ef4444; }
+    .legend { display:flex; gap:14px; margin-top:10px; font-size: 10.5px; color: var(--gray-500); }
+    .legend span { display:flex; align-items:center; gap:4px; cursor: pointer; } .legend span:hover { color: var(--ink-soft); }
+    .legend i { width:8px; height:8px; border-radius:2px; display:inline-block; }
+    .d-ontrack { background:#10b981; } .d-duesoon { background:#f59e0b; } .d-overdue { background:#ef4444; }
   `],
 })
 export class CmDashboard {
@@ -293,8 +363,15 @@ export class CmDashboard {
   private data = inject(DashboardData);
   private exporter = inject(Exporter);
   private lookback = inject(Lookback);
+  private cmData = inject(CmData);
+  private rx = inject(Reassign);
+  private esc = inject(Escalate);
   readonly tabs = TABS;
   readonly sel = signal(0);
+
+  readonly vis = new WidgetVisibility('zyter-cm-workforce-widgets-v1', CM_WORKFORCE_WIDGETS);
+  isHidden(id: string) { return this.vis.isHidden(id); }
+  hide(id: string) { this.vis.remove(id); }
 
   private readonly PERIOD_VALUES: Record<string, string[]> = {
     today: ['21', '13', '8', '2', '66', '4', '126', '97%'],
@@ -319,13 +396,6 @@ export class CmDashboard {
   ];
   onKpi(_: string) { /* KPIs on CM navigate within tabs; no explorer wired yet */ }
 
-  readonly caseManagers = signal<CaseManager[]>([
-    { name: 'Sara Nguyen, RN', discipline: 'Complex Care', active: 34, highRisk: 8, highAcuity: 6, highCost: 4, slaAtRisk: 2, utilization: 94 },
-    { name: 'David Patel, MSW', discipline: 'Behavioral Health', active: 28, highRisk: 5, highAcuity: 3, highCost: 1, slaAtRisk: 1, utilization: 82 },
-    { name: 'Maria Torres, RN', discipline: 'Transitional Care', active: 31, highRisk: 6, highAcuity: 4, highCost: 2, slaAtRisk: 1, utilization: 88 },
-    { name: 'James Wong, PharmD', discipline: 'Medication Mgmt', active: 22, highRisk: 2, highAcuity: 1, highCost: 1, slaAtRisk: 0, utilization: 71 },
-    { name: 'Angela Ruiz, RN', discipline: 'Complex Care', active: 26, highRisk: 4, highAcuity: 3, highCost: 2, slaAtRisk: 1, utilization: 79 },
-  ]);
   readonly worklist: CmMemberRow[] = [
     { name: 'Marcus Webb', dx: 'ESRD on dialysis', risk: 8.9, level: 'Critical', acuity: 'High', cost: '$412k', sla: 'Assessment overdue', slaTone: 'red', cm: 'Sara Nguyen, RN' },
     { name: 'Gloria Simmons', dx: 'Breast cancer', risk: 8.2, level: 'Critical', acuity: 'High', cost: '$286k', sla: 'On track', slaTone: 'green', cm: 'David Patel, MSW' },
@@ -370,18 +440,54 @@ export class CmDashboard {
     { id: 'CM-120', type: 'Consent', desc: 'Verbal consent not documented — MBR000201', date: '2026-07-13', sev: 'Low' },
   ];
 
-  // ---- caseload sort + export + drill ----
-  readonly cmSortKey = signal<keyof CaseManager | ''>('');
+  // ---- caseload: real data from CmData, drills, and Reassign/Balance/Escalate actions ----
+  readonly cmStages = computed(() => this.cmData.stages());
+  readonly cmManagers = computed(() => this.cmData.managerStats());
+
+  readonly cmSortKey = signal<keyof CmManagerStat | ''>('');
   readonly cmSortDir = signal<SortDir>(1);
-  readonly sortedCms = computed(() => compareRows(this.caseManagers(), this.cmSortKey(), this.cmSortDir()));
-  sortCm(k: keyof CaseManager) { if (this.cmSortKey() === k) this.cmSortDir.set(this.cmSortDir() === 1 ? -1 : 1); else { this.cmSortKey.set(k); this.cmSortDir.set(1); } }
-  caretCm(k: keyof CaseManager) { return caretFor(this.cmSortKey(), k, this.cmSortDir()); }
+  readonly sortedCms = computed(() => compareRows(this.cmManagers(), this.cmSortKey(), this.cmSortDir()));
+  sortCm(k: keyof CmManagerStat) { if (this.cmSortKey() === k) this.cmSortDir.set(this.cmSortDir() === 1 ? -1 : 1); else { this.cmSortKey.set(k); this.cmSortDir.set(1); } }
+  caretCm(k: keyof CmManagerStat) { return caretFor(this.cmSortKey(), k, this.cmSortDir()); }
+
   exportCaseload() {
     this.exporter.open({ title: 'CM Caseload', name: 'cm-caseload_2026-07-17',
       columns: ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
-      rows: this.caseManagers().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]) });
+      rows: this.cmManagers().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]) });
   }
-  openCm(c: CaseManager) {
+  exportStage(s: CmStageCard) {
+    this.exporter.open({ title: s.name, name: `cm-stage-${slug(s.name)}_2026-07-17`,
+      columns: ['Metric', 'Value'],
+      rows: [['Active', s.count], ['On Track %', s.buckets.onTrack], ['Due Soon %', s.buckets.dueSoon], ['Overdue %', s.buckets.overdue]] });
+  }
+  exportWorkload() {
+    this.exporter.open({ title: 'Workload per Care Manager', name: 'cm-workload_2026-07-17',
+      columns: ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
+      rows: this.sortedCms().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]) });
+  }
+
+  private openCmCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
+    this.ix.openExplorer({
+      title, context: context ?? `${cases.length} member(s)`,
+      columns: CM_COLUMNS, rows: cases.map(cmToRow),
+      exportName: `cm-${exportSlug}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  openCmActive(c: CmManagerStat) {
+    const cases = this.cmData.cases().filter((x) => x.careManager === c.name);
+    this.openCmCases(`${c.name} — Active Caseload`, cases, `${slug(c.name)}-active`, `${cases.length} active member(s) · ${c.utilization}% utilized`);
+  }
+  openCmFlag(c: CmManagerStat, flag: 'highRisk' | 'highAcuity' | 'highCost' | 'slaAtRisk') {
+    const cases = this.cmData.cases().filter((x) => x.careManager === c.name && x.tags.includes(flag));
+    this.openCmCases(`${c.name} — ${flag}`, cases, `${slug(c.name)}-${slug(flag)}`);
+  }
+  openStageBand(stage: string, band: SlaBand) {
+    const labels: Record<SlaBand, string> = { onTrack: 'On Track', dueSoon: 'Due Soon (≤3 days)', overdue: 'Overdue' };
+    const cases = this.cmData.cases().filter((x) => x.stage === stage && slaBandOf(x) === band);
+    this.openCmCases(`${stage} — ${labels[band]}`, cases, `${slug(stage)}-${slug(band)}`);
+  }
+
+  openCm(c: CmManagerStat) {
     this.ix.openDrawer({
       title: c.name, subtitle: c.discipline,
       badge: { text: `${c.utilization}% utilized`, tone: c.utilization >= 90 ? 'red' : c.utilization < 80 ? 'green' : 'amber' },
@@ -394,7 +500,59 @@ export class CmDashboard {
         { label: 'Utilization', value: `${c.utilization}%`, tone: c.utilization >= 90 ? 'red' : c.utilization < 80 ? 'green' : 'amber' },
       ],
       note: c.utilization >= 90 ? 'At or above capacity — consider reassigning members.' : 'Operating within healthy capacity.',
-      actions: [{ label: `Reassign a member from ${c.name.split(',')[0]}`, tone: 'teal', run: () => this.reassign(c) }],
+      actions: [
+        { label: 'View active caseload', tone: 'teal', run: () => { this.ix.closeDrawer(); this.openCmActive(c); } },
+        { label: `Reassign a member from ${c.name.split(',')[0]}`, tone: 'teal', run: () => { this.ix.closeDrawer(); this.cmReassignOne(c); } },
+      ],
+    });
+  }
+
+  /** Bulk Reassign over the whole caseload — same shared Reassign panel UM uses, with CM's care
+   *  managers as targets and CM's stages as the Queue-mode targets (via the generalized config). */
+  cmReassign() {
+    const cases: ReassignCase[] = this.cmData.cases().map((c) => ({ authId: c.memberId, member: c.member, type: c.program, queue: c.stage, priority: c.riskLevel, owner: c.careManager }));
+    const nurses = this.cmManagers().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
+    const queueTargets = this.cmStages().map((s) => ({ name: s.name, count: s.count }));
+    this.rx.open({
+      title: 'Reassign care management members', cases, nurses, queueTargets,
+      apply: (ids, target, mode) => {
+        ids.forEach((id) => mode === 'queue' ? this.cmData.reassignStage(id, target) : this.cmData.reassignCase(id, target));
+        this.ix.toast(`${ids.length} member(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
+        this.data.addHistory('swap', mode === 'queue' ? 'CM members moved to stage' : 'CM members reassigned', `${ids.length} member(s) → ${target}`);
+      },
+    });
+  }
+  /** Row-level Reassign — scoped to one care manager's members, same panel/UX as the bulk version. */
+  cmReassignOne(c: CmManagerStat) {
+    const cases: ReassignCase[] = this.cmData.cases().filter((x) => x.careManager === c.name)
+      .map((x) => ({ authId: x.memberId, member: x.member, type: x.program, queue: x.stage, priority: x.riskLevel, owner: x.careManager }));
+    const nurses = this.cmManagers().filter((m) => m.name !== c.name).map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
+    this.rx.open({
+      title: `Reassign a member from ${c.name}`, cases, nurses,
+      apply: (ids, target, mode) => {
+        ids.forEach((id) => mode === 'queue' ? this.cmData.reassignStage(id, target) : this.cmData.reassignCase(id, target));
+        this.ix.toast(`${ids.length} member(s) reassigned to ${target}.`);
+        this.data.addHistory('swap', 'CM member reassigned', `${ids.length} member(s) → ${target}`);
+      },
+    });
+  }
+  cmBalance() {
+    this.ix.ask({ title: 'Balance CM caseloads', body: 'Move members from over-utilized care managers to those with capacity?', confirmLabel: 'Balance', tone: 'teal',
+      onConfirm: () => {
+        const moves = [this.cmData.reassignBusiestCase(), this.cmData.reassignBusiestCase()].filter((m): m is { member: string; from: string; to: string } => !!m);
+        if (moves.length) { this.ix.toast(`${moves.length} member(s) reassigned to balance caseloads.`); this.data.addHistory('balance', 'CM caseload balanced', 'Rebalanced across care managers'); }
+        else this.ix.toast('Caseloads are already balanced.', 'info');
+      } });
+  }
+  /** Bulk Escalate for case(0)'s toolbar — distinct from the per-member `escalate()` used in the Risk & Escalation tab. */
+  cmEscalate() {
+    const candidates = this.cmData.cases().filter((c) => c.riskLevel === 'Critical' || c.riskLevel === 'High').slice(0, 25).map((c) => ({
+      authId: c.memberId, member: c.member, detail: `${c.dx} · ${c.program}`, riskLabel: `${c.riskScore} · ${c.riskLevel}`,
+      risk: (c.riskLevel === 'Critical' ? 'red' : 'amber') as 'red' | 'amber' | 'green',
+    }));
+    this.esc.open({
+      title: 'Escalate care management members', candidates, targets: ['Medical Director', 'Social Work Lead', 'Pharmacy (PharmD)', 'CM Supervisor'],
+      apply: (ids, who) => { this.ix.toast(`${ids.length} member(s) escalated to ${who}.`, 'warn'); this.data.addHistory('arrowup', 'CM members escalated', `${ids.length} member(s) → ${who}`); },
     });
   }
 
@@ -415,25 +573,12 @@ export class CmDashboard {
       rows: this.worklist.map((m) => [m.name, m.dx, m.risk, m.level, m.acuity, m.cost, m.sla, m.cm]) });
   }
 
-  private clampUtil(active: number, ref: CaseManager) { const perCase = ref.active > 0 ? ref.utilization / ref.active : 3; return Math.max(0, Math.min(100, Math.round(active * perCase))); }
-  rebalance() {
-    this.ix.ask({ title: 'Balance CM caseloads', body: 'Move members from over-utilized care managers to those with capacity?', confirmLabel: 'Balance', tone: 'teal',
-      onConfirm: () => { this.caseManagers.update((list) => { const from = list.reduce((a, b) => b.utilization > a.utilization ? b : a); const to = list.reduce((a, b) => b.utilization < a.utilization ? b : a);
-        return list.map((c) => c.name === from.name ? { ...c, active: c.active - 2, utilization: this.clampUtil(c.active - 2, c) } : c.name === to.name ? { ...c, active: c.active + 2, utilization: this.clampUtil(c.active + 2, c) } : c); });
-        this.ix.toast('CM caseloads rebalanced.'); this.data.addHistory('balance', 'CM caseload balanced', 'Rebalanced across care managers'); } });
-  }
-  reassign(c: CaseManager) {
-    const others = this.caseManagers().filter((x) => x.name !== c.name).map((x) => x.name);
-    this.ix.choose({ title: `Reassign a member from ${c.name}`, body: `${c.name} is at ${c.utilization}% utilization.`, label: 'Reassign to', options: others, confirmLabel: 'Reassign', tone: 'teal',
-      onChoose: (to) => { this.caseManagers.update((list) => list.map((x) => x.name === c.name ? { ...x, active: x.active - 1, utilization: this.clampUtil(x.active - 1, x) } : x.name === to ? { ...x, active: x.active + 1, utilization: this.clampUtil(x.active + 1, x) } : x));
-        this.ix.toast(`Member reassigned to ${to}.`); this.data.addHistory('swap', 'CM member reassigned', `${c.name} → ${to}`); } });
-  }
   escalate(m: CmMemberRow) {
     this.ix.choose({ title: `Escalate ${m.name}`, body: `Escalate this ${m.level}-risk member for review.`, label: 'Escalate to', options: ['Medical Director', 'Social Work Lead', 'Pharmacy (PharmD)', 'CM Supervisor'], confirmLabel: 'Escalate', tone: 'amber',
       onChoose: (who) => { this.ix.toast(`${m.name} escalated to ${who}.`, 'warn'); this.data.addHistory('arrowup', 'CM member escalated', `${m.name} → ${who}`); } });
   }
   accept(r: Referral) {
-    this.ix.choose({ title: `Accept referral ${r.authId}`, body: `Accept ${r.member} into care management and assign.`, label: 'Assign to', options: this.caseManagers().map((c) => c.name), confirmLabel: 'Accept & assign', tone: 'teal',
+    this.ix.choose({ title: `Accept referral ${r.authId}`, body: `Accept ${r.member} into care management and assign.`, label: 'Assign to', options: CARE_MANAGERS.map((c) => c.name), confirmLabel: 'Accept & assign', tone: 'teal',
       onChoose: (to) => { this.referrals.update((rows) => rows.map((x) => x.authId === r.authId ? { ...x, status: 'Assessment scheduled', assignedTo: to } : x)); this.ix.toast(`${r.member} accepted into CM — assigned to ${to}.`); this.data.addHistory('inbox', 'CM referral accepted', `${r.member} → ${to}`); } });
   }
   toast(m: string) { this.ix.toast(m, 'info'); this.data.addHistory('sparkles', 'CM AI action', m); }
