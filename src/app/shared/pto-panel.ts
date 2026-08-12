@@ -37,20 +37,21 @@ function addDays(base: Date, days: number): Date { const d = new Date(base); d.s
 
           @if (teammates().length) {
             <label class="flabel">Send caseload to</label>
-            <button class="nrec" [class.on]="target() === null" (click)="target.set(null)">
-              <div class="nrow"><b>Automatic</b><span class="recbadge">★ Recommended</span></div>
+            <button class="nrec" [class.on]="selectedTargets().size === 0" (click)="clearTargets()">
+              <div class="nrow"><b>Automatic — whole team</b><span class="recbadge">★ Recommended</span></div>
               <div class="nmeta">Distributes to teammates with the most capacity as each case moves — no single person absorbs it all.</div>
             </button>
-            <div class="ovr">Or send everything to:</div>
+            <div class="ovr">Or split across just:</div>
             <div class="nlist">
               @for (t of teammates(); track t.name) {
-                <button class="ni" [class.on]="target() === t.name" (click)="target.set(t.name)">
-                  <div class="nrow"><b>{{ t.name }}</b>
+                <label class="ni" [class.on]="selectedTargets().has(t.name)">
+                  <div class="nrow">
+                    <span class="nchk"><input type="checkbox" [checked]="selectedTargets().has(t.name)" (change)="toggleTarget(t.name)" /> <b>{{ t.name }}</b></span>
                     @if (t.utilization < 85) { <span class="cap">capacity</span> } @else { <span class="full">near full</span> }
                   </div>
                   <div class="ubar"><span [style.width.%]="t.utilization" [attr.data-t]="tone(t.utilization)"></span></div>
                   <div class="upct">{{ t.utilization }}% · {{ t.active }} active</div>
-                </button>
+                </label>
               }
             </div>
           }
@@ -61,7 +62,7 @@ function addDays(base: Date, days: number): Date { const d = new Date(base); d.s
             } @else if (p.active === 0) {
               <div class="warn">{{ p.name }} has no active caseload to redistribute.</div>
             } @else {
-              <div class="note">Moving all <b>{{ p.active }}</b> {{ c.itemLabel }}{{ p.active === 1 ? '' : 's' }} from <b>{{ p.name }}</b> to {{ target() ? target() : 'teammates on ' + p.team + ' with capacity' }}, {{ start() }} – {{ end() }}.</div>
+              <div class="note">Moving all <b>{{ p.active }}</b> {{ c.itemLabel }}{{ p.active === 1 ? '' : 's' }} from <b>{{ p.name }}</b> to {{ destinationLabel(p) }}, {{ start() }} – {{ end() }}.</div>
             }
           }
 
@@ -100,6 +101,7 @@ function addDays(base: Date, days: number): Date { const d = new Date(base); d.s
     .ni.on { border-color:var(--teal-600); background:var(--teal-50); }
     .nrow { display:flex; align-items:center; justify-content:space-between; }
     .nrow b { font-size:13px; color:var(--ink); }
+    .nchk { display:flex; align-items:center; gap:8px; }
     .cap { font-size:10.5px; font-weight:700; color:var(--green-fg); background:var(--green-bg); padding:2px 8px; border-radius:999px; }
     .full { font-size:10.5px; font-weight:700; color:var(--amber-fg); background:var(--amber-bg); padding:2px 8px; border-radius:999px; }
     .ubar { height:6px; border-radius:999px; background:var(--gray-200); overflow:hidden; margin:8px 0 4px; }
@@ -113,7 +115,7 @@ export class PtoPanel {
   readonly person = signal('');
   readonly start = signal('');
   readonly end = signal('');
-  readonly target = signal<string | null>(null);
+  readonly selectedTargets = signal<Set<string>>(new Set());
 
   constructor() {
     effect(() => {
@@ -121,7 +123,7 @@ export class PtoPanel {
       this.person.set(c?.people[0]?.name ?? '');
       this.start.set(isoDate(TODAY));
       this.end.set(isoDate(addDays(TODAY, 7)));
-      this.target.set(null);
+      this.selectedTargets.set(new Set());
     });
   }
 
@@ -137,8 +139,18 @@ export class PtoPanel {
     return !!p && p.active > 0 && this.teammateCount() > 0 && !!this.start() && !!this.end();
   }
   tone(u: number) { return u >= 90 ? 'red' : u < 80 ? 'green' : 'amber'; }
-  apply(c: { apply: (person: string, start: string, end: string, target: string | null) => void }) {
-    c.apply(this.person(), this.start(), this.end(), this.target());
+  clearTargets() { this.selectedTargets.set(new Set()); }
+  toggleTarget(name: string) {
+    this.selectedTargets.update((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  }
+  destinationLabel(p: { team: string }): string {
+    const chosen = [...this.selectedTargets()];
+    if (!chosen.length) return `teammates on ${p.team} with capacity`;
+    if (chosen.length === 1) return chosen[0];
+    return `${chosen.join(', ')} (split by capacity)`;
+  }
+  apply(c: { apply: (person: string, start: string, end: string, targets: string[]) => void }) {
+    c.apply(this.person(), this.start(), this.end(), [...this.selectedTargets()]);
     this.pto.close();
   }
 }

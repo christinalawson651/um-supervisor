@@ -5,9 +5,11 @@ export interface PtoConfig {
   title: string;
   itemLabel: string;   // 'authorization' | 'member' — what's being redistributed, for the confirmation copy
   people: PtoPerson[];
-  /** `target` is null for the recommended automatic distribution (least-utilized teammate picked
-   *  per item), or a specific teammate's name to send the ENTIRE caseload to instead. */
-  apply: (person: string, startDate: string, endDate: string, target: string | null) => void;
+  /** `targets` is empty for the recommended automatic distribution (every teammate on the team is
+   *  eligible, least-utilized picked per item), or a chosen subset of teammate names to restrict
+   *  the distribution to — still least-utilized-first within that subset, so picking exactly one
+   *  name sends everything to that person, and picking several splits the load across just them. */
+  apply: (person: string, startDate: string, endDate: string, targets: string[]) => void;
 }
 
 // Shared "going on PTO, hand off the whole caseload" flow — used by both UM's Workforce & Queue

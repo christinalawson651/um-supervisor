@@ -1031,13 +1031,14 @@ export class CmDashboard {
     const people = this.cmManagers().map((m) => ({ name: m.name, team: teamOf.get(m.name)!, active: m.active, utilization: m.utilization }));
     this.pto.open({
       title: 'Redistribute caseload for PTO', itemLabel: 'member', people,
-      apply: (person, start, end, chosenTarget) => {
+      apply: (person, start, end, chosenTargets) => {
         const team = teamOf.get(person)!;
-        const scope = new Set(CARE_MANAGERS.filter((cm) => cm.team === team && cm.name !== person).map((cm) => cm.name));
+        const wholeTeam = new Set(CARE_MANAGERS.filter((cm) => cm.team === team && cm.name !== person).map((cm) => cm.name));
+        const scope = chosenTargets.length ? new Set(chosenTargets) : wholeTeam;
         const cases = this.cmData.cases().filter((c) => c.careManager === person);
         const byTarget = new Map<string, number>();
         cases.forEach((c) => {
-          const target = chosenTarget ?? this.cmData.managerStats().filter((m) => scope.has(m.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a)).name;
+          const target = this.cmData.managerStats().filter((m) => scope.has(m.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a)).name;
           this.cmData.reassignCase(c.memberId, target);
           byTarget.set(target, (byTarget.get(target) ?? 0) + 1);
         });

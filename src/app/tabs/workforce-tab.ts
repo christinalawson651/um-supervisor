@@ -582,13 +582,14 @@ export class WorkforceTab {
     const people = this.data.nurses().map((n) => ({ name: n.name, team: n.team, active: n.active, utilization: n.utilization }));
     this.pto.open({
       title: 'Redistribute authorizations for PTO', itemLabel: 'authorization', people,
-      apply: (person, start, end, chosenTarget) => {
+      apply: (person, start, end, chosenTargets) => {
         const nurse = this.data.nurses().find((n) => n.name === person)!;
-        const scope = this.data.nurses().filter((n) => n.team === nurse.team && n.name !== person).map((n) => n.name);
+        const wholeTeam = this.data.nurses().filter((n) => n.team === nurse.team && n.name !== person).map((n) => n.name);
+        const scope = chosenTargets.length ? chosenTargets : wholeTeam;
         const total = nurse.active;
         const byTarget = new Map<string, number>();
         for (let i = 0; i < total; i++) {
-          const target = chosenTarget ?? this.data.nurses().filter((n) => scope.includes(n.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a)).name;
+          const target = this.data.nurses().filter((n) => scope.includes(n.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a)).name;
           this.data.moveOneCase(person, target);
           byTarget.set(target, (byTarget.get(target) ?? 0) + 1);
         }
