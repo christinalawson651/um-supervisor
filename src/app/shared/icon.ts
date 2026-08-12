@@ -26,6 +26,10 @@ const ICONS: Record<string, string> = {
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
   chevron:  '<path d="m6 9 6 6 6-6"/>',
   balance:  '<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>',
+  filter:   '<path d="M3 4h18l-7 9v6l-4 2v-8z"/>',
+  building: '<rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M16 10h.01"/><path d="M8 14h.01"/><path d="M16 14h.01"/>',
+  columns:  '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/>',
+  refresh:  '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>',
 };
 
 @Component({

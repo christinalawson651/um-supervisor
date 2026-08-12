@@ -25,6 +25,12 @@ export const CM_QUEUES = ['New Referral Queue', 'Outreach Queue', 'Reassessment 
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
 export type Acuity = 'Low' | 'Medium' | 'High';
 
+// How this case's CURRENT care manager came to own it — independent of whether it has an
+// active work item queued right now. 'Queue Draw' = pulled from a shared queue; the two Direct
+// variants never sat in a shared queue at all (Smart = system/AI routing rule, Manual = a
+// supervisor or intake coordinator hand-picked the care manager).
+export type AssignmentMethod = 'Queue Draw' | 'Direct — Smart' | 'Direct — Manual';
+
 export interface CmCaseRec {
   memberId: string;
   member: string;
@@ -41,6 +47,7 @@ export interface CmCaseRec {
   queue: string | null;  // one of CM_QUEUES, or null = no actionable item queued right now
   queueAgeH: number;     // hours sitting in that queue — only meaningful when queue is set
   queueBreached: boolean;
+  assignmentMethod: AssignmentMethod;
   tags: string[];        // 'highRisk' | 'highAcuity' | 'highCost' | 'slaAtRisk'
 }
 
@@ -95,13 +102,19 @@ function buildActive(): CmCaseRec[] {
       const queue = hasQueueWork ? CM_QUEUES[(i * 5 + 3) % CM_QUEUES.length] : null;
       const queueAgeH = 6 + (seedRaw % 90);
       const queueBreached = hasQueueWork && i % 17 === 0;
+      // How this member's current care manager came to own them, not whether work is queued
+      // right now — most caseloads build up from the shared intake queue over time (55%), with a
+      // system routing rule placing a sizable minority directly (30%) and a supervisor/intake
+      // coordinator hand-assigning the rest (15%).
+      const methodSeed = (i * 53 + 17) % 100;
+      const assignmentMethod: AssignmentMethod = methodSeed < 55 ? 'Queue Draw' : methodSeed < 85 ? 'Direct — Smart' : 'Direct — Manual';
       out.push({
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
         dx: DX_POOL[(i * 5 + 2) % DX_POOL.length],
         program: cm.discipline,
         careManager: cm.name,
-        riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, tags,
+        riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod, tags,
       });
     }
   });

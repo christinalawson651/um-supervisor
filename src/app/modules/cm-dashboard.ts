@@ -10,7 +10,7 @@ import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
-import { CARE_MANAGERS, CmCaseRec } from '../data/cm-case-pool';
+import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Icon } from '../shared/icon';
@@ -58,7 +58,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
         <z-widget-customize [vis]="vis"></z-widget-customize>
 
-        <div class="qhint">Cards show <b>unclaimed work sitting in each queue</b> — a member's overall stage lives in Intake &amp; Assessment SLA / Care Plan &amp; Outcomes instead. Bars show how long each item has waited. Click a band to see those members. <b>Breach</b> = past the queue's SLA.</div>
+        <h3 class="sec-title">Queues</h3>
 
         <div class="queues">
           @for (q of cmQueues(); track q.name) {
@@ -83,6 +83,27 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }
         </div>
 
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head">
+            <h3 class="pt">How Members Were Assigned</h3>
+            <label class="sortsel">
+              <span>Team</span>
+              <select [value]="assignTeamFilter()" (change)="assignTeamFilter.set($any($event.target).value)">
+                <option value="all">All Teams</option>
+                @for (t of cmTeams(); track t.name) { <option [value]="t.name">{{ t.name }}</option> }
+              </select>
+            </label>
+          </div>
+          <div class="am-tiles">
+            @for (a of assignmentBreakdown(); track a.method) {
+              <div class="am-tile" (click)="openAssignmentMethod(a.method)">
+                <div class="am-count">{{ a.count }}</div>
+                <div class="am-label">{{ a.method }}</div>
+              </div>
+            }
+          </div>
+        </div>
+
         @if (!isHidden('workload')) {
         <div class="panel mt-6">
           <div class="panel-pad tbl-head">
@@ -105,7 +126,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               <th class="srt" (click)="sortCm('slaAtRisk')">SLA At-Risk{{ caretCm('slaAtRisk') }}</th>
               <th class="srt" (click)="sortCm('utilization')">Utilization{{ caretCm('utilization') }}</th><th>Actions</th></tr></thead>
             <tbody>@for (c of sortedCms(); track c.name) {
-              <tr class="clk" (click)="openCm(c)"><td class="strong">{{ c.name }}<div class="sub">{{ c.discipline }}</div></td>
+              <tr class="clk" (click)="openCm(c)"><td class="strong"><a class="ml" title="Open {{ c.name }}'s roster in a new tab" (click)="openRoster(c); $event.stopPropagation()">{{ c.name }}</a><div class="sub">{{ c.discipline }}</div></td>
                 <td class="num clk" (click)="openCmActive(c); $event.stopPropagation()">{{ c.active }}</td>
                 <td class="clk" (click)="openCmFlag(c,'highRisk'); $event.stopPropagation()"><b [class.hot]="c.highRisk>0">{{ c.highRisk }}</b></td>
                 <td class="clk" (click)="openCmFlag(c,'highAcuity'); $event.stopPropagation()"><b [class.hot]="c.highAcuity>0">{{ c.highAcuity }}</b></td>
@@ -133,7 +154,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
                 @if (expanded().has(t.name)) {
                   @for (c of t.managers; track c.name) {
                     <tr class="nurse-child clk" (click)="openCm(c)">
-                      <td class="child-name">{{ c.name }}<div class="sub">{{ c.discipline }}</div></td>
+                      <td class="child-name"><a class="ml" title="Open {{ c.name }}'s roster in a new tab" (click)="openRoster(c); $event.stopPropagation()">{{ c.name }}</a><div class="sub">{{ c.discipline }}</div></td>
                       <td class="num clk" (click)="openCmActive(c); $event.stopPropagation()">{{ c.active }}</td>
                       <td class="clk" (click)="openCmFlag(c,'highRisk'); $event.stopPropagation()"><b [class.hot]="c.highRisk>0">{{ c.highRisk }}</b></td>
                       <td class="clk" (click)="openCmFlag(c,'highAcuity'); $event.stopPropagation()"><b [class.hot]="c.highAcuity>0">{{ c.highAcuity }}</b></td>
@@ -384,8 +405,13 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     /* ---- Workforce & Caseload (case 0) ---- */
     .esc { color: var(--amber-fg); border-color: var(--gray-300); }
     .cz-btn { margin-left: 8px; }
-    .qhint { font-size: 12px; color: var(--gray-500); margin-bottom: 12px; } .qhint b { color: var(--ink-soft); }
+    .sec-title { font-size: 13px; font-weight: 700; color: var(--ink-soft); margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; }
     .queues { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .am-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 0 18px 18px; }
+    .am-tile { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; cursor: pointer; transition: box-shadow .12s, transform .12s; }
+    .am-tile:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); transform: translateY(-1px); }
+    .am-count { font-size: 24px; font-weight: 700; color: var(--ink); }
+    .am-label { font-size: 12px; font-weight: 600; color: var(--gray-500); margin-top: 4px; }
     .qcard { position: relative; background:#fff; border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
     .qcard:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
     .tbl-head { position: relative; }
@@ -499,6 +525,16 @@ export class CmDashboard {
   readonly cmManagers = computed(() => this.cmData.managerStats());
   readonly cmTeams = computed(() => this.cmData.teamStats());
 
+  // ---- how members were assigned (queue draw vs direct) — independent of the operational queues above ----
+  readonly assignTeamFilter = signal('all');
+  readonly assignmentBreakdown = computed(() => this.cmData.assignmentBreakdown(this.assignTeamFilter() === 'all' ? undefined : this.assignTeamFilter()));
+  openAssignmentMethod(method: AssignmentMethod) {
+    const team = this.assignTeamFilter();
+    const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
+    const cases = this.cmData.cases().filter((c) => c.assignmentMethod === method && (team === 'all' || teamOf.get(c.careManager) === team));
+    this.openCmCases(`${method}${team === 'all' ? '' : ' · ' + team}`, cases, `${slug(method)}${team === 'all' ? '' : '-' + slug(team)}`);
+  }
+
   readonly groupBy = signal<'manager' | 'team'>('manager');
   readonly expanded = signal<Set<string>>(new Set());
   toggleTeam(name: string) { this.expanded.update((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
@@ -554,6 +590,12 @@ export class CmDashboard {
     const labels: Record<QueueBand, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const cases = this.cmData.cases().filter((x) => x.queue === queue && queueBandOf(x) === band);
     this.openCmCases(`${queue} — ${labels[band]}`, cases, `${slug(queue)}-${slug(band)}`);
+  }
+
+  /** Opens the real per-person Roster page (what this care manager sees when they log in) in a
+   *  new tab — a distinct feature from openCm()'s supervisor-side drawer below. */
+  openRoster(c: CmManagerStat) {
+    window.open(`/roster/cm/${encodeURIComponent(c.name)}`, '_blank');
   }
 
   openCm(c: CmManagerStat) {

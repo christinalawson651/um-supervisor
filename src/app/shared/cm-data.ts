@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES } from '../data/cm-case-pool';
+import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
 
 export interface CmManagerStat {
@@ -41,9 +41,9 @@ export function queueBandOf(c: CmCaseRec): QueueBand {
   return c.queueAgeH < 24 ? 'fresh' : c.queueAgeH < 48 ? 'day2' : 'over48';
 }
 
-export const CM_COLUMNS = ['Member ID', 'Member', 'Primary Dx', 'Program', 'Care Manager', 'Risk', 'Acuity', 'Annual Cost', 'Stage', 'Queue', 'SLA Due'];
+export const CM_COLUMNS = ['Member ID', 'Member', 'Primary Dx', 'Program', 'Care Manager', 'Risk', 'Acuity', 'Annual Cost', 'Stage', 'Queue', 'Assignment', 'SLA Due'];
 export function cmToRow(c: CmCaseRec): (string | number)[] {
-  return [c.memberId, c.member, c.dx, c.program, c.careManager, `${c.riskScore} · ${c.riskLevel}`, c.acuity, `$${c.cost.toLocaleString()}`, c.stage, c.queue ?? '—', c.slaDueDate];
+  return [c.memberId, c.member, c.dx, c.program, c.careManager, `${c.riskScore} · ${c.riskLevel}`, c.acuity, `$${c.cost.toLocaleString()}`, c.stage, c.queue ?? '—', c.assignmentMethod, c.slaDueDate];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -115,6 +115,16 @@ export class CmData {
       };
     });
   });
+
+  /** Counts by how each case's current care manager came to own it — optionally scoped to one
+   *  team. Independent of the operational `queues` breakdown above (that's what's queued *right
+   *  now*; this is *how the assignment originally happened*). */
+  assignmentBreakdown(team?: string): { method: AssignmentMethod; count: number }[] {
+    const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
+    const cs = this.cases().filter((c) => !team || teamOf.get(c.careManager) === team);
+    const methods: AssignmentMethod[] = ['Queue Draw', 'Direct — Smart', 'Direct — Manual'];
+    return methods.map((method) => ({ method, count: cs.filter((c) => c.assignmentMethod === method).length }));
+  }
 
   reassignCase(memberId: string, toCm: string) {
     this.cases.update((list) => list.map((c) => (c.memberId === memberId ? { ...c, careManager: toCm } : c)));
