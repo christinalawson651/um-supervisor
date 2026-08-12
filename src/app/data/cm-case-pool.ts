@@ -2,6 +2,7 @@
 // Management module's Workforce & Caseload tab (and, next, its other tabs) has a real dataset to
 // aggregate/flag/drill into, instead of the hand-authored 5-row static array it had before.
 import { TODAY } from './case-fields';
+import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES } from './cm-intake';
 
 export interface CareManagerMeta { name: string; discipline: string; team: string; }
 export const CARE_MANAGERS: CareManagerMeta[] = [
@@ -48,6 +49,14 @@ export interface CmCaseRec {
   queueAgeH: number;     // hours sitting in that queue — only meaningful when queue is set
   queueBreached: boolean;
   assignmentMethod: AssignmentMethod;
+  caseType: CaseType;
+  consentType: ConsentType;
+  consentExpiresDate: string;   // ISO date — consentAtRisk() in cm-intake.ts bands this
+  assessmentType: AssessmentType;
+  assessmentTatDays: number;    // days from assignment to completed assessment — tatAdherent() bands this
+  outreachAttempts: number;
+  outreachSuccessful: boolean;
+  utrLetterSent: boolean;       // sent once outreach repeatedly fails to reach the member
   tags: string[];        // 'highRisk' | 'highAcuity' | 'highCost' | 'slaAtRisk'
 }
 
@@ -108,13 +117,27 @@ function buildActive(): CmCaseRec[] {
       // coordinator hand-assigning the rest (15%).
       const methodSeed = (i * 53 + 17) % 100;
       const assignmentMethod: AssignmentMethod = methodSeed < 55 ? 'Queue Draw' : methodSeed < 85 ? 'Direct — Smart' : 'Direct — Manual';
+      const caseType = CASE_TYPES[(i * 7 + 2) % CASE_TYPES.length];
+      const consentType = CONSENT_TYPES[(i * 9 + 5) % CONSENT_TYPES.length];
+      // A minority of consents are due for renewal soon/overdue — same "minority at risk" shape as
+      // SLA/queue breach rates elsewhere, not a blanket third of the caseload.
+      const consentSeed = (i * 19 + 3) % 100;
+      const consentExpiresDate = isoDate(addDays(TODAY, consentSeed < 12 ? -((consentSeed * 3) % 20) : 15 + (consentSeed % 320)));
+      const assessmentType = ASSESSMENT_TYPES[(i * 11 + 6) % ASSESSMENT_TYPES.length];
+      // TAT mostly lands within the 5-day adherence window; a minority runs long.
+      const tatSeed = (i * 29 + 8) % 100;
+      const assessmentTatDays = tatSeed < 80 ? 1 + (tatSeed % 5) : 6 + (tatSeed % 9);
+      const outreachAttempts = 1 + (seedRaw % 5);
+      const outreachSuccessful = outreachAttempts <= 3;
+      const utrLetterSent = !outreachSuccessful && i % 3 === 0;
       out.push({
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
         dx: DX_POOL[(i * 5 + 2) % DX_POOL.length],
         program: cm.discipline,
         careManager: cm.name,
-        riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod, tags,
+        riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod,
+        caseType, consentType, consentExpiresDate, assessmentType, assessmentTatDays, outreachAttempts, outreachSuccessful, utrLetterSent, tags,
       });
     }
   });

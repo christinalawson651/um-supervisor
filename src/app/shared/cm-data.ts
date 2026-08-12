@@ -1,6 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
+import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent } from '../data/cm-intake';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -125,6 +126,41 @@ export class CmData {
     const methods: AssignmentMethod[] = ['Queue Draw', 'Direct — Smart', 'Direct — Manual'];
     return methods.map((method) => ({ method, count: cs.filter((c) => c.assignmentMethod === method).length }));
   }
+
+  /** Counts by the intake wizard's own "Case Type" field — optionally scoped to one team. */
+  caseTypeBreakdown(team?: string): { type: CaseType; count: number }[] {
+    const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
+    const cs = this.cases().filter((c) => !team || teamOf.get(c.careManager) === team);
+    return CASE_TYPES.map((type) => ({ type, count: cs.filter((c) => c.caseType === type).length }));
+  }
+
+  /** Consent on file by type, with how many of each are due for renewal soon/overdue. */
+  readonly consentBreakdown = computed(() => {
+    const cs = this.cases();
+    return CONSENT_TYPES.map((type) => {
+      const mine = cs.filter((c) => c.consentType === type);
+      return { type, count: mine.length, atRisk: mine.filter(consentAtRisk).length };
+    });
+  });
+
+  /** Assessments by type, with TAT adherence (completed within the 5-day target). */
+  readonly assessmentBreakdown = computed(() => {
+    const cs = this.cases();
+    return ASSESSMENT_TYPES.map((type) => {
+      const mine = cs.filter((c) => c.assessmentType === type);
+      return { type, count: mine.length, adherent: mine.filter(tatAdherent).length };
+    });
+  });
+
+  /** Outreach contact-attempt success rate and how many members have an "unable to reach" letter on file. */
+  readonly outreachStats = computed(() => {
+    const cs = this.cases();
+    const total = cs.length || 1;
+    const successful = cs.filter((c) => c.outreachSuccessful).length;
+    const avgAttempts = cs.reduce((s, c) => s + c.outreachAttempts, 0) / total;
+    const utrCount = cs.filter((c) => c.utrLetterSent).length;
+    return { successRate: Math.round((successful / total) * 100), avgAttempts: Math.round(avgAttempts * 10) / 10, utrCount };
+  });
 
   reassignCase(memberId: string, toCm: string) {
     this.cases.update((list) => list.map((c) => (c.memberId === memberId ? { ...c, careManager: toCm } : c)));

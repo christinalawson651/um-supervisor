@@ -11,6 +11,7 @@ import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
+import { CaseType, CASE_TYPES, ConsentType, AssessmentType, CM_REFERRAL_INTAKE, REFERRAL_SOURCES, ReferralSource, ReferralStatus, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Icon } from '../shared/icon';
@@ -114,6 +115,27 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           </div>
         </div>
 
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head">
+            <h3 class="pt">Cases by Case Type</h3>
+            <label class="sortsel">
+              <span>Team</span>
+              <select [value]="caseTypeTeamFilter()" (change)="caseTypeTeamFilter.set($any($event.target).value)">
+                <option value="all">All Teams</option>
+                @for (t of cmTeams(); track t.name) { <option [value]="t.name">{{ t.name }}</option> }
+              </select>
+            </label>
+          </div>
+          <div class="am-tiles ct-tiles">
+            @for (c of caseTypeBreakdown(); track c.type) {
+              <div class="am-tile" (click)="openCaseType(c.type)">
+                <div class="am-count">{{ c.count }}</div>
+                <div class="am-label">{{ c.type }}</div>
+              </div>
+            }
+          </div>
+        </div>
+
         @if (!isHidden('workload')) {
         <div class="panel mt-6">
           <div class="panel-pad tbl-head">
@@ -206,6 +228,70 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               </div>
             </div>
           }
+        </div>
+
+        <h3 class="sec-title mt-6">Referrals</h3>
+        <div class="grid-2">
+          <div class="panel panel-pad">
+            <h3 class="pt">By Source (30d)</h3>
+            <div class="bars">
+              @for (r of referralsBySource(); track r.label) {
+                <div class="bar-row"><span class="bl">{{ r.label }}</span><span class="bt"><span class="bf" [style.width.%]="r.pct" [style.background]="r.color"></span></span><span class="bv clk" (click)="openReferralSource(r.label)">{{ r.value }}</span></div>
+              }
+            </div>
+          </div>
+          <div class="panel panel-pad">
+            <h3 class="pt">By Status (30d)</h3>
+            <div class="am-tiles">
+              @for (r of referralsByStatus(); track r.status) {
+                <div class="am-tile" (click)="openReferralStatus(r.status)">
+                  <div class="am-count">{{ r.count }}</div>
+                  <div class="am-label">{{ r.status }}</div>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <h3 class="sec-title mt-6">Consent</h3>
+        <div class="queues">
+          @for (c of consentBreakdown(); track c.type) {
+            <div class="qcard">
+              <div class="qtop"><span class="qname">{{ c.type }}</span><span class="qcount">{{ c.count }}</span></div>
+              <div class="seg">
+                <span class="s-ontrack" [style.width.%]="pct(c.count - c.atRisk, c.count)" title="Current" (click)="openConsent(c.type, false)"></span>
+                <span class="s-overdue" [style.width.%]="pct(c.atRisk, c.count)" title="At risk of expiring" (click)="openConsent(c.type, true)"></span>
+              </div>
+              <div class="legend">
+                <span (click)="openConsent(c.type, false)"><i class="d-ontrack"></i>Current</span>
+                <span (click)="openConsent(c.type, true)"><i class="d-overdue"></i>At risk ({{ c.atRisk }})</span>
+              </div>
+            </div>
+          }
+        </div>
+
+        <h3 class="sec-title mt-6">Assessments</h3>
+        <div class="queues">
+          @for (a of assessmentBreakdown(); track a.type) {
+            <div class="qcard">
+              <div class="qtop"><span class="qname">{{ a.type }}</span><span class="qcount">{{ a.count }}</span></div>
+              <div class="seg">
+                <span class="s-ontrack" [style.width.%]="pct(a.adherent, a.count)" title="TAT adherent" (click)="openAssessment(a.type, true)"></span>
+                <span class="s-overdue" [style.width.%]="pct(a.count - a.adherent, a.count)" title="TAT missed" (click)="openAssessment(a.type, false)"></span>
+              </div>
+              <div class="legend">
+                <span (click)="openAssessment(a.type, true)"><i class="d-ontrack"></i>TAT adherent</span>
+                <span (click)="openAssessment(a.type, false)"><i class="d-overdue"></i>TAT missed</span>
+              </div>
+            </div>
+          }
+        </div>
+
+        <h3 class="sec-title mt-6">Outreach</h3>
+        <div class="grid-3">
+          <div class="metric-tile"><div class="val">{{ outreachStats().successRate }}%</div><div class="lab">Outreach Success Rate</div></div>
+          <div class="metric-tile"><div class="val">{{ outreachStats().avgAttempts }}</div><div class="lab">Avg Attempts per Member</div></div>
+          <div class="metric-tile clk" (click)="openUtrLetters()"><div class="val">{{ outreachStats().utrCount }}</div><div class="lab">UTR Letters Sent</div></div>
         </div>
       }
 
@@ -425,6 +511,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .sec-title { font-size: 13px; font-weight: 700; color: var(--ink-soft); margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; }
     .queues { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
     .am-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 0 18px 18px; }
+    .ct-tiles { grid-template-columns: repeat(4, 1fr); }
     .am-tile { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; cursor: pointer; transition: box-shadow .12s, transform .12s; }
     .am-tile:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); transform: translateY(-1px); }
     .am-count { font-size: 24px; font-weight: 700; color: var(--ink); }
@@ -557,6 +644,53 @@ export class CmDashboard {
       columns: ['Stage', 'Members', 'On Track %', 'Due Soon %', 'Overdue %'],
       rows: this.cmStages().map((s) => [s.name, s.count, s.buckets.onTrack, s.buckets.dueSoon, s.buckets.overdue]) });
   }
+  pct(part: number, total: number): number { return total > 0 ? Math.round((part / total) * 100) : 0; }
+
+  // ---- Referrals (30-day intake funnel — includes referrals that never became an active case,
+  // so "by source"/"by status" reflects true intake volume, not just the survivors). ----
+  private readonly REFERRAL_COLORS: Record<ReferralSource, string> = { 'UM Referral': '#0d9488', 'Health Plan': '#3b82f6', 'PCP/Provider': '#8b5cf6', 'ER/Hospital': '#f59e0b', 'Self/Family': '#9ca3af' };
+  readonly referralsBySource = computed(() => {
+    const total = CM_REFERRAL_INTAKE.length || 1;
+    return REFERRAL_SOURCES.map((label) => {
+      const value = CM_REFERRAL_INTAKE.filter((r) => r.source === label).length;
+      return { label, value, pct: Math.round((value / total) * 100), color: this.REFERRAL_COLORS[label] };
+    });
+  });
+  readonly referralsByStatus = computed(() => {
+    const statuses: ReferralStatus[] = ['Accepted', 'CM Declined', 'Member Declined'];
+    return statuses.map((status) => ({ status, count: CM_REFERRAL_INTAKE.filter((r) => r.status === status).length }));
+  });
+  openReferralSource(source: ReferralSource) {
+    const rows = CM_REFERRAL_INTAKE.filter((r) => r.source === source);
+    this.ix.openDrawer({ title: `${source} Referrals`, subtitle: `${rows.length} referral(s) in the last 30 days`,
+      table: { columns: ['Referral ID', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.status, r.received]) } });
+  }
+  openReferralStatus(status: ReferralStatus) {
+    const rows = CM_REFERRAL_INTAKE.filter((r) => r.status === status);
+    this.ix.openDrawer({ title: `${status} Referrals`, subtitle: `${rows.length} referral(s) in the last 30 days`,
+      table: { columns: ['Referral ID', 'Source', 'Received'], rows: rows.map((r) => [r.id, r.source, r.received]) } });
+  }
+
+  // ---- Consent on file, by type + at-risk-of-expiring ----
+  readonly consentBreakdown = computed(() => this.cmData.consentBreakdown());
+  openConsent(type: ConsentType, atRiskOnly: boolean) {
+    const cases = this.cmData.cases().filter((c) => c.consentType === type && (!atRiskOnly || consentAtRisk(c)));
+    this.openCmCases(`${type}${atRiskOnly ? ' — At Risk of Expiring' : ''}`, cases, `consent-${slug(type)}${atRiskOnly ? '-at-risk' : ''}`);
+  }
+
+  // ---- Assessments, by type + TAT adherence ----
+  readonly assessmentBreakdown = computed(() => this.cmData.assessmentBreakdown());
+  openAssessment(type: AssessmentType, adherentOnly: boolean) {
+    const cases = this.cmData.cases().filter((c) => c.assessmentType === type && tatAdherent(c) === adherentOnly);
+    this.openCmCases(`${type} — ${adherentOnly ? 'TAT Adherent' : 'TAT Missed'}`, cases, `assessment-${slug(type)}-${adherentOnly ? 'adherent' : 'missed'}`);
+  }
+
+  // ---- Outreach success + Unable-To-Reach letters ----
+  readonly outreachStats = computed(() => this.cmData.outreachStats());
+  openUtrLetters() {
+    const cases = this.cmData.cases().filter((c) => c.utrLetterSent);
+    this.openCmCases('UTR Letters Sent', cases, 'utr-letters');
+  }
 
   // ---- how members were assigned (queue draw vs direct) — independent of the operational queues above ----
   readonly assignTeamFilter = signal('all');
@@ -566,6 +700,16 @@ export class CmDashboard {
     const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
     const cases = this.cmData.cases().filter((c) => c.assignmentMethod === method && (team === 'all' || teamOf.get(c.careManager) === team));
     this.openCmCases(`${method}${team === 'all' ? '' : ' · ' + team}`, cases, `${slug(method)}${team === 'all' ? '' : '-' + slug(team)}`);
+  }
+
+  // ---- cases by case type (the intake wizard's own Case Type field) ----
+  readonly caseTypeTeamFilter = signal('all');
+  readonly caseTypeBreakdown = computed(() => this.cmData.caseTypeBreakdown(this.caseTypeTeamFilter() === 'all' ? undefined : this.caseTypeTeamFilter()));
+  openCaseType(type: CaseType) {
+    const team = this.caseTypeTeamFilter();
+    const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
+    const cases = this.cmData.cases().filter((c) => c.caseType === type && (team === 'all' || teamOf.get(c.careManager) === team));
+    this.openCmCases(`${type}${team === 'all' ? '' : ' · ' + team}`, cases, `${slug(type)}${team === 'all' ? '' : '-' + slug(team)}`);
   }
 
   readonly groupBy = signal<'manager' | 'team'>('manager');
