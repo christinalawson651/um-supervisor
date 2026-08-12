@@ -11,6 +11,7 @@ export const CARE_MANAGERS: CareManagerMeta[] = [
   { name: 'Maria Torres, RN', discipline: 'Transitional Care', team: 'Integrated Care Team' },
   { name: 'James Wong', discipline: 'Medication Mgmt', team: 'Pharmacy & Medication Team' },
   { name: 'Angela Ruiz, RN', discipline: 'Complex Care', team: 'Complex Care Team' },
+  { name: 'Kevin Brooks, RN', discipline: 'Transitional Care', team: 'Integrated Care Team' },
 ];
 
 // Case lifecycle stage — the member's overall journey (owned by the Intake & Assessment SLA and
@@ -71,8 +72,9 @@ const DX_POOL = ['ESRD on dialysis', 'Breast cancer', 'Congestive heart failure'
 const DISCIPLINE_RISK_BIAS: Record<string, number> = { 'Complex Care': 0.7, 'Transitional Care': 0.3, 'Behavioral Health': 0.2, 'Medication Mgmt': -0.6 };
 
 // Target active caseload per care manager — preserves the same operational scale the CM
-// dashboard has always shown (141 total), so this doesn't feel like a discontinuous jump.
-const ACTIVE_PER_CM = [34, 28, 31, 22, 26];
+// dashboard has always shown (now 161 total with Kevin Brooks added to Integrated Care Team,
+// so PTO redistribution has a real 3-person team to split across, not just one teammate).
+const ACTIVE_PER_CM = [34, 28, 31, 22, 26, 20];
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }

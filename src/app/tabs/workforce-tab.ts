@@ -570,9 +570,9 @@ export class WorkforceTab {
     const rows = this.data.assignmentHistory();
     this.ix.openDrawer({
       title: 'Assignment History',
-      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'} & balance event${rows.length === 1 ? '' : 's'} this session`,
+      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'}, balance, & PTO event${rows.length === 1 ? '' : 's'} this session`,
       table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
-      note: rows.length ? undefined : 'No authorizations have been reassigned or balanced yet this session.',
+      note: rows.length ? undefined : 'No authorizations have been reassigned, balanced, or redistributed for PTO yet this session.',
     });
   }
 

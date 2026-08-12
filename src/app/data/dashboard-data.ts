@@ -206,6 +206,11 @@ export class DashboardData {
     { name: 'Andrew Mitchell, RN', team: 'Inpatient Review',     ...nurseStats('Andrew Mitchell, RN'), utilization: 96 },
     { name: 'Jessica Williams, RN', team: 'Outpatient Review',   ...nurseStats('Jessica Williams, RN'), utilization: 85 },
     { name: 'Sarah Mitchell, RN',  team: 'Outpatient Review',    ...nurseStats('Sarah Mitchell, RN'),  utilization: 72 },
+    // Manually-specified (not nurseStats-derived like the rest) — she's not in case-pool.ts's
+    // NURSES list, since that list drives modulo-based case assignment across the whole pool and
+    // adding a 7th name there would reshuffle every existing case's owner. Added so Outpatient
+    // Review has a real 3rd teammate for PTO redistribution to split across.
+    { name: 'Rachel Foster, RN',   team: 'Outpatient Review',    active: 18, pending: 2, completed: 20, avgTat: '2.3h', utilization: 55 },
     { name: 'Emily Chen, RN',      team: 'Complex & Concurrent', ...nurseStats('Emily Chen, RN'),      utilization: 88 },
     { name: 'Robert Kim, RN',      team: 'Complex & Concurrent', ...nurseStats('Robert Kim, RN'),      utilization: 80 },
   ]);
