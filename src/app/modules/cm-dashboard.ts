@@ -721,10 +721,22 @@ export class CmDashboard {
     const cases = this.cmData.cases().filter((x) => x.stage === stage && slaBandOf(x) === band);
     this.openCmCases(`${stage} — ${labels[band]}`, cases, `${slug(stage)}-${slug(band)}`);
   }
+  /** The tab-header Export button — offers every distinct dataset on this tab as a Section
+   *  picker in the dialog, instead of always exporting just the lifecycle-stage cards. */
   exportStages() {
-    this.exporter.open({ title: 'Intake & Assessment SLA', name: 'cm-intake-assessment-sla_2026-07-17',
-      columns: ['Stage', 'Members', 'On Track %', 'Due Soon %', 'Overdue %'],
-      rows: this.cmStages().map((s) => [s.name, s.count, s.buckets.onTrack, s.buckets.dueSoon, s.buckets.overdue]) });
+    const stageCols = ['Stage', 'Members', 'On Track %', 'Due Soon %', 'Overdue %'];
+    const stageRows = this.cmStages().map((s) => [s.name, s.count, s.buckets.onTrack, s.buckets.dueSoon, s.buckets.overdue]);
+    this.exporter.open({
+      title: 'Intake & Assessment SLA', name: 'cm-intake-assessment-sla_2026-07-17', columns: stageCols, rows: stageRows,
+      sections: [
+        { label: 'Lifecycle Stages', name: 'cm-intake-assessment-sla_2026-07-17', columns: stageCols, rows: stageRows },
+        { label: 'Referrals by Source', name: 'cm-referrals-by-source_2026-07-17', columns: ['Source', 'Count', '% of Total'], rows: this.referralsBySource().map((r) => [r.label, r.value, r.pct]) },
+        { label: 'Referrals by Status', name: 'cm-referrals-by-status_2026-07-17', columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) },
+        { label: 'Consent', name: 'cm-consent-by-type_2026-07-17', columns: ['Consent Type', 'Members', 'At Risk of Expiring'], rows: this.consentBreakdown().map((c) => [c.type, c.count, c.atRisk]) },
+        { label: 'Assessments', name: 'cm-assessments-by-type_2026-07-17', columns: ['Assessment Type', 'Members', 'TAT Adherent'], rows: this.assessmentBreakdown().map((a) => [a.type, a.count, a.adherent]) },
+        { label: 'Outreach', name: 'cm-outreach-stats_2026-07-17', columns: ['Metric', 'Value'], rows: [['Success Rate %', this.outreachStats().successRate], ['Avg Attempts', this.outreachStats().avgAttempts], ['UTR Letters Sent', this.outreachStats().utrCount]] },
+      ],
+    });
   }
   pct(part: number, total: number): number { return total > 0 ? Math.round((part / total) * 100) : 0; }
 
@@ -894,10 +906,23 @@ export class CmDashboard {
   sortCm(k: keyof CmManagerStat) { if (this.cmSortKey() === k) this.cmSortDir.set(this.cmSortDir() === 1 ? -1 : 1); else { this.cmSortKey.set(k); this.cmSortDir.set(1); } }
   caretCm(k: keyof CmManagerStat) { return caretFor(this.cmSortKey(), k, this.cmSortDir()); }
 
+  /** The tab-header Export button — offers every distinct dataset on this tab as a Section
+   *  picker in the dialog, instead of always exporting just the workload table. */
   exportCaseload() {
-    this.exporter.open({ title: 'CM Caseload', name: 'cm-caseload_2026-07-17',
-      columns: ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
-      rows: this.cmManagers().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]) });
+    const workloadCols = ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'];
+    const workloadRows = this.sortedCms().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]);
+    const queueRows = this.cmQueues().map((q) => [q.name, q.count, q.buckets.fresh, q.buckets.day2, q.buckets.over48, q.buckets.breach]);
+    const caseTypeRows = this.caseTypeBreakdown().map((c) => [c.type, c.count]);
+    const assignmentRows = this.assignmentBreakdown().map((a) => [a.method, a.count]);
+    this.exporter.open({
+      title: 'Caseload & Workload Balancing', name: 'cm-workload_2026-07-17', columns: workloadCols, rows: workloadRows,
+      sections: [
+        { label: 'Workload per Care Manager', name: 'cm-workload_2026-07-17', columns: workloadCols, rows: workloadRows },
+        { label: 'Queues', name: 'cm-queues_2026-07-17', columns: ['Queue', 'Unclaimed', '0-24h %', '24-48h %', '>48h %', 'Breach %'], rows: queueRows },
+        { label: 'Cases by Case Type', name: 'cm-case-type_2026-07-17', columns: ['Case Type', 'Count'], rows: caseTypeRows },
+        { label: 'How Members Were Assigned', name: 'cm-assignment-method_2026-07-17', columns: ['Method', 'Count'], rows: assignmentRows },
+      ],
+    });
   }
   exportQueue(q: CmQueueCard) {
     this.exporter.open({ title: q.name, name: `cm-queue-${slug(q.name)}_2026-07-17`,

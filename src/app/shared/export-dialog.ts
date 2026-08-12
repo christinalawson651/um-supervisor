@@ -12,7 +12,16 @@ import { downloadCsv, downloadXls, exportPdf } from './exports';
     @if (ex.config(); as c) {
       <div class="scrim" (click)="ex.close()">
         <div class="modal" (click)="$event.stopPropagation()">
-          <div class="mh"><h3>Export — {{ c.title }}</h3><button class="x" (click)="ex.close()">×</button></div>
+          <div class="mh"><h3>Export — {{ c.title }}{{ sections().length > 1 ? ' — ' + sections()[sectionIdx()].label : '' }}</h3><button class="x" (click)="ex.close()">×</button></div>
+
+          @if (sections().length > 1) {
+            <div class="sect">
+              <div class="slab">Section</div>
+              <select class="search" [value]="sectionIdx()" (change)="selectSection(+$any($event.target).value)">
+                @for (s of sections(); track s.name; let i = $index) { <option [value]="i">{{ s.label }}</option> }
+              </select>
+            </div>
+          }
 
           <div class="sect">
             <div class="slab">Format</div>
@@ -30,9 +39,9 @@ import { downloadCsv, downloadXls, exportPdf } from './exports';
           </div>
 
           <div class="sect">
-            <div class="slab">Columns <span class="cnt">{{ included().size }}/{{ c.columns.length }}</span></div>
+            <div class="slab">Columns <span class="cnt">{{ included().size }}/{{ activeColumns().length }}</span></div>
             <div class="cols">
-              @for (col of c.columns; track col; let i = $index) {
+              @for (col of activeColumns(); track col; let i = $index) {
                 <label class="col"><input type="checkbox" [checked]="included().has(i)" (change)="toggleCol(i)" /> {{ col }}</label>
               }
             </div>
@@ -80,32 +89,48 @@ export class ExportDialog {
   readonly format = signal('csv');
   readonly q = signal('');
   readonly included = signal<Set<number>>(new Set());
+  readonly sectionIdx = signal(0);
+  readonly sections = computed(() => this.ex.config()?.sections ?? []);
+  readonly activeColumns = computed(() => { const secs = this.sections(); return secs.length ? secs[this.sectionIdx()].columns : (this.ex.config()?.columns ?? []); });
+  readonly activeRows = computed(() => { const secs = this.sections(); return secs.length ? secs[this.sectionIdx()].rows : (this.ex.config()?.rows ?? []); });
+  readonly activeName = computed(() => { const secs = this.sections(); return secs.length ? secs[this.sectionIdx()].name : (this.ex.config()?.name ?? 'export'); });
 
   constructor() {
     effect(() => {
+      // Read only `config` here — reading activeColumns()/sectionIdx() would make this effect
+      // depend on sectionIdx too, so selectSection() changing it would immediately re-trigger
+      // this reset and snap it straight back to 0.
       const c = this.ex.config();
-      this.q.set(''); this.format.set('csv');
-      this.included.set(new Set(c ? c.columns.map((_, i) => i) : []));
+      this.q.set(''); this.format.set('csv'); this.sectionIdx.set(0);
+      const cols = c?.sections?.length ? c.sections[0].columns : (c?.columns ?? []);
+      this.included.set(new Set(cols.map((_, i) => i)));
     });
   }
 
+  selectSection(i: number) {
+    this.sectionIdx.set(i);
+    this.included.set(new Set(this.activeColumns().map((_, i) => i)));
+  }
   toggleCol(i: number) { this.included.update((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; }); }
 
   readonly filteredRows = computed(() => {
-    const c = this.ex.config(); if (!c) return [];
     const query = this.q().trim().toLowerCase();
-    return query ? c.rows.filter((r) => r.some((cell) => String(cell).toLowerCase().includes(query))) : c.rows;
+    const rows = this.activeRows();
+    return query ? rows.filter((r) => r.some((cell) => String(cell).toLowerCase().includes(query))) : rows;
   });
 
-  run(c: { title: string; name: string; columns: string[] }) {
+  run(c: { title: string }) {
     const cols = [...this.included()].sort((a, b) => a - b);
-    const headers = cols.map((i) => c.columns[i]);
+    const columns = this.activeColumns();
+    const headers = cols.map((i) => columns[i]);
     const rows = this.filteredRows().map((r) => cols.map((i) => r[i]));
     const fmt = this.format();
-    if (fmt === 'csv') downloadCsv(c.name, headers, rows);
-    else if (fmt === 'xls') downloadXls(c.name, headers, rows);
-    else exportPdf(c.title, headers, rows);
-    this.ix.toast(`Exported "${c.title}" (${rows.length} rows) as ${fmt.toUpperCase()}.`);
+    const title = this.sections().length > 1 ? `${c.title} — ${this.sections()[this.sectionIdx()].label}` : c.title;
+    const name = this.activeName();
+    if (fmt === 'csv') downloadCsv(name, headers, rows);
+    else if (fmt === 'xls') downloadXls(name, headers, rows);
+    else exportPdf(title, headers, rows);
+    this.ix.toast(`Exported "${title}" (${rows.length} rows) as ${fmt.toUpperCase()}.`);
     this.ex.close();
   }
 }
