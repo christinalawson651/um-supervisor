@@ -3,7 +3,7 @@
 // caseload's fields. cm-case-pool.ts imports the enums below for the fields it needs; this file
 // never imports back from there except for the CmCaseRec type used by the two pure predicates at
 // the bottom, so there's no import cycle.
-import { TODAY } from './case-fields';
+import { TODAY, LOBS } from './case-fields';
 import type { CmCaseRec } from './cm-case-pool';
 
 // "Case Type" per the real intake wizard's own dropdown (Case Type field, required).
@@ -28,7 +28,7 @@ export const REFERRAL_SOURCES: ReferralSource[] = ['Fax', 'Provider Portal', 'Ca
 // it's reassignable; only its Pending-ness does).
 export type ReferralStatus = 'Pending' | 'Accepted' | 'CM Declined' | 'Member Declined';
 
-export interface ReferralIntakeRec { id: string; member: string; source: ReferralSource; status: ReferralStatus; careManager: string | null; received: string; }
+export interface ReferralIntakeRec { id: string; member: string; source: ReferralSource; status: ReferralStatus; careManager: string | null; received: string; lob: string; }
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }
@@ -49,7 +49,10 @@ function buildReferralIntake(): ReferralIntakeRec[] {
     // minority declined by the member themselves once contacted.
     const status: ReferralStatus = daysAgo <= 3 ? 'Pending' : seed < 78 ? 'Accepted' : seed < 92 ? 'CM Declined' : 'Member Declined';
     const member = `${REF_FIRST[i % REF_FIRST.length]} ${REF_LAST[(i * 5 + 2) % REF_LAST.length]}`;
-    out.push({ id: `REF-${1000 + i}`, member, source, status, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)) });
+    // Same decorrelation as cm-case-pool.ts: LOBS and REFERRAL_SOURCES are both length 4, so a
+    // plain affine function of `i` alone would perfectly correlate every source with one LOB.
+    const lob = LOBS[(i * 11 + Math.floor(i / 4) * 5 + 6) % LOBS.length];
+    out.push({ id: `REF-${1000 + i}`, member, source, status, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
   }
   return out;
 }

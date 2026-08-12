@@ -42,9 +42,9 @@ export function queueBandOf(c: CmCaseRec): QueueBand {
   return c.queueAgeH < 24 ? 'fresh' : c.queueAgeH < 48 ? 'day2' : 'over48';
 }
 
-export const CM_COLUMNS = ['Member ID', 'Member', 'Primary Dx', 'Program', 'Care Manager', 'Risk', 'Acuity', 'Annual Cost', 'Stage', 'Queue', 'Assignment', 'SLA Due'];
+export const CM_COLUMNS = ['Member ID', 'Member', 'LOB', 'Primary Dx', 'Program', 'Care Manager', 'Risk', 'Acuity', 'Annual Cost', 'Stage', 'Queue', 'Assignment', 'SLA Due'];
 export function cmToRow(c: CmCaseRec): (string | number)[] {
-  return [c.memberId, c.member, c.dx, c.program, c.careManager, `${c.riskScore} · ${c.riskLevel}`, c.acuity, `$${c.cost.toLocaleString()}`, c.stage, c.queue ?? '—', c.assignmentMethod, c.slaDueDate];
+  return [c.memberId, c.member, c.lob, c.dx, c.program, c.careManager, `${c.riskScore} · ${c.riskLevel}`, c.acuity, `$${c.cost.toLocaleString()}`, c.stage, c.queue ?? '—', c.assignmentMethod, c.slaDueDate];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -53,8 +53,12 @@ export class CmData {
    *  model UM uses (moves are real signal updates, not just toasts with no backing state change). */
   readonly cases = signal<CmCaseRec[]>(CM_CASE_POOL);
 
-  readonly managerStats = computed<CmManagerStat[]>(() => {
-    const cs = this.cases();
+  /** `scope` lets a caller pass a LOB/Lookback-narrowed case list (see CmDashboard.scopedCases())
+   *  instead of the full live caseload — every breakdown below takes the same optional param so
+   *  the shared top-bar filters can actually affect this module, not just the KPI strip. Omitting
+   *  it (every existing call site) behaves exactly as before. */
+  managerStats(scope?: CmCaseRec[]): CmManagerStat[] {
+    const cs = scope ?? this.cases();
     return CARE_MANAGERS.map((cm) => {
       const mine = cs.filter((c) => c.careManager === cm.name);
       const active = mine.length;
@@ -67,11 +71,11 @@ export class CmData {
         utilization: Math.min(100, Math.round((active / CAPACITY_PER_CM) * 100)),
       };
     });
-  });
+  }
 
   /** Team rollup — same role as UM Workforce's "By Team" grouping. */
-  readonly teamStats = computed<CmTeamStat[]>(() => {
-    const stats = this.managerStats();
+  teamStats(scope?: CmCaseRec[]): CmTeamStat[] {
+    const stats = this.managerStats(scope);
     const groups = new Map<string, CmManagerStat[]>();
     for (const m of stats) { if (!groups.has(m.team)) groups.set(m.team, []); groups.get(m.team)!.push(m); }
     return [...groups.entries()].map(([name, managers]) => {
@@ -83,10 +87,10 @@ export class CmData {
         utilization: Math.round(sum((m) => m.utilization) / managers.length),
       };
     });
-  });
+  }
 
-  readonly stages = computed<CmStageCard[]>(() => {
-    const cs = this.cases();
+  stages(scope?: CmCaseRec[]): CmStageCard[] {
+    const cs = scope ?? this.cases();
     return CM_STAGES.map((stage) => {
       const mine = cs.filter((c) => c.stage === stage);
       const total = mine.length || 1;
@@ -97,11 +101,11 @@ export class CmData {
         buckets: { onTrack: Math.round((bands.onTrack / total) * 100), dueSoon: Math.round((bands.dueSoon / total) * 100), overdue: Math.round((bands.overdue / total) * 100) },
       };
     });
-  });
+  }
 
   /** Operational work queues — Workforce & Caseload's actual cards (replaces stage cards there). */
-  readonly queues = computed<CmQueueCard[]>(() => {
-    const cs = this.cases();
+  queues(scope?: CmCaseRec[]): CmQueueCard[] {
+    const cs = scope ?? this.cases();
     return CM_QUEUES.map((queue) => {
       const mine = cs.filter((c) => c.queue === queue);
       const total = mine.length || 1;
@@ -115,52 +119,52 @@ export class CmData {
         },
       };
     });
-  });
+  }
 
   /** Counts by how each case's current care manager came to own it — optionally scoped to one
-   *  team. Independent of the operational `queues` breakdown above (that's what's queued *right
-   *  now*; this is *how the assignment originally happened*). */
-  assignmentBreakdown(team?: string): { method: AssignmentMethod; count: number }[] {
+   *  team and/or a LOB/Lookback-narrowed case list. Independent of the operational `queues`
+   *  breakdown above (that's what's queued *right now*; this is *how the assignment happened*). */
+  assignmentBreakdown(team?: string, scope?: CmCaseRec[]): { method: AssignmentMethod; count: number }[] {
     const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
-    const cs = this.cases().filter((c) => !team || teamOf.get(c.careManager) === team);
+    const cs = (scope ?? this.cases()).filter((c) => !team || teamOf.get(c.careManager) === team);
     const methods: AssignmentMethod[] = ['Queue Draw', 'Direct — Smart', 'Direct — Manual'];
     return methods.map((method) => ({ method, count: cs.filter((c) => c.assignmentMethod === method).length }));
   }
 
-  /** Counts by the intake wizard's own "Case Type" field — optionally scoped to one team. */
-  caseTypeBreakdown(team?: string): { type: CaseType; count: number }[] {
+  /** Counts by the intake wizard's own "Case Type" field — optionally scoped to one team and/or a LOB/Lookback-narrowed case list. */
+  caseTypeBreakdown(team?: string, scope?: CmCaseRec[]): { type: CaseType; count: number }[] {
     const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
-    const cs = this.cases().filter((c) => !team || teamOf.get(c.careManager) === team);
+    const cs = (scope ?? this.cases()).filter((c) => !team || teamOf.get(c.careManager) === team);
     return CASE_TYPES.map((type) => ({ type, count: cs.filter((c) => c.caseType === type).length }));
   }
 
   /** Consent on file by type, with how many of each are due for renewal soon/overdue. */
-  readonly consentBreakdown = computed(() => {
-    const cs = this.cases();
+  consentBreakdown(scope?: CmCaseRec[]) {
+    const cs = scope ?? this.cases();
     return CONSENT_TYPES.map((type) => {
       const mine = cs.filter((c) => c.consentType === type);
       return { type, count: mine.length, atRisk: mine.filter(consentAtRisk).length };
     });
-  });
+  }
 
   /** Assessments by type, with TAT adherence (completed within the 5-day target). */
-  readonly assessmentBreakdown = computed(() => {
-    const cs = this.cases();
+  assessmentBreakdown(scope?: CmCaseRec[]) {
+    const cs = scope ?? this.cases();
     return ASSESSMENT_TYPES.map((type) => {
       const mine = cs.filter((c) => c.assessmentType === type);
       return { type, count: mine.length, adherent: mine.filter(tatAdherent).length };
     });
-  });
+  }
 
   /** Outreach contact-attempt success rate and how many members have an "unable to reach" letter on file. */
-  readonly outreachStats = computed(() => {
-    const cs = this.cases();
+  outreachStats(scope?: CmCaseRec[]) {
+    const cs = scope ?? this.cases();
     const total = cs.length || 1;
     const successful = cs.filter((c) => c.outreachSuccessful).length;
     const avgAttempts = cs.reduce((s, c) => s + c.outreachAttempts, 0) / total;
     const utrCount = cs.filter((c) => c.utrLetterSent).length;
     return { successRate: Math.round((successful / total) * 100), avgAttempts: Math.round(avgAttempts * 10) / 10, utrCount };
-  });
+  }
 
   reassignCase(memberId: string, toCm: string) {
     this.cases.update((list) => list.map((c) => (c.memberId === memberId ? { ...c, careManager: toCm } : c)));

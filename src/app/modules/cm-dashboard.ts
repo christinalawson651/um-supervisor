@@ -9,6 +9,7 @@ import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
+import { LobFilter } from '../shared/lob-filter';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, consentAtRisk, tatAdherent } from '../data/cm-intake';
@@ -272,7 +273,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         <div class="grid-2">
           @if (!visIntake.isHidden('referralsBySource')) {
           <div class="panel panel-pad">
-            <div class="tbl-head"><h3 class="pt">By Source (30d)</h3><z-widget-actions (exportClick)="exportReferralsBySource()" (removeClick)="visIntake.remove('referralsBySource')"></z-widget-actions></div>
+            <div class="tbl-head"><h3 class="pt">By Source ({{ lookbackLabel() }})</h3><z-widget-actions (exportClick)="exportReferralsBySource()" (removeClick)="visIntake.remove('referralsBySource')"></z-widget-actions></div>
             <div class="bars">
               @for (r of referralsBySource(); track r.label) {
                 <div class="bar-row"><span class="bl">{{ r.label }}</span><span class="bt"><span class="bf" [style.width.%]="r.pct" [style.background]="r.color"></span></span><span class="bv clk" (click)="openReferralSource(r.label)">{{ r.value }}</span></div>
@@ -282,7 +283,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }
           @if (!visIntake.isHidden('referralsByStatus')) {
           <div class="panel panel-pad">
-            <div class="tbl-head"><h3 class="pt">By Status (30d)</h3><z-widget-actions (exportClick)="exportReferralsByStatus()" (removeClick)="visIntake.remove('referralsByStatus')"></z-widget-actions></div>
+            <div class="tbl-head"><h3 class="pt">By Status ({{ lookbackLabel() }})</h3><z-widget-actions (exportClick)="exportReferralsByStatus()" (removeClick)="visIntake.remove('referralsByStatus')"></z-widget-actions></div>
             <div class="am-tiles">
               @for (r of referralsByStatus(); track r.status) {
                 <div class="am-tile" (click)="openReferralStatus(r.status)">
@@ -639,6 +640,7 @@ export class CmDashboard {
   private data = inject(DashboardData);
   private exporter = inject(Exporter);
   private lookback = inject(Lookback);
+  private lobFilter = inject(LobFilter);
   private cmData = inject(CmData);
   private rx = inject(Reassign);
   private esc = inject(Escalate);
@@ -654,27 +656,43 @@ export class CmDashboard {
   readonly visReferrals = new WidgetVisibility('zyter-cm-referrals-widgets-v1', CM_REFERRALS_WIDGETS);
   readonly visAi = new WidgetVisibility('zyter-cm-ai-widgets-v1', CM_AI_WIDGETS);
 
-  private readonly PERIOD_VALUES: Record<string, string[]> = {
-    today: ['21', '13', '8', '2', '66', '4', '126', '97%'],
-    '7d': ['22', '14', '9', '4', '67', '9', '127', '96%'],
-    qtd: ['28', '17', '12', '9', '74', '41', '132', '95%'],
-  };
-  readonly displayKpis = computed(() => {
-    const p = this.lookback.period();
-    if (p === '30d' || !this.PERIOD_VALUES[p]) return this.kpis;
-    return this.kpis.map((k, i) => ({ ...k, value: this.PERIOD_VALUES[p][i] }));
+  // ---- shared top-bar filters actually scoping CM's data now, not just cosmetic ----
+  // LOB narrows every steady-state panel (queues/workload/stages/case type/assignment/consent/
+  // assessments/outreach). Lookback narrows the referral funnel and the New Referrals KPI instead
+  // of the active caseload itself — a mature member's `received` date can be months old by design
+  // (real caseloads don't churn like a 30-day intake queue), so gating Workforce/Queues by a
+  // today/7-day window would just make them look empty rather than "filtered."
+  readonly scopedCases = computed(() => {
+    const lob = this.lobFilter.value();
+    return lob === 'all' ? this.cmData.cases() : this.cmData.cases().filter((c) => c.lob === lob);
   });
+  readonly scopedReferrals = computed(() => {
+    const lob = this.lobFilter.value();
+    return this.cmData.referrals().filter((r) => (lob === 'all' || r.lob === lob) && this.lookback.includes(r.received));
+  });
+  readonly lookbackLabel = computed(() => this.lookback.periods.find((p) => p.id === this.lookback.period())?.label ?? '30 days');
 
-  readonly kpis: KpiItem[] = [
-    { icon: 'alert',  value: '23',  label: 'High-Risk Members', tone: 'red' },
-    { icon: 'shield', value: '14',  label: 'High-Acuity',       tone: 'amber' },
-    { icon: 'dollar', value: '9',   label: 'High-Cost (>$100k)', tone: 'amber' },
-    { icon: 'clock',  value: '5',   label: 'SLA At-Risk',       tone: 'red' },
-    { icon: 'folder', value: '68',  label: 'Active Care Plans', tone: 'teal' },
-    { icon: 'inbox',  value: '14',  label: 'New Referrals',     tone: 'blue' },
-    { icon: 'users',  value: '128', label: 'Members Managed',   tone: 'green' },
-    { icon: 'check',  value: '96%', label: 'Intake SLA',        tone: 'green' },
-  ];
+  readonly displayKpis = computed((): KpiItem[] => {
+    const cs = this.scopedCases();
+    const total = cs.length || 1;
+    const highRisk = cs.filter((c) => c.tags.includes('highRisk')).length;
+    const highAcuity = cs.filter((c) => c.tags.includes('highAcuity')).length;
+    const highCost = cs.filter((c) => c.tags.includes('highCost')).length;
+    const slaAtRisk = cs.filter((c) => c.tags.includes('slaAtRisk')).length;
+    const activeCarePlans = cs.filter((c) => c.stage !== 'New Referral').length;
+    const newReferrals = this.scopedReferrals().length;
+    const intakeSlaPct = Math.round(((total - slaAtRisk) / total) * 100);
+    return [
+      { icon: 'alert',  value: String(highRisk),  label: 'High-Risk Members', tone: 'red' },
+      { icon: 'shield', value: String(highAcuity), label: 'High-Acuity',       tone: 'amber' },
+      { icon: 'dollar', value: String(highCost),   label: 'High-Cost (>$100k)', tone: 'amber' },
+      { icon: 'clock',  value: String(slaAtRisk),  label: 'SLA At-Risk',       tone: 'red' },
+      { icon: 'folder', value: String(activeCarePlans), label: 'Active Care Plans', tone: 'teal' },
+      { icon: 'inbox',  value: String(newReferrals), label: 'New Referrals',   tone: 'blue' },
+      { icon: 'users',  value: String(cs.length),  label: 'Members Managed',   tone: 'green' },
+      { icon: 'check',  value: `${intakeSlaPct}%`, label: 'Intake SLA',        tone: 'green' },
+    ];
+  });
   onKpi(_: string) { /* KPIs on CM navigate within tabs; no explorer wired yet */ }
 
   readonly worklist: CmMemberRow[] = [
@@ -721,17 +739,19 @@ export class CmDashboard {
     { id: 'CM-120', type: 'Consent', desc: 'Verbal consent not documented — MBR000201', date: '2026-07-13', sev: 'Low' },
   ];
 
-  // ---- caseload: real data from CmData, drills, and Reassign/Balance/Escalate actions ----
-  readonly cmQueues = computed(() => this.cmData.queues());
-  readonly cmManagers = computed(() => this.cmData.managerStats());
-  readonly cmTeams = computed(() => this.cmData.teamStats());
+  // ---- caseload: real data from CmData, drills, and Reassign/Balance/Escalate actions.
+  // Scoped by the shared LOB filter (see scopedCases() above) — Lookback deliberately does not
+  // narrow these, since a mature caseload's enrollment dates intentionally span months back. ----
+  readonly cmQueues = computed(() => this.cmData.queues(this.scopedCases()));
+  readonly cmManagers = computed(() => this.cmData.managerStats(this.scopedCases()));
+  readonly cmTeams = computed(() => this.cmData.teamStats(this.scopedCases()));
 
   // ---- Intake & Assessment SLA (case 1) — lifecycle-stage cards, the same "graphs" shape as the
   // first pass of Workforce & Caseload, now on the tab that actually owns lifecycle stage. ----
-  readonly cmStages = computed(() => this.cmData.stages());
+  readonly cmStages = computed(() => this.cmData.stages(this.scopedCases()));
   openStageBand(stage: string, band: SlaBand) {
     const labels: Record<SlaBand, string> = { onTrack: 'On track', dueSoon: 'Due soon', overdue: 'Overdue' };
-    const cases = this.cmData.cases().filter((x) => x.stage === stage && slaBandOf(x) === band);
+    const cases = this.scopedCases().filter((x) => x.stage === stage && slaBandOf(x) === band);
     this.openCmCases(`${stage} — ${labels[band]}`, cases, `${slug(stage)}-${slug(band)}`);
   }
   /** The tab-header Export button — offers every distinct dataset on this tab as a Section
@@ -758,7 +778,7 @@ export class CmDashboard {
   // referrals (future work — not yet triaged) are reassignable/balanceable; the rest are history. ----
   private readonly REFERRAL_COLORS: Record<ReferralSource, string> = { 'Fax': '#f59e0b', 'Provider Portal': '#3b82f6', 'Call': '#8b5cf6', 'UM Referral': '#0d9488' };
   readonly referralsBySource = computed(() => {
-    const all = this.cmData.referrals();
+    const all = this.scopedReferrals();
     const total = all.length || 1;
     return REFERRAL_SOURCES.map((label) => {
       const value = all.filter((r) => r.source === label).length;
@@ -766,18 +786,18 @@ export class CmDashboard {
     });
   });
   readonly referralsByStatus = computed(() => {
-    const all = this.cmData.referrals();
+    const all = this.scopedReferrals();
     const statuses: ReferralStatus[] = ['Pending', 'Accepted', 'CM Declined', 'Member Declined'];
     return statuses.map((status) => ({ status, count: all.filter((r) => r.status === status).length }));
   });
   openReferralSource(source: ReferralSource) {
-    const rows = this.cmData.referrals().filter((r) => r.source === source);
-    this.ix.openDrawer({ title: `Referral Source: ${source}`, subtitle: `${rows.length} referral(s) in the last 30 days`,
+    const rows = this.scopedReferrals().filter((r) => r.source === source);
+    this.ix.openDrawer({ title: `Referral Source: ${source}`, subtitle: `${rows.length} referral(s) in the last ${this.lookbackLabel()}`,
       table: { columns: ['Referral ID', 'Member', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.member, r.status, r.received]) } });
   }
   openReferralStatus(status: ReferralStatus) {
-    const rows = this.cmData.referrals().filter((r) => r.status === status);
-    this.ix.openDrawer({ title: `${status} Referrals`, subtitle: `${rows.length} referral(s) in the last 30 days`,
+    const rows = this.scopedReferrals().filter((r) => r.status === status);
+    this.ix.openDrawer({ title: `${status} Referrals`, subtitle: `${rows.length} referral(s) in the last ${this.lookbackLabel()}`,
       table: { columns: ['Referral ID', 'Member', 'Source', 'Received'], rows: rows.map((r) => [r.id, r.member, r.source, r.received]) } });
   }
   exportReferralsBySource() {
@@ -832,9 +852,9 @@ export class CmDashboard {
   }
 
   // ---- Consent on file, by type + at-risk-of-expiring ----
-  readonly consentBreakdown = computed(() => this.cmData.consentBreakdown());
+  readonly consentBreakdown = computed(() => this.cmData.consentBreakdown(this.scopedCases()));
   openConsent(type: ConsentType, atRiskOnly: boolean) {
-    const cases = this.cmData.cases().filter((c) => c.consentType === type && (!atRiskOnly || consentAtRisk(c)));
+    const cases = this.scopedCases().filter((c) => c.consentType === type && (!atRiskOnly || consentAtRisk(c)));
     this.openCmCases(`${type}${atRiskOnly ? ' — At Risk of Expiring' : ''}`, cases, `consent-${slug(type)}${atRiskOnly ? '-at-risk' : ''}`);
   }
   exportConsent() {
@@ -843,9 +863,9 @@ export class CmDashboard {
   }
 
   // ---- Assessments, by type + TAT adherence ----
-  readonly assessmentBreakdown = computed(() => this.cmData.assessmentBreakdown());
+  readonly assessmentBreakdown = computed(() => this.cmData.assessmentBreakdown(this.scopedCases()));
   openAssessment(type: AssessmentType, adherentOnly: boolean) {
-    const cases = this.cmData.cases().filter((c) => c.assessmentType === type && tatAdherent(c) === adherentOnly);
+    const cases = this.scopedCases().filter((c) => c.assessmentType === type && tatAdherent(c) === adherentOnly);
     this.openCmCases(`${type} — ${adherentOnly ? 'TAT Adherent' : 'TAT Missed'}`, cases, `assessment-${slug(type)}-${adherentOnly ? 'adherent' : 'missed'}`);
   }
   exportAssessments() {
@@ -854,9 +874,9 @@ export class CmDashboard {
   }
 
   // ---- Outreach success + Unable-To-Reach letters ----
-  readonly outreachStats = computed(() => this.cmData.outreachStats());
+  readonly outreachStats = computed(() => this.cmData.outreachStats(this.scopedCases()));
   openUtrLetters() {
-    const cases = this.cmData.cases().filter((c) => c.utrLetterSent);
+    const cases = this.scopedCases().filter((c) => c.utrLetterSent);
     this.openCmCases('UTR Letters Sent', cases, 'utr-letters');
   }
   exportOutreach() {
@@ -867,21 +887,21 @@ export class CmDashboard {
 
   // ---- how members were assigned (queue draw vs direct) — independent of the operational queues above ----
   readonly assignTeamFilter = signal('all');
-  readonly assignmentBreakdown = computed(() => this.cmData.assignmentBreakdown(this.assignTeamFilter() === 'all' ? undefined : this.assignTeamFilter()));
+  readonly assignmentBreakdown = computed(() => this.cmData.assignmentBreakdown(this.assignTeamFilter() === 'all' ? undefined : this.assignTeamFilter(), this.scopedCases()));
   openAssignmentMethod(method: AssignmentMethod) {
     const team = this.assignTeamFilter();
     const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
-    const cases = this.cmData.cases().filter((c) => c.assignmentMethod === method && (team === 'all' || teamOf.get(c.careManager) === team));
+    const cases = this.scopedCases().filter((c) => c.assignmentMethod === method && (team === 'all' || teamOf.get(c.careManager) === team));
     this.openCmCases(`${method}${team === 'all' ? '' : ' · ' + team}`, cases, `${slug(method)}${team === 'all' ? '' : '-' + slug(team)}`);
   }
 
   // ---- cases by case type (the intake wizard's own Case Type field) ----
   readonly caseTypeTeamFilter = signal('all');
-  readonly caseTypeBreakdown = computed(() => this.cmData.caseTypeBreakdown(this.caseTypeTeamFilter() === 'all' ? undefined : this.caseTypeTeamFilter()));
+  readonly caseTypeBreakdown = computed(() => this.cmData.caseTypeBreakdown(this.caseTypeTeamFilter() === 'all' ? undefined : this.caseTypeTeamFilter(), this.scopedCases()));
   openCaseType(type: CaseType) {
     const team = this.caseTypeTeamFilter();
     const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
-    const cases = this.cmData.cases().filter((c) => c.caseType === type && (team === 'all' || teamOf.get(c.careManager) === team));
+    const cases = this.scopedCases().filter((c) => c.caseType === type && (team === 'all' || teamOf.get(c.careManager) === team));
     this.openCmCases(`${type}${team === 'all' ? '' : ' · ' + team}`, cases, `${slug(type)}${team === 'all' ? '' : '-' + slug(team)}`);
   }
 
@@ -956,16 +976,16 @@ export class CmDashboard {
     });
   }
   openCmActive(c: CmManagerStat) {
-    const cases = this.cmData.cases().filter((x) => x.careManager === c.name);
+    const cases = this.scopedCases().filter((x) => x.careManager === c.name);
     this.openCmCases(`${c.name} — Active Caseload`, cases, `${slug(c.name)}-active`, `${cases.length} active member(s) · ${c.utilization}% utilized`);
   }
   openCmFlag(c: CmManagerStat, flag: 'highRisk' | 'highAcuity' | 'highCost' | 'slaAtRisk') {
-    const cases = this.cmData.cases().filter((x) => x.careManager === c.name && x.tags.includes(flag));
+    const cases = this.scopedCases().filter((x) => x.careManager === c.name && x.tags.includes(flag));
     this.openCmCases(`${c.name} — ${flag}`, cases, `${slug(c.name)}-${slug(flag)}`);
   }
   openQueueBand(queue: string, band: QueueBand) {
     const labels: Record<QueueBand, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
-    const cases = this.cmData.cases().filter((x) => x.queue === queue && queueBandOf(x) === band);
+    const cases = this.scopedCases().filter((x) => x.queue === queue && queueBandOf(x) === band);
     this.openCmCases(`${queue} — ${labels[band]}`, cases, `${slug(queue)}-${slug(band)}`);
   }
 

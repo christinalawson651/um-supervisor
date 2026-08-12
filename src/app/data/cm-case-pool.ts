@@ -1,7 +1,7 @@
 // CM's equivalent of case-pool.ts — a deterministic, RNG-free generated caseload so the Care
 // Management module's Workforce & Caseload tab (and, next, its other tabs) has a real dataset to
 // aggregate/flag/drill into, instead of the hand-authored 5-row static array it had before.
-import { TODAY } from './case-fields';
+import { TODAY, LOBS } from './case-fields';
 import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES } from './cm-intake';
 
 export interface CareManagerMeta { name: string; discipline: string; team: string; }
@@ -37,6 +37,7 @@ export interface CmCaseRec {
   memberId: string;
   member: string;
   dx: string;
+  lob: string;            // one of LOBS — so the shared top-bar LOB filter has something real to scope by
   program: string;       // = care manager's discipline
   careManager: string;
   riskScore: number;     // 1.0 - 9.9
@@ -95,6 +96,12 @@ function buildActive(): CmCaseRec[] {
       const riskLevel: RiskLevel = riskScore >= 8 ? 'Critical' : riskScore >= 6.5 ? 'High' : riskScore >= 4 ? 'Moderate' : 'Low';
       const acuity: Acuity = riskScore >= 7.5 ? 'High' : riskScore >= 5 ? 'Medium' : 'Low';
       const cost = Math.round(3000 + riskScore * 9500 + (seedRaw % 41) * 850);
+      // LOBS and CASE_TYPES/CONSENT_TYPES are both length 4, so a plain affine function of `i`
+      // alone would be a pure bijection of i%4 — perfectly correlating LOB with those fields
+      // (e.g. every Medicaid case landing on the same case type). The `Math.floor(i/4)` term
+      // shifts the mapping every 4 records so LOB actually varies within each case-type/consent
+      // group instead of tracking it 1:1.
+      const lob = LOBS[(i * 17 + Math.floor(i / 4) * 7 + 4) % LOBS.length];
       const stage = CM_STAGES[(i * 3 + cmIdx) % CM_STAGES.length];
       const receivedDaysAgo = 5 + (seedRaw % 240);
       const received = isoDate(addDays(TODAY, -receivedDaysAgo));
@@ -136,7 +143,7 @@ function buildActive(): CmCaseRec[] {
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
         dx: DX_POOL[(i * 5 + 2) % DX_POOL.length],
-        program: cm.discipline,
+        lob, program: cm.discipline,
         careManager: cm.name,
         riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod,
         caseType, consentType, consentExpiresDate, assessmentType, assessmentTatDays, outreachAttempts, outreachSuccessful, utrLetterSent, tags,
