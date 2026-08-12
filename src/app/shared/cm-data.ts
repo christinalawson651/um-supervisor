@@ -1,7 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
-import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE } from '../data/cm-intake';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -205,5 +205,24 @@ export class CmData {
     if (!candidate) return null;
     this.reassignCase(candidate.memberId, to.name);
     return { member: candidate.member, from: from.name, to: to.name };
+  }
+
+  // ---- referral intake funnel — only Pending referrals (future work, not yet triaged) are ever
+  // reassigned/balanced; Accepted/CM Declined/Member Declined are read-only past decisions. ----
+  readonly referrals = signal<ReferralIntakeRec[]>(CM_REFERRAL_INTAKE);
+
+  /** Assigning a pending referral to a care manager IS the triage decision — moves it to Accepted. */
+  reassignReferral(id: string, toCm: string) {
+    this.referrals.update((list) => list.map((r) => (r.id === id ? { ...r, careManager: toCm, status: 'Accepted' as const } : r)));
+  }
+
+  /** One real assignment of the oldest still-pending referral to the least-utilized care manager —
+   *  same single-move-callable-N-times shape as reassignBusiestCase(). Returns null once nothing's pending. */
+  reassignNextPendingReferral(): { member: string; to: string } | null {
+    const pending = [...this.referrals()].filter((r) => r.status === 'Pending').sort((a, b) => a.received.localeCompare(b.received));
+    if (!pending.length) return null;
+    const to = this.managerStats().reduce((a, b) => (b.utilization < a.utilization ? b : a));
+    this.reassignReferral(pending[0].id, to.name);
+    return { member: pending[0].member, to: to.name };
   }
 }

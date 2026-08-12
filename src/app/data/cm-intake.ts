@@ -22,26 +22,34 @@ export const ASSESSMENT_TYPES: AssessmentType[] = ['HRA', 'SDOH Screening', 'KDQ
 // survivors. "Source" here is the intake CHANNEL a referral arrived through, not who originated it.
 export type ReferralSource = 'Fax' | 'Provider Portal' | 'Call' | 'UM Referral';
 export const REFERRAL_SOURCES: ReferralSource[] = ['Fax', 'Provider Portal', 'Call', 'UM Referral'];
-export type ReferralStatus = 'Accepted' | 'CM Declined' | 'Member Declined';
+// 'Pending' = future work — received recently enough that no triage decision has been made yet,
+// so it's still reassignable/balanceable. The other three are past work — already decided, kept
+// as read-only history (that's also why an already-Accepted referral has no bearing on whether
+// it's reassignable; only its Pending-ness does).
+export type ReferralStatus = 'Pending' | 'Accepted' | 'CM Declined' | 'Member Declined';
 
-export interface ReferralIntakeRec { id: string; source: ReferralSource; status: ReferralStatus; received: string; }
+export interface ReferralIntakeRec { id: string; member: string; source: ReferralSource; status: ReferralStatus; careManager: string | null; received: string; }
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }
 
 const REFERRAL_COUNT = 62; // ~2 referrals/day over a 30-day lookback — a believable intake volume
+const REF_FIRST = ['Angela', 'Brian', 'Carla', 'Derek', 'Elena', 'Frank', 'Gina', 'Harold', 'Isabel', 'Jacob', 'Kayla', 'Leon', 'Monica', 'Nathan', 'Olivia'];
+const REF_LAST = ['Vasquez', 'Reyes', 'Bennett', 'Coleman', 'Fitzgerald', 'Ortega', 'Simmons', 'Bishop', 'Navarro', 'Whitfield', 'Grant', 'Castillo'];
 
 function buildReferralIntake(): ReferralIntakeRec[] {
   const out: ReferralIntakeRec[] = [];
   for (let i = 0; i < REFERRAL_COUNT; i++) {
     const seed = (i * 31 + 13) % 100;
     const source = REFERRAL_SOURCES[(i * 7 + 2) % REFERRAL_SOURCES.length];
-    // Most referrals are accepted (that's why the active caseload exists at all) — a minority get
-    // declined by CM (didn't meet program criteria) and a smaller minority are declined by the
-    // member themselves once contacted.
-    const status: ReferralStatus = seed < 78 ? 'Accepted' : seed < 92 ? 'CM Declined' : 'Member Declined';
     const daysAgo = 1 + (seed % 30);
-    out.push({ id: `REF-${1000 + i}`, source, status, received: isoDate(addDays(TODAY, -daysAgo)) });
+    // Anything received in the last 3 days hasn't been triaged yet (Pending — future work).
+    // Older referrals have already been decided: most accepted (that's why the active caseload
+    // exists at all), a minority declined by CM (didn't meet program criteria), and a smaller
+    // minority declined by the member themselves once contacted.
+    const status: ReferralStatus = daysAgo <= 3 ? 'Pending' : seed < 78 ? 'Accepted' : seed < 92 ? 'CM Declined' : 'Member Declined';
+    const member = `${REF_FIRST[i % REF_FIRST.length]} ${REF_LAST[(i * 5 + 2) % REF_LAST.length]}`;
+    out.push({ id: `REF-${1000 + i}`, member, source, status, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)) });
   }
   return out;
 }

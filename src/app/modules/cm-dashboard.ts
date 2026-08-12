@@ -11,7 +11,7 @@ import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
-import { CaseType, CASE_TYPES, ConsentType, AssessmentType, CM_REFERRAL_INTAKE, REFERRAL_SOURCES, ReferralSource, ReferralStatus, consentAtRisk, tatAdherent } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Icon } from '../shared/icon';
@@ -37,6 +37,11 @@ const CM_BALANCE_STRATEGIES = [
   { label: 'Standard — rebalance 3 members', n: 3 },
   { label: 'Aggressive — rebalance 6 members', n: 6 },
   { label: 'Even out — level everyone toward the team average', n: 5 },
+];
+const REFERRAL_BALANCE_STRATEGIES = [
+  { label: 'Light — assign 1 pending referral', n: 1 },
+  { label: 'Standard — assign 3 pending referrals', n: 3 },
+  { label: 'All — assign every pending referral', n: 999 },
 ];
 
 const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Assessments & Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance','AI / NextGen'];
@@ -230,7 +235,13 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }
         </div>
 
-        <h3 class="sec-title mt-6">Referrals</h3>
+        <div class="tbl-head mt-6">
+          <h3 class="sec-title">Referrals</h3>
+          <div class="flex gap-8">
+            <button class="btn outline sm" (click)="reassignReferrals()"><z-icon name="swap" [size]="13"></z-icon> Reassign Pending</button>
+            <button class="btn outline sm" (click)="balanceReferrals()"><z-icon name="balance" [size]="13"></z-icon> Balance Pending</button>
+          </div>
+        </div>
         <div class="grid-2">
           <div class="panel panel-pad">
             <h3 class="pt">By Source (30d)</h3>
@@ -647,28 +658,70 @@ export class CmDashboard {
   pct(part: number, total: number): number { return total > 0 ? Math.round((part / total) * 100) : 0; }
 
   // ---- Referrals (30-day intake funnel — includes referrals that never became an active case,
-  // so "by source"/"by status" reflects true intake volume, not just the survivors). ----
+  // so "by source"/"by status" reflects true intake volume, not just the survivors). Only Pending
+  // referrals (future work — not yet triaged) are reassignable/balanceable; the rest are history. ----
   private readonly REFERRAL_COLORS: Record<ReferralSource, string> = { 'Fax': '#f59e0b', 'Provider Portal': '#3b82f6', 'Call': '#8b5cf6', 'UM Referral': '#0d9488' };
   readonly referralsBySource = computed(() => {
-    const total = CM_REFERRAL_INTAKE.length || 1;
+    const all = this.cmData.referrals();
+    const total = all.length || 1;
     return REFERRAL_SOURCES.map((label) => {
-      const value = CM_REFERRAL_INTAKE.filter((r) => r.source === label).length;
+      const value = all.filter((r) => r.source === label).length;
       return { label, value, pct: Math.round((value / total) * 100), color: this.REFERRAL_COLORS[label] };
     });
   });
   readonly referralsByStatus = computed(() => {
-    const statuses: ReferralStatus[] = ['Accepted', 'CM Declined', 'Member Declined'];
-    return statuses.map((status) => ({ status, count: CM_REFERRAL_INTAKE.filter((r) => r.status === status).length }));
+    const all = this.cmData.referrals();
+    const statuses: ReferralStatus[] = ['Pending', 'Accepted', 'CM Declined', 'Member Declined'];
+    return statuses.map((status) => ({ status, count: all.filter((r) => r.status === status).length }));
   });
   openReferralSource(source: ReferralSource) {
-    const rows = CM_REFERRAL_INTAKE.filter((r) => r.source === source);
+    const rows = this.cmData.referrals().filter((r) => r.source === source);
     this.ix.openDrawer({ title: `Referral Source: ${source}`, subtitle: `${rows.length} referral(s) in the last 30 days`,
-      table: { columns: ['Referral ID', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.status, r.received]) } });
+      table: { columns: ['Referral ID', 'Member', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.member, r.status, r.received]) } });
   }
   openReferralStatus(status: ReferralStatus) {
-    const rows = CM_REFERRAL_INTAKE.filter((r) => r.status === status);
+    const rows = this.cmData.referrals().filter((r) => r.status === status);
     this.ix.openDrawer({ title: `${status} Referrals`, subtitle: `${rows.length} referral(s) in the last 30 days`,
-      table: { columns: ['Referral ID', 'Source', 'Received'], rows: rows.map((r) => [r.id, r.source, r.received]) } });
+      table: { columns: ['Referral ID', 'Member', 'Source', 'Received'], rows: rows.map((r) => [r.id, r.member, r.source, r.received]) } });
+  }
+  /** Bulk Reassign for pending referrals only — same shared Reassign panel as everywhere else,
+   *  with a single synthetic "Pending Intake" queue so Queue mode doesn't fall back to UM's queues. */
+  reassignReferrals() {
+    const pending = this.cmData.referrals().filter((r) => r.status === 'Pending');
+    const cases: ReassignCase[] = pending.map((r) => ({ authId: r.id, member: r.member, type: r.source, queue: 'Pending Intake', priority: 'Routine', owner: r.careManager ?? 'Unassigned' }));
+    const nurses = this.cmManagers().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
+    this.rx.open({
+      title: 'Reassign pending referrals', cases, nurses, queueTargets: [{ name: 'Pending Intake', count: pending.length }],
+      apply: (ids, target, mode) => {
+        if (mode === 'queue') { this.ix.toast('Pending referrals only have one intake queue right now.', 'info'); return; }
+        ids.forEach((id) => this.cmData.reassignReferral(id, target));
+        this.ix.toast(`${ids.length} referral(s) assigned to ${target}.`);
+        this.data.addHistory('swap', 'Pending referrals assigned', `${ids.length} referral(s) → ${target}`);
+      },
+    });
+  }
+  /** Same strategy-picker Balance shape as cmBalance(), applied to the pending referral queue instead of the active caseload. */
+  balanceReferrals() {
+    const pendingCount = this.cmData.referrals().filter((r) => r.status === 'Pending').length;
+    this.ix.choose({
+      title: 'Balance pending referrals', body: 'Choose how many pending referrals to assign to care managers with capacity.',
+      label: 'Balancing strategy', options: REFERRAL_BALANCE_STRATEGIES.map((s) => s.label), confirmLabel: 'Continue', tone: 'teal',
+      onChoose: (opt) => {
+        const strat = REFERRAL_BALANCE_STRATEGIES.find((s) => s.label === opt)!;
+        const n = Math.min(strat.n, pendingCount);
+        if (!n) { this.ix.toast('No pending referrals to assign.', 'info'); return; }
+        this.ix.ask({
+          title: `Assign ${n} pending referral${n > 1 ? 's' : ''}`, body: 'Assign pending referrals to care managers with the most capacity:',
+          confirmLabel: 'Assign', tone: 'teal',
+          onConfirm: () => {
+            let moved = 0;
+            for (let i = 0; i < n; i++) { if (this.cmData.reassignNextPendingReferral()) moved++; }
+            this.ix.toast(`${moved} referral(s) assigned.`);
+            this.data.addHistory('balance', 'Pending referrals assigned', `${opt.split(' — ')[0]} · ${moved} referral(s)`);
+          },
+        });
+      },
+    });
   }
 
   // ---- Consent on file, by type + at-risk-of-expiring ----
