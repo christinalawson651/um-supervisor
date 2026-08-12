@@ -93,9 +93,9 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
         <z-widget-customize [vis]="vis"></z-widget-customize>
 
-        <h3 class="sec-title">Queues</h3>
+        <h3 class="sec-title big-title">Queues</h3>
 
-        <div class="queues">
+        <div class="queues wf-queues">
           @for (q of cmQueues(); track q.name) {
             @if (!isHidden(q.name)) {
             <div class="qcard">
@@ -116,27 +116,6 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             </div>
             }
           }
-        </div>
-
-        <div class="panel mt-6">
-          <div class="panel-pad tbl-head">
-            <h3 class="pt">How Members Were Assigned</h3>
-            <label class="sortsel">
-              <span>Team</span>
-              <select [value]="assignTeamFilter()" (change)="assignTeamFilter.set($any($event.target).value)">
-                <option value="all">All Teams</option>
-                @for (t of cmTeams(); track t.name) { <option [value]="t.name">{{ t.name }}</option> }
-              </select>
-            </label>
-          </div>
-          <div class="am-tiles">
-            @for (a of assignmentBreakdown(); track a.method) {
-              <div class="am-tile" (click)="openAssignmentMethod(a.method)">
-                <div class="am-count">{{ a.count }}</div>
-                <div class="am-label">{{ a.method }}</div>
-              </div>
-            }
-          </div>
         </div>
 
         <div class="panel mt-6">
@@ -227,6 +206,27 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }
         </div>
         }
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head">
+            <h3 class="pt">How Members Were Assigned</h3>
+            <label class="sortsel">
+              <span>Team</span>
+              <select [value]="assignTeamFilter()" (change)="assignTeamFilter.set($any($event.target).value)">
+                <option value="all">All Teams</option>
+                @for (t of cmTeams(); track t.name) { <option [value]="t.name">{{ t.name }}</option> }
+              </select>
+            </label>
+          </div>
+          <div class="am-tiles small-tiles">
+            @for (a of assignmentBreakdown(); track a.method) {
+              <div class="am-tile" (click)="openAssignmentMethod(a.method)">
+                <div class="am-count">{{ a.count }}</div>
+                <div class="am-label">{{ a.method }}</div>
+              </div>
+            }
+          </div>
+        </div>
       }
 
       <!-- 1: Intake & Assessment SLA -->
@@ -586,6 +586,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .esc { color: var(--amber-fg); border-color: var(--gray-300); }
     .cz-btn { margin-left: 8px; }
     .sec-title { font-size: 13px; font-weight: 700; color: var(--ink-soft); margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; }
+    .sec-title.big-title { font-size: 16px; color: var(--ink); letter-spacing: 0; text-transform: none; }
     .queues { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
     .am-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 0 18px 18px; }
     .ct-tiles { grid-template-columns: repeat(4, 1fr); }
@@ -593,11 +594,23 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .am-tile:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); transform: translateY(-1px); }
     .am-count { font-size: 24px; font-weight: 700; color: var(--ink); }
     .am-label { font-size: 12px; font-weight: 600; color: var(--gray-500); margin-top: 4px; }
+    /* How Members Were Assigned sits below Workload now and is a secondary/reference panel, so its
+       tiles read smaller than the primary Cases-by-Case-Type tiles above. */
+    .am-tiles.small-tiles .am-tile { padding: 10px 12px; }
+    .am-tiles.small-tiles .am-count { font-size: 17px; }
+    .am-tiles.small-tiles .am-label { font-size: 10.5px; }
     .qcard { position: relative; background:#fff; border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
     .qcard:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
     .tbl-head { position: relative; }
     .qtop { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; }
     .qname { font-size: 14px; font-weight: 600; color: var(--ink); } .qcount { font-size: 15px; font-weight: 700; color: var(--ink); }
+    /* The Workforce queues are this tab's headline, so they get more visual weight than the
+       Lifecycle Stage / Consent / Assessment cards elsewhere that share the same .qcard base. */
+    .wf-queues { gap: 18px; }
+    .wf-queues .qcard { padding: 22px 24px; border: none; border-top: 4px solid var(--teal-600); box-shadow: 0 4px 14px rgba(16,24,40,.09); }
+    .wf-queues .qname { font-size: 15px; }
+    .wf-queues .qcount { font-size: 22px; }
+    .wf-queues .seg { height: 10px; }
     .seg { display:flex; height: 8px; border-radius: 999px; overflow:hidden; background: var(--gray-100); }
     .seg > span { display:block; height:100%; cursor: pointer; }
     .s-fresh { background:#10b981; } .s-day2 { background:#f59e0b; } .s-over48 { background:#f97316; } .s-breach { background:#ef4444; }
