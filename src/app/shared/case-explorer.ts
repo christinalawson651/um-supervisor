@@ -8,6 +8,8 @@ import { Balance } from './balance';
 import { downloadCsv } from './export-csv';
 import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL, CaseRec, GUIDELINE_BY_PROCEDURE } from '../data/case-pool';
+import { CM_CASE_POOL } from '../data/cm-case-pool';
+import { CmData } from './cm-data';
 import { lobOf, serviceCategoryOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { nbaFor } from '../data/um-status';
 import { pendReason } from './metrics';
@@ -60,23 +62,36 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
             @if (isCaseList()) {
               @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
               <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
-              <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected(e)">Escalate selected</button>
+              @if (!isCmList()) {
+                <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected(e)">Escalate selected</button>
+              }
             }
             <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
             <button class="btn outline sm" (click)="openAssignmentHistory()">Assignment History</button>
             <button class="btn outline sm" (click)="exportAll(e)">Export all ({{ filtered().length }})</button>
+            <span class="cz-wrap">
+              <button class="btn outline sm" (click)="customizing.set(!customizing())">Customize</button>
+              @if (customizing()) {
+                <div class="cz-pop" (click)="$event.stopPropagation()">
+                  <div class="cz-title">Show columns</div>
+                  @for (c of e.columns; track c; let ci = $index) {
+                    <label class="cz-row"><input type="checkbox" [checked]="!hiddenCols().has(ci)" (change)="toggleCol(ci)" /> {{ c }}</label>
+                  }
+                </div>
+              }
+            </span>
           </div>
 
           <!-- table -->
-          <div class="etable-wrap">
+          <div class="etable-wrap" (click)="customizing.set(false)">
             <table class="etable">
               <thead>
                 <tr>
                   @if (isCaseList()) {
                     <th class="selth"><input type="checkbox" [checked]="allSelected()" (change)="toggleAllFiltered($event)" /></th>
                   }
-                  @for (c of e.columns; track c; let ci = $index) {
-                    <th (click)="sortBy(ci)">{{ c }}{{ caret(ci) }}</th>
+                  @for (vc of visibleCols(); track vc.i) {
+                    <th (click)="sortBy(vc.i)">{{ vc.c }}{{ caret(vc.i) }}</th>
                   }
                 </tr>
               </thead>
@@ -86,13 +101,13 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                     @if (isCaseList()) {
                       <td class="selth"><input type="checkbox" [checked]="selected().has(rowId(row))" (change)="toggleSel(rowId(row))" /></td>
                     }
-                    @for (cell of row; track $index; let ci = $index) {
-                      @if (ci === e.memberColumn) {
-                        <td><a class="mlink" (click)="openAuth(row, e)">{{ cell }}</a></td>
-                      } @else if (e.columns[ci] === 'Procedure' && guidelineFor(cell)) {
-                        <td class="has-tip">{{ cell }}<span class="tip">Guideline: {{ guidelineFor(cell) }}</span></td>
+                    @for (vc of visibleCols(); track vc.i) {
+                      @if (vc.i === e.memberColumn) {
+                        <td><a class="mlink" (click)="openAuth(row, e)">{{ row[vc.i] }}</a></td>
+                      } @else if (vc.c === 'Procedure' && guidelineFor(row[vc.i])) {
+                        <td class="has-tip">{{ row[vc.i] }}<span class="tip">Guideline: {{ guidelineFor(row[vc.i]) }}</span></td>
                       } @else {
-                        <td>{{ cell }}</td>
+                        <td>{{ row[vc.i] }}</td>
                       }
                     }
                   </tr>
@@ -140,6 +155,14 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
       padding:6px 8px; border:1px solid var(--gray-300); border-radius:8px; background:#fff; cursor:pointer; }
     .selcount { font-size:12px; font-weight:700; color:var(--teal-700); white-space:nowrap; }
     .spacer { flex:1; }
+    .cz-wrap { position: relative; }
+    .cz-pop { position: absolute; top: calc(100% + 6px); left: 0; background: #fff; border: 1px solid var(--gray-200);
+      border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.14); padding: 10px 12px; z-index: 40; min-width: 180px;
+      max-height: 260px; overflow: auto; }
+    .cz-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--gray-500); margin-bottom: 6px; }
+    .cz-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft);
+      padding: 4px 0; cursor: pointer; white-space: nowrap; }
     .etable-wrap { flex:1; overflow:auto; margin: 0 24px; border:1px solid var(--gray-100); border-radius:10px; }
     .etable { width:100%; border-collapse:collapse; font-size:13px; }
     .etable thead th { position: sticky; top: 0; background: var(--gray-50); cursor:pointer;
@@ -169,6 +192,7 @@ export class CaseExplorer {
   ix = inject(Interaction);
   members = inject(Members);
   private data = inject(DashboardData);
+  private cmData = inject(CmData);
   private rx = inject(Reassign);
   private esc = inject(Escalate);
   private bal = inject(Balance);
@@ -179,6 +203,8 @@ export class CaseExplorer {
   readonly sortDir = signal<1 | -1>(1);
   readonly quickSort = signal<QuickSort>('default');
   readonly selected = signal<Set<string>>(new Set());
+  readonly customizing = signal(false);
+  readonly hiddenCols = signal<Set<number>>(new Set());
 
   constructor() {
     // reset view state whenever a new metric is opened
@@ -190,11 +216,20 @@ export class CaseExplorer {
       this.sortDir.set(1);
       this.quickSort.set('default');
       this.selected.set(new Set());
+      this.customizing.set(false);
+      this.hiddenCols.set(new Set());
     });
   }
 
-  /** Every drill in the app starts its columns with "Auth ID" except the team-utilization roster. */
-  readonly isCaseList = computed(() => this.ix.explorer()?.columns[0] === 'Auth ID');
+  /** Every drill in the app starts its columns with "Auth ID" (UM) or "Member ID" (CM). */
+  readonly isCaseList = computed(() => {
+    const c = this.ix.explorer()?.columns[0];
+    return c === 'Auth ID' || c === 'Member ID';
+  });
+  readonly isCmList = computed(() => this.ix.explorer()?.columns[0] === 'Member ID');
+
+  toggleCol(i: number) { this.hiddenCols.update((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; }); }
+  readonly visibleCols = computed(() => (this.ix.explorer()?.columns ?? []).map((c, i) => ({ c, i })).filter(({ i }) => !this.hiddenCols().has(i)));
 
   readonly availableSorts = computed(() => {
     const e = this.ix.explorer();
@@ -281,6 +316,7 @@ export class CaseExplorer {
   reassignSelected(e: { columns: string[]; rows: (string | number)[][]; memberColumn?: number }) {
     const ids = [...this.selected()];
     if (!ids.length) return;
+    if (this.isCmList()) { this.reassignSelectedCm(ids); return; }
     const iMember = e.memberColumn ?? 1;
     const iService = e.columns.indexOf('Service Type');
     const iStatus = e.columns.indexOf('Status');
@@ -319,6 +355,28 @@ export class CaseExplorer {
           this.ix.toast(`${assignedIds.length} authorization(s) reassigned to ${target}.`);
           this.data.addHistory('swap', 'Authorizations reassigned', `${assignedIds.length} authorization(s) → ${target}`);
         }
+        this.selected.set(new Set());
+      },
+    });
+  }
+
+  private reassignSelectedCm(ids: string[]) {
+    const cases: ReassignCase[] = ids.map((id) => {
+      const rec = CM_CASE_POOL.find((c) => c.memberId === id);
+      return {
+        authId: id, member: rec?.member ?? id, type: rec?.program ?? 'Care Management',
+        queue: rec?.queue ?? 'No Active Queue', priority: rec?.riskLevel ?? 'Moderate', owner: rec?.careManager ?? 'Unassigned',
+      };
+    });
+    const nurses = this.cmData.managerStats().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
+    const queueTargets = this.cmData.queues().map((q) => ({ name: q.name, count: q.count }));
+    this.rx.open({
+      title: `Reassign ${ids.length} member${ids.length > 1 ? 's' : ''}`,
+      cases, nurses, queueTargets, preselectAll: true,
+      apply: (assignedIds, target, mode) => {
+        assignedIds.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
+        this.ix.toast(`${assignedIds.length} member(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
+        this.data.addHistory('swap', mode === 'queue' ? 'CM members moved to queue' : 'CM members reassigned', `${assignedIds.length} member(s) → ${target}`);
         this.selected.set(new Set());
       },
     });
