@@ -582,15 +582,15 @@ export class WorkforceTab {
     const people = this.data.nurses().map((n) => ({ name: n.name, team: n.team, active: n.active, utilization: n.utilization }));
     this.pto.open({
       title: 'Redistribute authorizations for PTO', itemLabel: 'authorization', people,
-      apply: (person, start, end) => {
+      apply: (person, start, end, chosenTarget) => {
         const nurse = this.data.nurses().find((n) => n.name === person)!;
         const scope = this.data.nurses().filter((n) => n.team === nurse.team && n.name !== person).map((n) => n.name);
         const total = nurse.active;
         const byTarget = new Map<string, number>();
         for (let i = 0; i < total; i++) {
-          const target = this.data.nurses().filter((n) => scope.includes(n.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a));
-          this.data.moveOneCase(person, target.name);
-          byTarget.set(target.name, (byTarget.get(target.name) ?? 0) + 1);
+          const target = chosenTarget ?? this.data.nurses().filter((n) => scope.includes(n.name)).reduce((a, b) => (b.utilization < a.utilization ? b : a)).name;
+          this.data.moveOneCase(person, target);
+          byTarget.set(target, (byTarget.get(target) ?? 0) + 1);
         }
         const breakdown = [...byTarget.entries()].map(([to, n]) => `${n} → ${to}`).join(', ');
         this.ix.toast(`${total} authorization(s) redistributed from ${person} for PTO (${start} – ${end}).`);
