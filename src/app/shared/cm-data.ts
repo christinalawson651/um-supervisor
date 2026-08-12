@@ -136,6 +136,25 @@ export class CmData {
     this.cases.update((list) => list.map((c) => (c.memberId === memberId ? { ...c, queue: toQueue, queueAgeH: 0, queueBreached: false } : c)));
   }
 
+  /** Non-mutating preview of N greedy busiest->least-utilized moves — mirrors UM Balance's own
+   *  simulate() so the strategy-picker's "N members" and breakdown preview match what
+   *  reassignBusiestCase() actually does when called N times afterward. */
+  simulateBalance(n: number, scope?: Set<string>): { from: string; to: string }[] {
+    const sim = this.managerStats().filter((m) => !scope || scope.has(m.name)).map((m) => ({ name: m.name, utilization: m.utilization }));
+    const plan: { from: string; to: string }[] = [];
+    for (let i = 0; i < n && sim.length > 1; i++) {
+      const from = [...sim].sort((a, b) => b.utilization - a.utilization)[0];
+      const to = [...sim].sort((a, b) => a.utilization - b.utilization)[0];
+      if (from.name === to.name) break;
+      plan.push({ from: from.name, to: to.name });
+      const fromRef = sim.find((s) => s.name === from.name)!;
+      const toRef = sim.find((s) => s.name === to.name)!;
+      fromRef.utilization = Math.max(0, fromRef.utilization - 4);
+      toRef.utilization = Math.min(100, toRef.utilization + 4);
+    }
+    return plan;
+  }
+
   /** One real move from the busiest care manager to the one with the most capacity — same
    *  "recommend the least-utilized target" logic as UM's Balance, just single-move so the caller
    *  can call it N times for an "N members rebalanced" toast. Pass `scope` to restrict candidates

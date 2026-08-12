@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
 import { Members } from '../shared/members';
-import { Interaction } from '../shared/interaction';
+import { Interaction, ConfirmBreakdownRow } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
@@ -27,6 +27,16 @@ const CM_WORKFORCE_WIDGETS = [
   { id: 'workload', title: 'Workload per Care Manager' },
 ];
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+// Same "how aggressively to rebalance" strategy chooser as UM's Balance service — kept CM-local
+// (rather than sharing UM's Balance) since Balance.run() is coupled to DashboardData/nurses;
+// see the memory note on why a literal shared service wasn't worth it for this one flow.
+const CM_BALANCE_STRATEGIES = [
+  { label: 'Light — move 1 member from the busiest care manager', n: 1 },
+  { label: 'Standard — rebalance 3 members', n: 3 },
+  { label: 'Aggressive — rebalance 6 members', n: 6 },
+  { label: 'Even out — level everyone toward the team average', n: 5 },
+];
 
 const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Assessments & Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance','AI / NextGen'];
 
@@ -126,7 +136,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               <th class="srt" (click)="sortCm('slaAtRisk')">SLA At-Risk{{ caretCm('slaAtRisk') }}</th>
               <th class="srt" (click)="sortCm('utilization')">Utilization{{ caretCm('utilization') }}</th><th>Actions</th></tr></thead>
             <tbody>@for (c of sortedCms(); track c.name) {
-              <tr class="clk" (click)="openCm(c)"><td class="strong"><a class="ml" title="Open {{ c.name }}'s roster in a new tab" (click)="openRoster(c); $event.stopPropagation()">{{ c.name }}</a><div class="sub">{{ c.discipline }}</div></td>
+              <tr class="clk" (click)="openCm(c)"><td class="strong"><a class="ml" [href]="rosterHref(c)" target="_blank" rel="noopener" title="Open {{ c.name }}'s roster in a new tab" (click)="$event.stopPropagation()">{{ c.name }}</a><div class="sub">{{ c.discipline }}</div></td>
                 <td class="num clk" (click)="openCmActive(c); $event.stopPropagation()">{{ c.active }}</td>
                 <td class="clk" (click)="openCmFlag(c,'highRisk'); $event.stopPropagation()"><b [class.hot]="c.highRisk>0">{{ c.highRisk }}</b></td>
                 <td class="clk" (click)="openCmFlag(c,'highAcuity'); $event.stopPropagation()"><b [class.hot]="c.highAcuity>0">{{ c.highAcuity }}</b></td>
@@ -154,7 +164,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
                 @if (expanded().has(t.name)) {
                   @for (c of t.managers; track c.name) {
                     <tr class="nurse-child clk" (click)="openCm(c)">
-                      <td class="child-name"><a class="ml" title="Open {{ c.name }}'s roster in a new tab" (click)="openRoster(c); $event.stopPropagation()">{{ c.name }}</a><div class="sub">{{ c.discipline }}</div></td>
+                      <td class="child-name"><a class="ml" [href]="rosterHref(c)" target="_blank" rel="noopener" title="Open {{ c.name }}'s roster in a new tab" (click)="$event.stopPropagation()">{{ c.name }}</a><div class="sub">{{ c.discipline }}</div></td>
                       <td class="num clk" (click)="openCmActive(c); $event.stopPropagation()">{{ c.active }}</td>
                       <td class="clk" (click)="openCmFlag(c,'highRisk'); $event.stopPropagation()"><b [class.hot]="c.highRisk>0">{{ c.highRisk }}</b></td>
                       <td class="clk" (click)="openCmFlag(c,'highAcuity'); $event.stopPropagation()"><b [class.hot]="c.highAcuity>0">{{ c.highAcuity }}</b></td>
@@ -538,15 +548,29 @@ export class CmDashboard {
   readonly groupBy = signal<'manager' | 'team'>('manager');
   readonly expanded = signal<Set<string>>(new Set());
   toggleTeam(name: string) { this.expanded.update((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
-  /** Same strategy as UM's per-team Balance — restricted to this team's care managers. */
+  /** Same strategy-picker Balance flow as cmBalance() below, just restricted to this team's care managers. */
   cmBalanceTeam(t: CmTeamStat) {
-    this.ix.ask({ title: `Balance ${t.name}`, body: `Move members from over-utilized care managers to those with capacity within ${t.name}?`, confirmLabel: 'Balance', tone: 'teal',
-      onConfirm: () => {
-        const names = new Set(t.managers.map((m) => m.name));
-        const moved = this.cmData.reassignBusiestCase(names);
-        if (moved) { this.ix.toast(`${moved.member} reassigned within ${t.name}.`); this.data.addHistory('balance', 'CM team balanced', `${t.name}: ${moved.from} → ${moved.to}`); }
-        else this.ix.toast(`${t.name} is already balanced.`, 'info');
-      } });
+    const scope = new Set(t.managers.map((m) => m.name));
+    this.ix.choose({
+      title: `Balance ${t.name}`, body: `Choose how aggressively to rebalance members from over-utilized care managers to those with capacity within ${t.name}.`,
+      label: 'Balancing strategy', options: CM_BALANCE_STRATEGIES.map((s) => s.label), confirmLabel: 'Continue', tone: 'teal',
+      onChoose: (opt) => {
+        const strat = CM_BALANCE_STRATEGIES.find((s) => s.label === opt)!;
+        const plan = this.cmData.simulateBalance(strat.n, scope);
+        if (!plan.length) { this.ix.toast(`${t.name} is already balanced.`, 'info'); return; }
+        this.ix.ask({
+          title: `Balance ${plan.length} member${plan.length > 1 ? 's' : ''} in ${t.name}`,
+          body: `Move members from over-utilized care managers to those with capacity within ${t.name}:`,
+          breakdown: this.summarizeBalance(plan),
+          confirmLabel: 'Balance', tone: 'teal',
+          onConfirm: () => {
+            plan.forEach(() => this.cmData.reassignBusiestCase(scope));
+            this.ix.toast(`${t.name} balanced — ${opt.split(' — ')[0].toLowerCase()} (${plan.length} member${plan.length > 1 ? 's' : ''} moved).`);
+            this.data.addHistory('balance', 'CM team balanced', `${t.name}: ${opt.split(' — ')[0]} · ${plan.length} member(s) moved`);
+          },
+        });
+      },
+    });
   }
 
   readonly cmSortKey = signal<keyof CmManagerStat | ''>('');
@@ -592,10 +616,12 @@ export class CmDashboard {
     this.openCmCases(`${queue} — ${labels[band]}`, cases, `${slug(queue)}-${slug(band)}`);
   }
 
-  /** Opens the real per-person Roster page (what this care manager sees when they log in) in a
-   *  new tab — a distinct feature from openCm()'s supervisor-side drawer below. */
-  openRoster(c: CmManagerStat) {
-    window.open(`/roster/cm/${encodeURIComponent(c.name)}`, '_blank');
+  /** URL to the real per-person Roster page (what this care manager sees when they log in) —
+   *  bound as a real <a [href] target="_blank"> rather than window.open() from a click handler,
+   *  since script-triggered popups get silently blocked in some browsers/embedded previews even
+   *  on a genuine click; a native anchor's target="_blank" is treated as normal link-following. */
+  rosterHref(c: CmManagerStat): string {
+    return `/roster/cm/${encodeURIComponent(c.name)}`;
   }
 
   openCm(c: CmManagerStat) {
@@ -648,13 +674,34 @@ export class CmDashboard {
       },
     });
   }
+  /** Same "choose how aggressively to rebalance" strategy flow as UM's Balance service — see
+   *  CM_BALANCE_STRATEGIES above. */
   cmBalance() {
-    this.ix.ask({ title: 'Balance CM caseloads', body: 'Move members from over-utilized care managers to those with capacity?', confirmLabel: 'Balance', tone: 'teal',
-      onConfirm: () => {
-        const moves = [this.cmData.reassignBusiestCase(), this.cmData.reassignBusiestCase()].filter((m): m is { member: string; from: string; to: string } => !!m);
-        if (moves.length) { this.ix.toast(`${moves.length} member(s) reassigned to balance caseloads.`); this.data.addHistory('balance', 'CM caseload balanced', 'Rebalanced across care managers'); }
-        else this.ix.toast('Caseloads are already balanced.', 'info');
-      } });
+    this.ix.choose({
+      title: 'Balance workload', body: 'Choose how aggressively to rebalance members from over-utilized care managers to those with capacity.',
+      label: 'Balancing strategy', options: CM_BALANCE_STRATEGIES.map((s) => s.label), confirmLabel: 'Continue', tone: 'teal',
+      onChoose: (opt) => {
+        const strat = CM_BALANCE_STRATEGIES.find((s) => s.label === opt)!;
+        const plan = this.cmData.simulateBalance(strat.n);
+        if (!plan.length) { this.ix.toast('Caseloads are already balanced.', 'info'); return; }
+        this.ix.ask({
+          title: `Balance ${plan.length} member${plan.length > 1 ? 's' : ''}`,
+          body: 'Move members from over-utilized care managers to those with capacity:',
+          breakdown: this.summarizeBalance(plan),
+          confirmLabel: 'Balance', tone: 'teal',
+          onConfirm: () => {
+            plan.forEach(() => this.cmData.reassignBusiestCase());
+            this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${plan.length} member${plan.length > 1 ? 's' : ''} moved).`);
+            this.data.addHistory('balance', 'CM caseload balanced', `${opt.split(' — ')[0]} · ${plan.length} member(s) moved`);
+          },
+        });
+      },
+    });
+  }
+  private summarizeBalance(plan: { from: string; to: string }[]): ConfirmBreakdownRow[] {
+    const byTarget = new Map<string, number>();
+    plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
+    return [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'member' : 'members', target }));
   }
   /** Bulk Escalate for case(0)'s toolbar — distinct from the per-member `escalate()` used in the Risk & Escalation tab. */
   cmEscalate() {
