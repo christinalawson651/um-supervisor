@@ -8,7 +8,7 @@ export const CARE_MANAGERS: CareManagerMeta[] = [
   { name: 'Sara Nguyen, RN', discipline: 'Complex Care', team: 'Complex Care Team' },
   { name: 'David Patel, MSW', discipline: 'Behavioral Health', team: 'Integrated Care Team' },
   { name: 'Maria Torres, RN', discipline: 'Transitional Care', team: 'Integrated Care Team' },
-  { name: 'James Wong, PharmD', discipline: 'Medication Mgmt', team: 'Pharmacy & Medication Team' },
+  { name: 'James Wong', discipline: 'Medication Mgmt', team: 'Pharmacy & Medication Team' },
   { name: 'Angela Ruiz, RN', discipline: 'Complex Care', team: 'Complex Care Team' },
 ];
 

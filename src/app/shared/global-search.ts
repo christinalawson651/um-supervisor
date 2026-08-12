@@ -5,6 +5,7 @@ import { Interaction } from './interaction';
 import { Nav } from './nav';
 import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL, PROVIDERS, NPI_BY_PROVIDER } from '../data/case-pool';
+import { CARE_MANAGERS } from '../data/cm-case-pool';
 import { Icon } from './icon';
 
 interface Hit { type: 'Member' | 'Authorization' | 'Case' | 'Provider' | 'Nurse'; label: string; sub: string; member?: string; }
@@ -75,8 +76,7 @@ export class GlobalSearch {
         if (!seen.has(m)) { seen.add(m); out.push({ type: 'Member', label: m, sub: '' }); } });
     for (const p of PROVIDERS) out.push({ type: 'Provider', label: p, sub: `NPI ${NPI_BY_PROVIDER[p] ?? ''}` });
     for (const n of this.data.nurses()) out.push({ type: 'Nurse', label: n.name, sub: `${n.utilization}% utilized` });
-    ['Sara Nguyen, RN', 'David Patel, MSW', 'Maria Torres, RN', 'James Wong, PharmD', 'Angela Ruiz, RN']
-      .forEach((n) => out.push({ type: 'Nurse', label: n, sub: 'Care Manager' }));
+    CARE_MANAGERS.forEach((cm) => out.push({ type: 'Nurse', label: cm.name, sub: 'Care Manager' }));
     return out;
   }
 
