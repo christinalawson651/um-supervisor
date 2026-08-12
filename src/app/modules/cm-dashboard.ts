@@ -29,6 +29,19 @@ const CM_WORKFORCE_WIDGETS = [
 ];
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
+const CM_INTAKE_WIDGETS = [
+  { id: 'stages', title: 'Lifecycle Stages' }, { id: 'referralsBySource', title: 'Referrals by Source' },
+  { id: 'referralsByStatus', title: 'Referrals by Status' }, { id: 'consent', title: 'Consent' },
+  { id: 'assessments', title: 'Assessments' }, { id: 'outreach', title: 'Outreach' },
+];
+const CM_REFERRALS_WIDGETS = [
+  { id: 'intakeQueue', title: 'Referral Intake Queue' }, { id: 'sources', title: 'Referral Sources (MTD)' },
+];
+const CM_AI_WIDGETS = [
+  { id: 'recommendations', title: 'AI Recommendations' }, { id: 'riskGauges', title: 'Predictive Risk Gauges' },
+  { id: 'risingMembers', title: 'Rising-Risk Members' },
+];
+
 // Same "how aggressively to rebalance" strategy chooser as UM's Balance service — kept CM-local
 // (rather than sharing UM's Balance) since Balance.run() is coupled to DashboardData/nurses;
 // see the memory note on why a literal shared service wasn't worth it for this one flow.
@@ -214,8 +227,15 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
       @case (1) {
         <div class="tab-head">
           <div><h2>Intake &amp; Assessment SLA</h2><span class="section-note">Members by lifecycle stage, banded by SLA status</span></div>
-          <button class="btn outline sm" (click)="exportStages()">Export</button>
+          <div class="flex gap-8">
+            <button class="btn outline sm" (click)="exportStages()">Export</button>
+            <button class="btn outline sm" (click)="visIntake.customizing() ? visIntake.cancel() : visIntake.open()">Customize</button>
+          </div>
         </div>
+
+        <z-widget-customize [vis]="visIntake"></z-widget-customize>
+
+        @if (!visIntake.isHidden('stages')) {
         <div class="qhint">Cards show <b>every member currently in that stage</b> of the intake/assessment lifecycle. Bars show SLA status. Click a band to see those members. <b>Overdue</b> = past the stage's SLA.</div>
         <div class="queues">
           @for (s of cmStages(); track s.name) {
@@ -234,6 +254,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             </div>
           }
         </div>
+        }
 
         <div class="tbl-head mt-6">
           <h3 class="sec-title">Referrals</h3>
@@ -243,16 +264,19 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           </div>
         </div>
         <div class="grid-2">
+          @if (!visIntake.isHidden('referralsBySource')) {
           <div class="panel panel-pad">
-            <h3 class="pt">By Source (30d)</h3>
+            <div class="tbl-head"><h3 class="pt">By Source (30d)</h3><z-widget-actions (exportClick)="exportReferralsBySource()" (removeClick)="visIntake.remove('referralsBySource')"></z-widget-actions></div>
             <div class="bars">
               @for (r of referralsBySource(); track r.label) {
                 <div class="bar-row"><span class="bl">{{ r.label }}</span><span class="bt"><span class="bf" [style.width.%]="r.pct" [style.background]="r.color"></span></span><span class="bv clk" (click)="openReferralSource(r.label)">{{ r.value }}</span></div>
               }
             </div>
           </div>
+          }
+          @if (!visIntake.isHidden('referralsByStatus')) {
           <div class="panel panel-pad">
-            <h3 class="pt">By Status (30d)</h3>
+            <div class="tbl-head"><h3 class="pt">By Status (30d)</h3><z-widget-actions (exportClick)="exportReferralsByStatus()" (removeClick)="visIntake.remove('referralsByStatus')"></z-widget-actions></div>
             <div class="am-tiles">
               @for (r of referralsByStatus(); track r.status) {
                 <div class="am-tile" (click)="openReferralStatus(r.status)">
@@ -262,9 +286,11 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               }
             </div>
           </div>
+          }
         </div>
 
-        <h3 class="sec-title mt-6">Consent</h3>
+        @if (!visIntake.isHidden('consent')) {
+        <div class="tbl-head mt-6"><h3 class="sec-title" style="margin:0">Consent</h3><z-widget-actions (exportClick)="exportConsent()" (removeClick)="visIntake.remove('consent')"></z-widget-actions></div>
         <div class="queues">
           @for (c of consentBreakdown(); track c.type) {
             <div class="qcard">
@@ -280,8 +306,10 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             </div>
           }
         </div>
+        }
 
-        <h3 class="sec-title mt-6">Assessments</h3>
+        @if (!visIntake.isHidden('assessments')) {
+        <div class="tbl-head mt-6"><h3 class="sec-title" style="margin:0">Assessments</h3><z-widget-actions (exportClick)="exportAssessments()" (removeClick)="visIntake.remove('assessments')"></z-widget-actions></div>
         <div class="queues">
           @for (a of assessmentBreakdown(); track a.type) {
             <div class="qcard">
@@ -297,13 +325,16 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             </div>
           }
         </div>
+        }
 
-        <h3 class="sec-title mt-6">Outreach</h3>
+        @if (!visIntake.isHidden('outreach')) {
+        <div class="tbl-head mt-6"><h3 class="sec-title" style="margin:0">Outreach</h3><z-widget-actions (exportClick)="exportOutreach()" (removeClick)="visIntake.remove('outreach')"></z-widget-actions></div>
         <div class="grid-3">
           <div class="metric-tile"><div class="val">{{ outreachStats().successRate }}%</div><div class="lab">Outreach Success Rate</div></div>
           <div class="metric-tile"><div class="val">{{ outreachStats().avgAttempts }}</div><div class="lab">Avg Attempts per Member</div></div>
           <div class="metric-tile clk" (click)="openUtrLetters()"><div class="val">{{ outreachStats().utrCount }}</div><div class="lab">UTR Letters Sent</div></div>
         </div>
+        }
       }
 
       <!-- 2: Care Plan & Outcomes -->
@@ -386,8 +417,15 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
       <!-- 6: Referrals & Sources -->
       @case (6) {
-        <div class="tab-head"><h2>Referrals &amp; Sources</h2><span class="section-note">Incoming referrals — including UM → CM</span></div>
-        <div class="panel"><div class="panel-pad"><h3 class="pt">Referral Intake Queue</h3></div>
+        <div class="tab-head">
+          <div><h2>Referrals &amp; Sources</h2><span class="section-note">Incoming referrals — including UM → CM</span></div>
+          <button class="btn outline sm" (click)="visReferrals.customizing() ? visReferrals.cancel() : visReferrals.open()">Customize</button>
+        </div>
+
+        <z-widget-customize [vis]="visReferrals"></z-widget-customize>
+
+        @if (!visReferrals.isHidden('intakeQueue')) {
+        <div class="panel"><div class="panel-pad tbl-head"><h3 class="pt">Referral Intake Queue</h3><z-widget-actions (exportClick)="exportIntakeQueue()" (removeClick)="visReferrals.remove('intakeQueue')"></z-widget-actions></div>
           <table class="z-table"><thead><tr><th>Source Auth</th><th>Member</th><th>Reason</th><th>Referred By</th><th>Intake SLA</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>@for (r of referrals(); track r.authId) {
             <tr><td class="strong">{{ r.authId }}</td><td><a class="ml" (click)="members.openByName(r.member)">{{ r.member }}</a></td><td>{{ r.reason }}</td><td>{{ r.fromStage }}</td>
@@ -395,10 +433,13 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               <td><span class="badge blue">{{ r.status }}</span></td>
               <td>@if (r.status === 'Pending intake') { <button class="btn outline teal sm" (click)="accept(r)">Accept &amp; assign</button> } @else { <span class="muted-label">—</span> }</td></tr>
           }</tbody></table></div>
-        <div class="panel panel-pad mt-6"><h3 class="pt">Referral Sources (MTD)</h3>
+        }
+        @if (!visReferrals.isHidden('sources')) {
+        <div class="panel panel-pad mt-6"><div class="tbl-head"><h3 class="pt">Referral Sources (MTD)</h3><z-widget-actions (exportClick)="exportSourcesMtd()" (removeClick)="visReferrals.remove('sources')"></z-widget-actions></div>
           <div class="bars">@for (s of sources; track s.label) {
             <div class="bar-row"><span class="bl">{{ s.label }}</span><span class="bt"><span class="bf" [style.width.%]="s.pct" [style.background]="s.color"></span></span><span class="bv">{{ s.value }}</span></div>
           }</div></div>
+        }
       }
 
       <!-- 7: Financial / Cost -->
@@ -436,24 +477,41 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
       <!-- 9: AI / NextGen -->
       @case (9) {
         <div class="ai-shell">
-          <div class="ai-head"><h2>AI / NextGen Intelligence</h2><span class="ai-pill">AI-Powered</span></div>
-          <div class="recs">
-            <div class="rec red"><div class="rt">Rising-Risk Alert — Marcus Webb</div><div class="rd">Predicted 30-day readmission risk 84%. Recommend intensive outreach + nephrology coordination.</div><button class="btn primary rbtn" (click)="toast('Outreach task created for Marcus Webb.')">Create outreach task</button></div>
-            <div class="rec amber"><div class="rt">Program Match — Yolanda Reyes</div><div class="rd">Eligible for Maternal Care program based on risk factors. AI confidence 88%.</div><button class="btn primary rbtn" (click)="toast('Enrolled in Maternal Care program.')">Enroll in program</button></div>
-            <div class="rec blue"><div class="rt">SDOH Gap — Denise Holloway</div><div class="rd">Transportation barrier detected. Recommend community resource referral.</div><button class="btn primary rbtn" (click)="toast('Community resource referral sent.')">Send referral</button></div>
+          <div class="ai-head"><h2>AI / NextGen Intelligence</h2>
+            <div class="flex gap-8 center">
+              <span class="ai-pill">AI-Powered</span>
+              <button class="btn outline sm" (click)="visAi.customizing() ? visAi.cancel() : visAi.open()">Customize</button>
+            </div>
           </div>
+
+          <z-widget-customize [vis]="visAi"></z-widget-customize>
+
+          @if (!visAi.isHidden('recommendations')) {
+          <div class="rec-wrap">
+            <z-widget-actions (exportClick)="exportRecommendations()" (removeClick)="visAi.remove('recommendations')"></z-widget-actions>
+            <div class="recs">
+              <div class="rec red"><div class="rt">Rising-Risk Alert — Marcus Webb</div><div class="rd">Predicted 30-day readmission risk 84%. Recommend intensive outreach + nephrology coordination.</div><button class="btn primary rbtn" (click)="toast('Outreach task created for Marcus Webb.')">Create outreach task</button></div>
+              <div class="rec amber"><div class="rt">Program Match — Yolanda Reyes</div><div class="rd">Eligible for Maternal Care program based on risk factors. AI confidence 88%.</div><button class="btn primary rbtn" (click)="toast('Enrolled in Maternal Care program.')">Enroll in program</button></div>
+              <div class="rec blue"><div class="rt">SDOH Gap — Denise Holloway</div><div class="rd">Transportation barrier detected. Recommend community resource referral.</div><button class="btn primary rbtn" (click)="toast('Community resource referral sent.')">Send referral</button></div>
+            </div>
+          </div>
+          }
           <div class="ai-bottom">
-            <div class="panel panel-pad"><h3 class="pt">Predictive Risk Gauges</h3>
+            @if (!visAi.isHidden('riskGauges')) {
+            <div class="panel panel-pad"><div class="tbl-head"><h3 class="pt">Predictive Risk Gauges</h3><z-widget-actions (exportClick)="exportRiskGauges()" (removeClick)="visAi.remove('riskGauges')"></z-widget-actions></div>
               <div class="gauges">
                 <div class="g"><z-ring [value]="84" [size]="90" [thickness]="9" tone="red" [fontSize]="18"></z-ring><div class="gl">Readmission Risk</div></div>
                 <div class="g"><z-ring [value]="31" [size]="90" [thickness]="9" tone="amber" [fontSize]="18"></z-ring><div class="gl">ER Utilization Risk</div></div>
                 <div class="g"><z-ring [value]="19" [size]="90" [thickness]="9" tone="amber" [fontSize]="18"></z-ring><div class="gl">Care Gap Risk</div></div>
               </div>
             </div>
-            <div class="panel panel-pad"><h3 class="pt">Rising-Risk Members</h3>
+            }
+            @if (!visAi.isHidden('risingMembers')) {
+            <div class="panel panel-pad"><div class="tbl-head"><h3 class="pt">Rising-Risk Members</h3><z-widget-actions (exportClick)="exportRisingMembers()" (removeClick)="visAi.remove('risingMembers')"></z-widget-actions></div>
               <div class="bars">@for (m of worklist.slice(0,4); track m.name) {
                 <div class="bar-row"><span class="bl wide">{{ m.name }}</span><span class="bt"><span class="bf" [style.width.%]="m.risk*10" style="background:#ef4444"></span></span><span class="bv">{{ m.risk }}</span></div>
               }</div></div>
+            }
           </div>
         </div>
       }
@@ -509,6 +567,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .ai-shell { border:1px solid var(--teal-600); border-radius:12px; padding:20px 22px; background:linear-gradient(180deg,#f7fdfc,#fff 40%); }
     .ai-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; } .ai-head h2 { margin:0; font-size:17px; }
     .ai-pill { background:var(--teal-700); color:#fff; font-size:11px; font-weight:700; padding:5px 12px; border-radius:999px; }
+    .rec-wrap { position: relative; }
+    .rec-wrap:hover z-widget-actions { opacity: 1; }
     .recs { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
     .rec { background:#fff; border:1px solid var(--border); border-left:4px solid var(--gray-300); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; }
     .rec.red{border-left-color:var(--red);} .rec.amber{border-left-color:var(--amber);} .rec.blue{border-left-color:var(--blue);}
@@ -569,6 +629,10 @@ export class CmDashboard {
   readonly vis = new WidgetVisibility('zyter-cm-workforce-widgets-v2', CM_WORKFORCE_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
+
+  readonly visIntake = new WidgetVisibility('zyter-cm-intake-widgets-v1', CM_INTAKE_WIDGETS);
+  readonly visReferrals = new WidgetVisibility('zyter-cm-referrals-widgets-v1', CM_REFERRALS_WIDGETS);
+  readonly visAi = new WidgetVisibility('zyter-cm-ai-widgets-v1', CM_AI_WIDGETS);
 
   private readonly PERIOD_VALUES: Record<string, string[]> = {
     today: ['21', '13', '8', '2', '66', '4', '126', '97%'],
@@ -684,6 +748,14 @@ export class CmDashboard {
     this.ix.openDrawer({ title: `${status} Referrals`, subtitle: `${rows.length} referral(s) in the last 30 days`,
       table: { columns: ['Referral ID', 'Member', 'Source', 'Received'], rows: rows.map((r) => [r.id, r.member, r.source, r.received]) } });
   }
+  exportReferralsBySource() {
+    this.exporter.open({ title: 'Referrals by Source', name: 'cm-referrals-by-source_2026-07-17',
+      columns: ['Source', 'Count', '% of Total'], rows: this.referralsBySource().map((r) => [r.label, r.value, r.pct]) });
+  }
+  exportReferralsByStatus() {
+    this.exporter.open({ title: 'Referrals by Status', name: 'cm-referrals-by-status_2026-07-17',
+      columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) });
+  }
   /** Bulk Reassign for pending referrals only — same shared Reassign panel as everywhere else,
    *  with a single synthetic "Pending Intake" queue so Queue mode doesn't fall back to UM's queues. */
   reassignReferrals() {
@@ -730,6 +802,10 @@ export class CmDashboard {
     const cases = this.cmData.cases().filter((c) => c.consentType === type && (!atRiskOnly || consentAtRisk(c)));
     this.openCmCases(`${type}${atRiskOnly ? ' — At Risk of Expiring' : ''}`, cases, `consent-${slug(type)}${atRiskOnly ? '-at-risk' : ''}`);
   }
+  exportConsent() {
+    this.exporter.open({ title: 'Consent', name: 'cm-consent-by-type_2026-07-17',
+      columns: ['Consent Type', 'Members', 'At Risk of Expiring'], rows: this.consentBreakdown().map((c) => [c.type, c.count, c.atRisk]) });
+  }
 
   // ---- Assessments, by type + TAT adherence ----
   readonly assessmentBreakdown = computed(() => this.cmData.assessmentBreakdown());
@@ -737,12 +813,21 @@ export class CmDashboard {
     const cases = this.cmData.cases().filter((c) => c.assessmentType === type && tatAdherent(c) === adherentOnly);
     this.openCmCases(`${type} — ${adherentOnly ? 'TAT Adherent' : 'TAT Missed'}`, cases, `assessment-${slug(type)}-${adherentOnly ? 'adherent' : 'missed'}`);
   }
+  exportAssessments() {
+    this.exporter.open({ title: 'Assessments', name: 'cm-assessments-by-type_2026-07-17',
+      columns: ['Assessment Type', 'Members', 'TAT Adherent'], rows: this.assessmentBreakdown().map((a) => [a.type, a.count, a.adherent]) });
+  }
 
   // ---- Outreach success + Unable-To-Reach letters ----
   readonly outreachStats = computed(() => this.cmData.outreachStats());
   openUtrLetters() {
     const cases = this.cmData.cases().filter((c) => c.utrLetterSent);
     this.openCmCases('UTR Letters Sent', cases, 'utr-letters');
+  }
+  exportOutreach() {
+    const s = this.outreachStats();
+    this.exporter.open({ title: 'Outreach', name: 'cm-outreach-stats_2026-07-17',
+      columns: ['Metric', 'Value'], rows: [['Success Rate %', s.successRate], ['Avg Attempts', s.avgAttempts], ['UTR Letters Sent', s.utrCount]] });
   }
 
   // ---- how members were assigned (queue draw vs direct) — independent of the operational queues above ----
@@ -959,6 +1044,32 @@ export class CmDashboard {
   accept(r: Referral) {
     this.ix.choose({ title: `Accept referral ${r.authId}`, body: `Accept ${r.member} into care management and assign.`, label: 'Assign to', options: CARE_MANAGERS.map((c) => c.name), confirmLabel: 'Accept & assign', tone: 'teal',
       onChoose: (to) => { this.referrals.update((rows) => rows.map((x) => x.authId === r.authId ? { ...x, status: 'Assessment scheduled', assignedTo: to } : x)); this.ix.toast(`${r.member} accepted into CM — assigned to ${to}.`); this.data.addHistory('inbox', 'CM referral accepted', `${r.member} → ${to}`); } });
+  }
+  exportIntakeQueue() {
+    this.exporter.open({ title: 'Referral Intake Queue', name: 'cm-referral-intake-queue_2026-07-17',
+      columns: ['Auth', 'Member', 'Reason', 'Referred By', 'Intake SLA', 'Status'],
+      rows: this.referrals().map((r) => [r.authId, r.member, r.reason, r.fromStage, r.sla, r.status]) });
+  }
+  exportSourcesMtd() {
+    this.exporter.open({ title: 'Referral Sources (MTD)', name: 'cm-referral-sources-mtd_2026-07-17',
+      columns: ['Source', 'Count'], rows: this.sources.map((s) => [s.label, s.value]) });
+  }
+  exportRecommendations() {
+    this.exporter.open({ title: 'AI Recommendations', name: 'cm-ai-recommendations_2026-07-17',
+      columns: ['Member', 'Recommendation'],
+      rows: [
+        ['Marcus Webb', 'Predicted 30-day readmission risk 84%. Recommend intensive outreach + nephrology coordination.'],
+        ['Yolanda Reyes', 'Eligible for Maternal Care program based on risk factors. AI confidence 88%.'],
+        ['Denise Holloway', 'Transportation barrier detected. Recommend community resource referral.'],
+      ] });
+  }
+  exportRiskGauges() {
+    this.exporter.open({ title: 'Predictive Risk Gauges', name: 'cm-predictive-risk-gauges_2026-07-17',
+      columns: ['Gauge', 'Value %'], rows: [['Readmission Risk', 84], ['ER Utilization Risk', 31], ['Care Gap Risk', 19]] });
+  }
+  exportRisingMembers() {
+    this.exporter.open({ title: 'Rising-Risk Members', name: 'cm-rising-risk-members_2026-07-17',
+      columns: ['Member', 'Risk Score'], rows: this.worklist.slice(0, 4).map((m) => [m.name, m.risk]) });
   }
   toast(m: string) { this.ix.toast(m, 'info'); this.data.addHistory('sparkles', 'CM AI action', m); }
 }
