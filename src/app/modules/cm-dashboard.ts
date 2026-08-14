@@ -12,7 +12,7 @@ import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
-import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, consentAtRisk, tatAdherent } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Pto } from '../shared/pto';
@@ -273,7 +273,16 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
         <div class="tbl-head mt-6">
           <h3 class="sec-title">Referrals</h3>
-          <div class="flex gap-8">
+          <div class="flex gap-8 center">
+            <label class="sortsel">
+              <span>Care Manager</span>
+              <select [value]="referralCmFilter()" (change)="referralCmFilter.set($any($event.target).value)">
+                <option value="all">All Care Managers</option>
+                <option value="unassigned">Unassigned</option>
+                @for (cm of careManagerNames; track cm) { <option [value]="cm">{{ cm }}</option> }
+              </select>
+            </label>
+            <button class="btn outline sm" (click)="openAllReferrals()">View Referrals ({{ scopedReferrals().length }})</button>
             <button class="btn outline sm" (click)="reassignReferrals()"><z-icon name="swap" [size]="13"></z-icon> Reassign Pending</button>
             <button class="btn outline sm" (click)="balanceReferrals()"><z-icon name="balance" [size]="13"></z-icon> Balance Pending</button>
           </div>
@@ -681,9 +690,15 @@ export class CmDashboard {
     const lob = this.lobFilter.value();
     return lob === 'all' ? this.cmData.cases() : this.cmData.cases().filter((c) => c.lob === lob);
   });
+  readonly referralCmFilter = signal('all');
+  readonly careManagerNames = CARE_MANAGERS.map((cm) => cm.name);
   readonly scopedReferrals = computed(() => {
     const lob = this.lobFilter.value();
-    return this.cmData.referrals().filter((r) => (lob === 'all' || r.lob === lob) && this.lookback.includes(r.received));
+    const cmFilter = this.referralCmFilter();
+    return this.cmData.referrals().filter((r) =>
+      (lob === 'all' || r.lob === lob) &&
+      this.lookback.includes(r.received) &&
+      (cmFilter === 'all' || (cmFilter === 'unassigned' ? r.careManager === null : r.careManager === cmFilter)));
   });
   readonly lookbackLabel = computed(() => this.lookback.periods.find((p) => p.id === this.lookback.period())?.label ?? '30 days');
 
@@ -717,12 +732,7 @@ export class CmDashboard {
       case 'slaAtRisk': this.openCmCases('SLA At-Risk Members', cs.filter((c) => c.tags.includes('slaAtRisk')), 'kpi-sla-at-risk'); break;
       case 'activeCarePlans': this.openCmCases('Active Care Plans', cs.filter((c) => c.stage !== 'New Referral'), 'kpi-active-care-plans'); break;
       case 'membersManaged': this.openCmCases('Members Managed', cs, 'kpi-members-managed'); break;
-      case 'newReferrals': {
-        const rows = this.scopedReferrals();
-        this.ix.openDrawer({ title: 'New Referrals', subtitle: `${rows.length} referral(s) in the last ${this.lookbackLabel()}`,
-          table: { columns: ['Referral ID', 'Member', 'Source', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.member, r.source, r.status, r.received]) } });
-        break;
-      }
+      case 'newReferrals': this.openReferralsExplorer('New Referrals', this.scopedReferrals(), 'kpi-new'); break;
     }
   }
 
@@ -821,15 +831,30 @@ export class CmDashboard {
     const statuses: ReferralStatus[] = ['Pending', 'Accepted', 'CM Declined', 'Member Declined'];
     return statuses.map((status) => ({ status, count: all.filter((r) => r.status === status).length }));
   });
+  private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Care Manager', 'Source', 'Status', 'Received', 'LOB'];
+  private referralToRow(r: ReferralIntakeRec): (string | number)[] {
+    return [r.id, r.member, r.careManager ?? 'Unassigned', r.source, r.status, r.received, r.lob];
+  }
+  /** Every referral drill-down opens through the shared Explorer (search/sort/Customize/export/bulk
+   *  Reassign) instead of a static drawer — same upgrade already applied to the case-list drills. */
+  private openReferralsExplorer(title: string, refs: ReferralIntakeRec[], exportSlug: string, context?: string) {
+    this.ix.openExplorer({
+      title, context: context ?? `${refs.length} referral(s) in the last ${this.lookbackLabel()}`,
+      columns: this.REFERRAL_COLUMNS, rows: refs.map((r) => this.referralToRow(r)),
+      exportName: `cm-referrals-${exportSlug}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  openAllReferrals() {
+    const cmLabel = this.referralCmFilter() === 'all' ? '' : this.referralCmFilter() === 'unassigned' ? ' — Unassigned' : ` — ${this.referralCmFilter()}`;
+    this.openReferralsExplorer(`Referrals${cmLabel}`, this.scopedReferrals(), 'all');
+  }
   openReferralSource(source: ReferralSource) {
     const rows = this.scopedReferrals().filter((r) => r.source === source);
-    this.ix.openDrawer({ title: `Referral Source: ${source}`, subtitle: `${rows.length} referral(s) in the last ${this.lookbackLabel()}`,
-      table: { columns: ['Referral ID', 'Member', 'Status', 'Received'], rows: rows.map((r) => [r.id, r.member, r.status, r.received]) } });
+    this.openReferralsExplorer(`Referral Source: ${source}`, rows, `source-${slug(source)}`);
   }
   openReferralStatus(status: ReferralStatus) {
     const rows = this.scopedReferrals().filter((r) => r.status === status);
-    this.ix.openDrawer({ title: `${status} Referrals`, subtitle: `${rows.length} referral(s) in the last ${this.lookbackLabel()}`,
-      table: { columns: ['Referral ID', 'Member', 'Source', 'Received'], rows: rows.map((r) => [r.id, r.member, r.source, r.received]) } });
+    this.openReferralsExplorer(`${status} Referrals`, rows, `status-${slug(status)}`);
   }
   exportReferralsBySource() {
     this.exporter.open({ title: 'Referrals by Source', name: 'cm-referrals-by-source_2026-07-17',

@@ -43,9 +43,9 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
 
           <!-- toolbar -->
           <div class="toolbar">
-            <input class="search" type="text" placeholder="Search all authorizations…"
+            <input class="search" type="text" [placeholder]="'Search all ' + itemNoun() + 's…'"
               [ngModel]="q()" (ngModelChange)="setQuery($event)" />
-            <span class="count">{{ filtered().length }} authorization{{ filtered().length === 1 ? '' : 's' }}</span>
+            <span class="count">{{ filtered().length }} {{ itemNoun() }}{{ filtered().length === 1 ? '' : 's' }}</span>
 
             @if (availableSorts().length) {
               <label class="sortsel">
@@ -62,11 +62,13 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
             @if (isCaseList()) {
               @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
               <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
-              @if (!isCmList()) {
+              @if (!isCmList() && !isReferralList()) {
                 <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected(e)">Escalate selected</button>
               }
             }
-            <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
+            @if (!isReferralList()) {
+              <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
+            }
             <button class="btn outline sm" (click)="openAssignmentHistory()">Assignment History</button>
             <button class="btn outline sm" (click)="exportAll(e)">Export all ({{ filtered().length }})</button>
             <span class="cz-wrap">
@@ -99,7 +101,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                 @for (row of pageRows(); track $index) {
                   <tr>
                     @if (isCaseList()) {
-                      <td class="selth"><input type="checkbox" [checked]="selected().has(rowId(row))" (change)="toggleSel(rowId(row))" /></td>
+                      <td class="selth"><input type="checkbox" [checked]="selected().has(rowId(row))" [disabled]="!isRowReassignable(row)" (change)="toggleSel(rowId(row))" /></td>
                     }
                     @for (vc of visibleCols(); track vc.i) {
                       @if (vc.i === e.memberColumn) {
@@ -113,7 +115,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                   </tr>
                 }
                 @empty {
-                  <tr><td [attr.colspan]="e.columns.length + 1" class="empty">No authorizations match "{{ q() }}".</td></tr>
+                  <tr><td [attr.colspan]="e.columns.length + 1" class="empty">No {{ itemNoun() }}s match "{{ q() }}".</td></tr>
                 }
               </tbody>
             </table>
@@ -221,12 +223,16 @@ export class CaseExplorer {
     });
   }
 
-  /** Every drill in the app starts its columns with "Auth ID" (UM) or "Member ID" (CM). */
+  /** Every drill in the app starts its columns with "Auth ID" (UM), "Member ID" (CM caseload),
+   *  or "Referral ID" (CM referral funnel). */
   readonly isCaseList = computed(() => {
     const c = this.ix.explorer()?.columns[0];
-    return c === 'Auth ID' || c === 'Member ID';
+    return c === 'Auth ID' || c === 'Member ID' || c === 'Referral ID';
   });
   readonly isCmList = computed(() => this.ix.explorer()?.columns[0] === 'Member ID');
+  readonly isReferralList = computed(() => this.ix.explorer()?.columns[0] === 'Referral ID');
+  /** Search placeholder / row-count noun — referrals and CM members aren't "authorizations". */
+  readonly itemNoun = computed(() => this.isReferralList() ? 'referral' : this.isCmList() ? 'member' : 'authorization');
 
   toggleCol(i: number) { this.hiddenCols.update((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; }); }
   readonly visibleCols = computed(() => (this.ix.explorer()?.columns ?? []).map((c, i) => ({ c, i })).filter(({ i }) => !this.hiddenCols().has(i)));
@@ -302,10 +308,17 @@ export class CaseExplorer {
 
   // ---- bulk selection ----
   toggleSel(id: string) { this.selected.update((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
-  allSelected() { const f = this.filtered(); return f.length > 0 && f.every((r) => this.selected().has(this.rowId(r))); }
+  /** Referrals: only Pending rows are reassignable — Accepted/Declined are read-only history.
+   *  Every other list type is always reassignable. */
+  isRowReassignable(row: (string | number)[]): boolean {
+    if (!this.isReferralList()) return true;
+    const statusIdx = this.ix.explorer()?.columns.indexOf('Status') ?? -1;
+    return statusIdx >= 0 && row[statusIdx] === 'Pending';
+  }
+  allSelected() { const f = this.filtered().filter((r) => this.isRowReassignable(r)); return f.length > 0 && f.every((r) => this.selected().has(this.rowId(r))); }
   toggleAllFiltered(e: Event) {
     const on = (e.target as HTMLInputElement).checked;
-    this.selected.set(on ? new Set(this.filtered().map((r) => this.rowId(r))) : new Set());
+    this.selected.set(on ? new Set(this.filtered().filter((r) => this.isRowReassignable(r)).map((r) => this.rowId(r))) : new Set());
   }
 
   exportAll(e: { columns: string[]; exportName: string }) {
@@ -317,6 +330,7 @@ export class CaseExplorer {
     const ids = [...this.selected()];
     if (!ids.length) return;
     if (this.isCmList()) { this.reassignSelectedCm(ids); return; }
+    if (this.isReferralList()) { this.reassignSelectedReferral(ids); return; }
     const iMember = e.memberColumn ?? 1;
     const iService = e.columns.indexOf('Service Type');
     const iStatus = e.columns.indexOf('Status');
@@ -377,6 +391,30 @@ export class CaseExplorer {
         assignedIds.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
         this.ix.toast(`${assignedIds.length} member(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
         this.data.addHistory('swap', mode === 'queue' ? 'CM members moved to queue' : 'CM members reassigned', `${assignedIds.length} member(s) → ${target}`);
+        this.selected.set(new Set());
+      },
+    });
+  }
+
+  /** Only Pending referrals are ever reassignable (assigning one IS the triage decision — see
+   *  CmData.reassignReferral); Accepted/Declined rows are read-only history. */
+  private reassignSelectedReferral(ids: string[]) {
+    const all = this.cmData.referrals();
+    const pendingIds = ids.filter((id) => all.find((r) => r.id === id)?.status === 'Pending');
+    if (!pendingIds.length) { this.ix.toast('Only Pending referrals can be reassigned.', 'info'); return; }
+    const cases: ReassignCase[] = pendingIds.map((id) => {
+      const rec = all.find((r) => r.id === id);
+      return { authId: id, member: rec?.member ?? id, type: rec?.source ?? 'Referral', queue: 'Pending Intake', priority: 'Routine', owner: rec?.careManager ?? 'Unassigned' };
+    });
+    const nurses = this.cmData.managerStats().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
+    this.rx.open({
+      title: `Reassign ${pendingIds.length} referral${pendingIds.length > 1 ? 's' : ''}`,
+      cases, nurses, preselectAll: true, queueTargets: [{ name: 'Pending Intake', count: pendingIds.length }],
+      apply: (assignedIds, target, mode) => {
+        if (mode === 'queue') { this.ix.toast('Pending referrals only have one intake queue right now.', 'info'); return; }
+        assignedIds.forEach((id) => this.cmData.reassignReferral(id, target));
+        this.ix.toast(`${assignedIds.length} referral(s) assigned to ${target}.`);
+        this.data.addHistory('swap', 'Referrals assigned', `${assignedIds.length} referral(s) → ${target}`);
         this.selected.set(new Set());
       },
     });
