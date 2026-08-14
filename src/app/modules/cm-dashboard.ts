@@ -53,12 +53,6 @@ const CM_BALANCE_STRATEGIES = [
   { label: 'Aggressive — rebalance 6 members', n: 6 },
   { label: 'Even out — level everyone toward the team average', n: 5 },
 ];
-const REFERRAL_BALANCE_STRATEGIES = [
-  { label: 'Light — assign 1 pending referral', n: 1 },
-  { label: 'Standard — assign 3 pending referrals', n: 3 },
-  { label: 'All — assign every pending referral', n: 999 },
-];
-
 // AI / NextGen is temporarily hidden — not deleted, just not listed/switched to (same pattern as
 // UM's hidden AI tab in shell.ts). To bring it back, add 'AI / NextGen' at the end here — its
 // @case (9) block below is untouched and already sits at the end of the switch.
@@ -284,8 +278,6 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             </label>
             <button class="btn outline sm" (click)="openAllReferrals()">View Referrals ({{ scopedReferrals().length }})</button>
             <button class="btn outline sm" (click)="assignToIntakeCoordinator()"><z-icon name="swap" [size]="13"></z-icon> Assign Referral</button>
-            <button class="btn outline sm" (click)="reassignReferrals()"><z-icon name="swap" [size]="13"></z-icon> Accept &amp; Assign Pending</button>
-            <button class="btn outline sm" (click)="balanceReferrals()"><z-icon name="balance" [size]="13"></z-icon> Balance Pending</button>
           </div>
         </div>
         <div class="grid-2">
@@ -883,49 +875,6 @@ export class CmDashboard {
       },
     });
   }
-  /** Bulk Reassign for pending referrals only — same shared Reassign panel as everywhere else,
-   *  with a single synthetic "Pending Intake" queue so Queue mode doesn't fall back to UM's queues. */
-  reassignReferrals() {
-    const pending = this.cmData.referrals().filter((r) => r.status === 'Pending');
-    const cases: ReassignCase[] = pending.map((r) => ({ authId: r.id, member: r.member, type: r.source, queue: 'Pending Intake', priority: 'Routine', owner: r.careManager ?? 'Unassigned' }));
-    const nurses = this.cmManagers().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
-    this.rx.open({
-      title: 'Reassign pending referrals', cases, nurses, queueTargets: [{ name: 'Pending Intake', count: pending.length }],
-      apply: (ids, target, mode) => {
-        if (mode === 'queue') { this.ix.toast('Pending referrals only have one intake queue right now.', 'info'); return; }
-        ids.forEach((id) => this.cmData.reassignReferral(id, target));
-        this.ix.toast(`${ids.length} referral(s) assigned to ${target}.`);
-        this.data.addHistory('swap', 'Pending referrals assigned', `${ids.length} referral(s) → ${target}`);
-      },
-    });
-  }
-  /** Same strategy-picker Balance shape as cmBalance(), applied to the pending referral queue instead of the active caseload. */
-  balanceReferrals() {
-    const pendingCount = this.cmData.referrals().filter((r) => r.status === 'Pending').length;
-    this.ix.choose({
-      title: 'Balance pending referrals', body: 'Choose how many pending referrals to assign to care managers with capacity.',
-      label: 'Balancing strategy', options: REFERRAL_BALANCE_STRATEGIES.map((s) => s.label), confirmLabel: 'Continue', tone: 'teal',
-      onChoose: (opt) => {
-        const strat = REFERRAL_BALANCE_STRATEGIES.find((s) => s.label === opt)!;
-        const n = Math.min(strat.n, pendingCount);
-        if (!n) { this.ix.toast('No pending referrals to assign.', 'info'); return; }
-        this.ix.ask({
-          title: `Assign ${n} pending referral${n > 1 ? 's' : ''}`, body: 'Assign pending referrals to care managers with the most capacity:',
-          confirmLabel: 'Assign', tone: 'teal',
-          onConfirm: () => {
-            const moves: { member: string; to: string }[] = [];
-            for (let i = 0; i < n; i++) { const m = this.cmData.reassignNextPendingReferral(); if (m) moves.push(m); }
-            this.ix.toast(`${moves.length} referral(s) assigned.`);
-            const byTarget = new Map<string, number>();
-            moves.forEach((m) => byTarget.set(m.to, (byTarget.get(m.to) ?? 0) + 1));
-            const breakdown = [...byTarget.entries()].map(([to, cnt]) => `${cnt} → ${to}`).join(', ') || 'no moves';
-            this.data.addHistory('balance', 'Pending referrals assigned', `${opt.split(' — ')[0]} · ${breakdown}`);
-          },
-        });
-      },
-    });
-  }
-
   // ---- Consent on file, by type + at-risk-of-expiring ----
   readonly consentBreakdown = computed(() => this.cmData.consentBreakdown(this.scopedCases()));
   openConsent(type: ConsentType, atRiskOnly: boolean) {

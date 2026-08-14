@@ -9,6 +9,7 @@ import { downloadCsv } from './export-csv';
 import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL, CaseRec, GUIDELINE_BY_PROCEDURE } from '../data/case-pool';
 import { CM_CASE_POOL } from '../data/cm-case-pool';
+import { ReferralIntakeRec } from '../data/cm-intake';
 import { CmData } from './cm-data';
 import { lobOf, serviceCategoryOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { nbaFor } from '../data/um-status';
@@ -61,7 +62,9 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
 
             @if (isCaseList()) {
               @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
-              <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">{{ isReferralList() ? 'Accept & assign selected' : 'Reassign selected' }}</button>
+              @if (!isReferralList()) {
+                <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
+              }
               @if (isReferralList()) {
                 <button class="btn outline sm" [disabled]="!selected().size" (click)="assignSelectedToIntakeCoordinator()">Assign referral</button>
               }
@@ -107,7 +110,9 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                       <td class="selth"><input type="checkbox" [checked]="selected().has(rowId(row))" [disabled]="!isRowReassignable(row)" (change)="toggleSel(rowId(row))" /></td>
                     }
                     @for (vc of visibleCols(); track vc.i) {
-                      @if (vc.i === e.memberColumn) {
+                      @if (vc.i === 0 && isReferralList()) {
+                        <td><a class="mlink" (click)="openReferralDetail(row, e)">{{ row[vc.i] }}</a></td>
+                      } @else if (vc.i === e.memberColumn) {
                         <td><a class="mlink" (click)="openAuth(row, e)">{{ row[vc.i] }}</a></td>
                       } @else if (vc.c === 'Procedure' && guidelineFor(row[vc.i])) {
                         <td class="has-tip">{{ row[vc.i] }}<span class="tip">Guideline: {{ guidelineFor(row[vc.i]) }}</span></td>
@@ -333,7 +338,6 @@ export class CaseExplorer {
     const ids = [...this.selected()];
     if (!ids.length) return;
     if (this.isCmList()) { this.reassignSelectedCm(ids); return; }
-    if (this.isReferralList()) { this.reassignSelectedReferral(ids); return; }
     const iMember = e.memberColumn ?? 1;
     const iService = e.columns.indexOf('Service Type');
     const iStatus = e.columns.indexOf('Status');
@@ -399,26 +403,41 @@ export class CaseExplorer {
     });
   }
 
-  /** Only Pending referrals are ever reassignable (assigning one IS the triage decision — see
-   *  CmData.reassignReferral); Accepted/Declined rows are read-only history. */
-  private reassignSelectedReferral(ids: string[]) {
-    const all = this.cmData.referrals();
-    const pendingIds = ids.filter((id) => all.find((r) => r.id === id)?.status === 'Pending');
-    if (!pendingIds.length) { this.ix.toast('Only Pending referrals can be reassigned.', 'info'); return; }
-    const cases: ReassignCase[] = pendingIds.map((id) => {
-      const rec = all.find((r) => r.id === id);
-      return { authId: id, member: rec?.member ?? id, type: rec?.source ?? 'Referral', queue: 'Pending Intake', priority: 'Routine', owner: rec?.careManager ?? 'Unassigned' };
+  /** Click a Referral ID to review it before acting — Accept has no bulk path (see below); a
+   *  Supervisor/CM must open and look at a referral (and, if needed, the member's chart) before
+   *  making the clinical accept/decline call. */
+  openReferralDetail(row: (string | number)[], e: { columns: string[]; memberColumn?: number }) {
+    const id = this.rowId(row);
+    const rec = this.cmData.referrals().find((r) => r.id === id);
+    if (!rec) return;
+    const iMember = e.memberColumn ?? 1;
+    const fields = e.columns.map((label, i) => ({ label, value: String(row[i]) })).filter((f) => f.label !== 'Referral ID');
+    this.ix.openDrawer({
+      title: rec.id,
+      subtitle: `${rec.member} · ${rec.source}`,
+      badge: { text: rec.status, tone: rec.status === 'Accepted' ? 'green' : rec.status === 'Pending' ? 'amber' : 'red' },
+      fields,
+      actions: [
+        ...(rec.status === 'Pending' ? [{ label: 'Accept & Assign to Care Manager', tone: 'teal' as const, run: () => { this.ix.closeDrawer(); this.acceptOneReferral(rec); } }] : []),
+        { label: 'View Member 360', tone: 'teal' as const, run: () => this.members.openByName(String(row[iMember])) },
+      ],
     });
+  }
+
+  /** Accept is one-at-a-time only, reached from the review drawer above — never a bulk action.
+   *  Assigning a referral IS the triage decision (CmData.reassignReferral), so it always follows
+   *  an explicit look at that one referral first. */
+  private acceptOneReferral(rec: ReferralIntakeRec) {
     const nurses = this.cmData.managerStats().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
     this.rx.open({
-      title: `Accept & assign ${pendingIds.length} referral${pendingIds.length > 1 ? 's' : ''}`,
-      cases, nurses, preselectAll: true, queueTargets: [{ name: 'Pending Intake', count: pendingIds.length }],
-      apply: (assignedIds, target, mode) => {
+      title: `Accept & assign ${rec.id}`,
+      cases: [{ authId: rec.id, member: rec.member, type: rec.source, queue: 'Pending Intake', priority: 'Routine', owner: rec.careManager ?? 'Unassigned' }],
+      nurses, preselectAll: true, queueTargets: [{ name: 'Pending Intake', count: 1 }],
+      apply: (_ids, target, mode) => {
         if (mode === 'queue') { this.ix.toast('Pending referrals only have one intake queue right now.', 'info'); return; }
-        assignedIds.forEach((id) => this.cmData.reassignReferral(id, target));
-        this.ix.toast(`${assignedIds.length} referral(s) accepted and assigned to ${target}.`);
-        this.data.addHistory('swap', 'Referrals accepted & assigned', `${assignedIds.length} referral(s) → ${target}`);
-        this.selected.set(new Set());
+        this.cmData.reassignReferral(rec.id, target);
+        this.ix.toast(`${rec.id} accepted and assigned to ${target}.`);
+        this.data.addHistory('swap', 'Referral accepted & assigned', `${rec.id} → ${target}`);
       },
     });
   }

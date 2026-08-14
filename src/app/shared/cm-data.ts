@@ -215,9 +215,10 @@ export class CmData {
   // reassigned/balanced; Accepted/CM Declined/Member Declined are read-only past decisions. ----
   readonly referrals = signal<ReferralIntakeRec[]>(CM_REFERRAL_INTAKE);
 
-  /** Assigning a pending referral to a care manager IS the triage decision — moves it to Accepted. */
+  /** Assigning a pending referral to a care manager IS the triage decision — moves it to Accepted.
+   *  pendReason is cleared since it's only meaningful while still Pending. */
   reassignReferral(id: string, toCm: string) {
-    this.referrals.update((list) => list.map((r) => (r.id === id ? { ...r, careManager: toCm, status: 'Accepted' as const } : r)));
+    this.referrals.update((list) => list.map((r) => (r.id === id ? { ...r, careManager: toCm, status: 'Accepted' as const, pendReason: null } : r)));
   }
 
   /** Handing a referral to an Intake Coordinator for completeness work is NOT the clinical
@@ -242,15 +243,5 @@ export class CmData {
    *  come first in the list since they're the common case. */
   referralAssigneeStats(): { name: string; active: number; utilization: number }[] {
     return [...this.intakeCoordinatorStats(), ...this.managerStats().map((m) => ({ name: m.name, active: m.active, utilization: m.utilization }))];
-  }
-
-  /** One real assignment of the oldest still-pending referral to the least-utilized care manager —
-   *  same single-move-callable-N-times shape as reassignBusiestCase(). Returns null once nothing's pending. */
-  reassignNextPendingReferral(): { member: string; to: string } | null {
-    const pending = [...this.referrals()].filter((r) => r.status === 'Pending').sort((a, b) => a.received.localeCompare(b.received));
-    if (!pending.length) return null;
-    const to = this.managerStats().reduce((a, b) => (b.utilization < a.utilization ? b : a));
-    this.reassignReferral(pending[0].id, to.name);
-    return { member: pending[0].member, to: to.name };
   }
 }
