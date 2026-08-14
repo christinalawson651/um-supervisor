@@ -27,6 +27,11 @@ export const REFERRAL_SOURCES: ReferralSource[] = ['Fax', 'Provider Portal', 'Ca
 // as read-only history (that's also why an already-Accepted referral has no bearing on whether
 // it's reassignable; only its Pending-ness does).
 export type ReferralStatus = 'Pending' | 'Accepted' | 'CM Declined' | 'Member Declined';
+// A referral is never in a case-lifecycle stage like "Assessment Scheduled" — that only exists
+// once it's Accepted and has become a case (CmCaseRec.stage). While still Pending, this is the
+// operational reason it hasn't moved: just-arrived-and-fine, or stuck on one of two specific
+// blockers. Null once a decision (Accepted/Declined) has been made — the reason no longer applies.
+export type ReferralPendReason = 'Pending Intake' | 'Missing Information' | 'Missing Eligibility';
 
 // Intake Coordinators handle referral COMPLETENESS (OCR corrections, missing-field follow-up,
 // basic non-clinical checks) before a Care Manager makes the clinical accept/decline call — a
@@ -38,7 +43,11 @@ export const INTAKE_COORDINATORS: string[] = ['Priya Shah', 'Connor Blake', 'Nat
 
 export interface ReferralIntakeRec {
   id: string; member: string; source: ReferralSource; status: ReferralStatus;
-  intakeCoordinator: string | null;  // who's working this referral for completeness — independent of the clinical decision
+  pendReason: ReferralPendReason | null;  // only meaningful while status === 'Pending'
+  // Who's currently working this referral while it's Pending — usually an Intake Coordinator, but
+  // some clients have a Care Manager doing their own intake, so this isn't restricted to the
+  // INTAKE_COORDINATORS roster; it just holds whichever name was assigned.
+  intakeCoordinator: string | null;
   careManager: string | null;        // set only once accepted (the clinical decision) — see CmData.reassignReferral
   received: string; lob: string;
 }
@@ -61,6 +70,10 @@ function buildReferralIntake(): ReferralIntakeRec[] {
     // exists at all), a minority declined by CM (didn't meet program criteria), and a smaller
     // minority declined by the member themselves once contacted.
     const status: ReferralStatus = daysAgo <= 3 ? 'Pending' : seed < 78 ? 'Accepted' : seed < 92 ? 'CM Declined' : 'Member Declined';
+    // Most Pending referrals are just newly arrived and otherwise fine; a minority are stuck on a
+    // specific blocker — most often something missing from intake, less often an eligibility check
+    // that hasn't cleared yet.
+    const pendReason: ReferralPendReason | null = status !== 'Pending' ? null : seed < 60 ? 'Pending Intake' : seed < 85 ? 'Missing Information' : 'Missing Eligibility';
     const member = `${REF_FIRST[i % REF_FIRST.length]} ${REF_LAST[(i * 5 + 2) % REF_LAST.length]}`;
     // Same decorrelation as cm-case-pool.ts: LOBS and REFERRAL_SOURCES are both length 4, so a
     // plain affine function of `i` alone would perfectly correlate every source with one LOB.
@@ -69,7 +82,7 @@ function buildReferralIntake(): ReferralIntakeRec[] {
     // (still sitting brand-new); everything older has already had a completeness pass, regardless
     // of where it ended up (Pending awaiting CM decision, or already Accepted/Declined).
     const intakeCoordinator = daysAgo <= 1 ? null : INTAKE_COORDINATORS[(i * 9 + 4) % INTAKE_COORDINATORS.length];
-    out.push({ id: `REF-${1000 + i}`, member, source, status, intakeCoordinator, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
+    out.push({ id: `REF-${1000 + i}`, member, source, status, pendReason, intakeCoordinator, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
   }
   return out;
 }

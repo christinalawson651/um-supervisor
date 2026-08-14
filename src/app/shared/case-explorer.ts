@@ -63,7 +63,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
               @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
               <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">{{ isReferralList() ? 'Accept & assign selected' : 'Reassign selected' }}</button>
               @if (isReferralList()) {
-                <button class="btn outline sm" [disabled]="!selected().size" (click)="assignSelectedToIntakeCoordinator()">Assign to Intake Coordinator</button>
+                <button class="btn outline sm" [disabled]="!selected().size" (click)="assignSelectedToIntakeCoordinator()">Assign referral</button>
               }
               @if (!isCmList() && !isReferralList()) {
                 <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected(e)">Escalate selected</button>
@@ -423,27 +423,28 @@ export class CaseExplorer {
     });
   }
 
-  /** Completeness handoff — gives selected still-Pending referrals an Intake Coordinator without
-   *  making the clinical accept/decline call (that's reassignSelectedReferral above). */
+  /** Completeness handoff — gives selected still-Pending referrals a working owner (Intake
+   *  Coordinator, or a Care Manager for clients where CMs do their own intake) without making the
+   *  clinical accept/decline call (that's reassignSelectedReferral above). */
   assignSelectedToIntakeCoordinator() {
     const ids = [...this.selected()];
     if (!ids.length) return;
     const all = this.cmData.referrals();
     const pendingIds = ids.filter((id) => all.find((r) => r.id === id)?.status === 'Pending');
-    if (!pendingIds.length) { this.ix.toast('Only Pending referrals can be assigned to an Intake Coordinator.', 'info'); return; }
+    if (!pendingIds.length) { this.ix.toast('Only Pending referrals can be reassigned.', 'info'); return; }
     const cases: ReassignCase[] = pendingIds.map((id) => {
       const rec = all.find((r) => r.id === id);
       return { authId: id, member: rec?.member ?? id, type: rec?.source ?? 'Referral', queue: 'Pending Intake', priority: 'Routine', owner: rec?.intakeCoordinator ?? 'Unclaimed' };
     });
-    const coordinators = this.cmData.intakeCoordinatorStats();
+    const assignees = this.cmData.referralAssigneeStats();
     this.rx.open({
-      title: `Assign ${pendingIds.length} referral${pendingIds.length > 1 ? 's' : ''} to an Intake Coordinator`,
-      cases, nurses: coordinators, preselectAll: true, queueTargets: [],
+      title: `Assign ${pendingIds.length} referral${pendingIds.length > 1 ? 's' : ''}`,
+      cases, nurses: assignees, preselectAll: true, queueTargets: [],
       apply: (assignedIds, target, mode) => {
-        if (mode === 'queue') { this.ix.toast('Intake Coordinators are assigned directly, not by queue.', 'info'); return; }
+        if (mode === 'queue') { this.ix.toast('Referrals are assigned directly, not by queue.', 'info'); return; }
         assignedIds.forEach((id) => this.cmData.assignIntakeCoordinator(id, target));
-        this.ix.toast(`${assignedIds.length} referral(s) assigned to ${target} for completeness review.`);
-        this.data.addHistory('swap', 'Referrals assigned to Intake Coordinator', `${assignedIds.length} referral(s) → ${target}`);
+        this.ix.toast(`${assignedIds.length} referral(s) assigned to ${target}.`);
+        this.data.addHistory('swap', 'Referrals assigned', `${assignedIds.length} referral(s) → ${target}`);
         this.selected.set(new Set());
       },
     });

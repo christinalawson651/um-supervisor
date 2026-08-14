@@ -237,6 +237,13 @@ export class CmData {
     });
   }
 
+  /** Who can be assigned to work a still-Pending referral — Intake Coordinators primarily, but
+   *  some clients have a Care Manager do their own intake, so CMs are offered too. Coordinators
+   *  come first in the list since they're the common case. */
+  referralAssigneeStats(): { name: string; active: number; utilization: number }[] {
+    return [...this.intakeCoordinatorStats(), ...this.managerStats().map((m) => ({ name: m.name, active: m.active, utilization: m.utilization }))];
+  }
+
   /** One real assignment of the oldest still-pending referral to the least-utilized care manager —
    *  same single-move-callable-N-times shape as reassignBusiestCase(). Returns null once nothing's pending. */
   reassignNextPendingReferral(): { member: string; to: string } | null {

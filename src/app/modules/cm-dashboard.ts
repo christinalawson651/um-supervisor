@@ -283,7 +283,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               </select>
             </label>
             <button class="btn outline sm" (click)="openAllReferrals()">View Referrals ({{ scopedReferrals().length }})</button>
-            <button class="btn outline sm" (click)="assignToIntakeCoordinator()"><z-icon name="swap" [size]="13"></z-icon> Assign to Intake Coordinator</button>
+            <button class="btn outline sm" (click)="assignToIntakeCoordinator()"><z-icon name="swap" [size]="13"></z-icon> Assign Referral</button>
             <button class="btn outline sm" (click)="reassignReferrals()"><z-icon name="swap" [size]="13"></z-icon> Accept &amp; Assign Pending</button>
             <button class="btn outline sm" (click)="balanceReferrals()"><z-icon name="balance" [size]="13"></z-icon> Balance Pending</button>
           </div>
@@ -832,9 +832,9 @@ export class CmDashboard {
     const statuses: ReferralStatus[] = ['Pending', 'Accepted', 'CM Declined', 'Member Declined'];
     return statuses.map((status) => ({ status, count: all.filter((r) => r.status === status).length }));
   });
-  private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Intake Coordinator', 'Care Manager', 'Source', 'Status', 'Received', 'LOB'];
+  private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Assigned To', 'Care Manager', 'Source', 'Status', 'Pend Reason', 'Received', 'LOB'];
   private referralToRow(r: ReferralIntakeRec): (string | number)[] {
-    return [r.id, r.member, r.intakeCoordinator ?? 'Unclaimed', r.careManager ?? 'Unassigned', r.source, r.status, r.received, r.lob];
+    return [r.id, r.member, r.intakeCoordinator ?? 'Unclaimed', r.careManager ?? 'Unassigned', r.source, r.status, r.pendReason ?? '—', r.received, r.lob];
   }
   /** Every referral drill-down opens through the shared Explorer (search/sort/Customize/export/bulk
    *  Reassign) instead of a static drawer — same upgrade already applied to the case-list drills. */
@@ -865,21 +865,21 @@ export class CmDashboard {
     this.exporter.open({ title: 'Referrals by Status', name: 'cm-referrals-by-status_2026-07-17',
       columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) });
   }
-  /** Completeness handoff — gives a still-undecided referral an Intake Coordinator without making
-   *  the clinical accept/decline call (that's reassignReferrals() below). Same shared Reassign
-   *  panel, but targets the non-clinical Intake Coordinator roster instead of Care Managers, and
-   *  never touches status/careManager. */
+  /** Completeness handoff — gives a still-undecided referral a working owner (usually an Intake
+   *  Coordinator, sometimes a Care Manager for clients where CMs do their own intake) without
+   *  making the clinical accept/decline call (that's reassignReferrals() below). Same shared
+   *  Reassign panel, but never touches status/careManager. */
   assignToIntakeCoordinator() {
     const pending = this.cmData.referrals().filter((r) => r.status === 'Pending');
     const cases: ReassignCase[] = pending.map((r) => ({ authId: r.id, member: r.member, type: r.source, queue: 'Pending Intake', priority: 'Routine', owner: r.intakeCoordinator ?? 'Unclaimed' }));
-    const coordinators = this.cmData.intakeCoordinatorStats();
+    const assignees = this.cmData.referralAssigneeStats();
     this.rx.open({
-      title: 'Assign referrals to an Intake Coordinator', cases, nurses: coordinators, queueTargets: [],
+      title: 'Assign referrals', cases, nurses: assignees, queueTargets: [],
       apply: (ids, target, mode) => {
-        if (mode === 'queue') { this.ix.toast('Intake Coordinators are assigned directly, not by queue.', 'info'); return; }
+        if (mode === 'queue') { this.ix.toast('Referrals are assigned directly, not by queue.', 'info'); return; }
         ids.forEach((id) => this.cmData.assignIntakeCoordinator(id, target));
-        this.ix.toast(`${ids.length} referral(s) assigned to ${target} for completeness review.`);
-        this.data.addHistory('swap', 'Referrals assigned to Intake Coordinator', `${ids.length} referral(s) → ${target}`);
+        this.ix.toast(`${ids.length} referral(s) assigned to ${target}.`);
+        this.data.addHistory('swap', 'Referrals assigned', `${ids.length} referral(s) → ${target}`);
       },
     });
   }
