@@ -28,7 +28,20 @@ export const REFERRAL_SOURCES: ReferralSource[] = ['Fax', 'Provider Portal', 'Ca
 // it's reassignable; only its Pending-ness does).
 export type ReferralStatus = 'Pending' | 'Accepted' | 'CM Declined' | 'Member Declined';
 
-export interface ReferralIntakeRec { id: string; member: string; source: ReferralSource; status: ReferralStatus; careManager: string | null; received: string; lob: string; }
+// Intake Coordinators handle referral COMPLETENESS (OCR corrections, missing-field follow-up,
+// basic non-clinical checks) before a Care Manager makes the clinical accept/decline call — a
+// distinct, non-clinical pool from CARE_MANAGERS (cm-case-pool.ts). Kept local to this file (no
+// import from cm-case-pool.ts) since Intake Coordinators only ever touch referrals, never the
+// active caseload — importing CARE_MANAGERS here would create the exact import cycle this file's
+// header comment already avoids.
+export const INTAKE_COORDINATORS: string[] = ['Priya Shah', 'Connor Blake', 'Natalie Osei', 'Tobias Reed', 'Wendy Park'];
+
+export interface ReferralIntakeRec {
+  id: string; member: string; source: ReferralSource; status: ReferralStatus;
+  intakeCoordinator: string | null;  // who's working this referral for completeness — independent of the clinical decision
+  careManager: string | null;        // set only once accepted (the clinical decision) — see CmData.reassignReferral
+  received: string; lob: string;
+}
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }
@@ -52,7 +65,11 @@ function buildReferralIntake(): ReferralIntakeRec[] {
     // Same decorrelation as cm-case-pool.ts: LOBS and REFERRAL_SOURCES are both length 4, so a
     // plain affine function of `i` alone would perfectly correlate every source with one LOB.
     const lob = LOBS[(i * 11 + Math.floor(i / 4) * 5 + 6) % LOBS.length];
-    out.push({ id: `REF-${1000 + i}`, member, source, status, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
+    // Anything received today/yesterday hasn't been picked up by an Intake Coordinator yet
+    // (still sitting brand-new); everything older has already had a completeness pass, regardless
+    // of where it ended up (Pending awaiting CM decision, or already Accepted/Declined).
+    const intakeCoordinator = daysAgo <= 1 ? null : INTAKE_COORDINATORS[(i * 9 + 4) % INTAKE_COORDINATORS.length];
+    out.push({ id: `REF-${1000 + i}`, member, source, status, intakeCoordinator, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
   }
   return out;
 }

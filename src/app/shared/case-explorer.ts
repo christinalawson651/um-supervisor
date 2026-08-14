@@ -61,7 +61,10 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
 
             @if (isCaseList()) {
               @if (selected().size) { <span class="selcount">{{ selected().size }} selected</span> }
-              <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">Reassign selected</button>
+              <button class="btn outline sm" [disabled]="!selected().size" (click)="reassignSelected(e)">{{ isReferralList() ? 'Accept & assign selected' : 'Reassign selected' }}</button>
+              @if (isReferralList()) {
+                <button class="btn outline sm" [disabled]="!selected().size" (click)="assignSelectedToIntakeCoordinator()">Assign to Intake Coordinator</button>
+              }
               @if (!isCmList() && !isReferralList()) {
                 <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected(e)">Escalate selected</button>
               }
@@ -408,13 +411,39 @@ export class CaseExplorer {
     });
     const nurses = this.cmData.managerStats().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
     this.rx.open({
-      title: `Reassign ${pendingIds.length} referral${pendingIds.length > 1 ? 's' : ''}`,
+      title: `Accept & assign ${pendingIds.length} referral${pendingIds.length > 1 ? 's' : ''}`,
       cases, nurses, preselectAll: true, queueTargets: [{ name: 'Pending Intake', count: pendingIds.length }],
       apply: (assignedIds, target, mode) => {
         if (mode === 'queue') { this.ix.toast('Pending referrals only have one intake queue right now.', 'info'); return; }
         assignedIds.forEach((id) => this.cmData.reassignReferral(id, target));
-        this.ix.toast(`${assignedIds.length} referral(s) assigned to ${target}.`);
-        this.data.addHistory('swap', 'Referrals assigned', `${assignedIds.length} referral(s) → ${target}`);
+        this.ix.toast(`${assignedIds.length} referral(s) accepted and assigned to ${target}.`);
+        this.data.addHistory('swap', 'Referrals accepted & assigned', `${assignedIds.length} referral(s) → ${target}`);
+        this.selected.set(new Set());
+      },
+    });
+  }
+
+  /** Completeness handoff — gives selected still-Pending referrals an Intake Coordinator without
+   *  making the clinical accept/decline call (that's reassignSelectedReferral above). */
+  assignSelectedToIntakeCoordinator() {
+    const ids = [...this.selected()];
+    if (!ids.length) return;
+    const all = this.cmData.referrals();
+    const pendingIds = ids.filter((id) => all.find((r) => r.id === id)?.status === 'Pending');
+    if (!pendingIds.length) { this.ix.toast('Only Pending referrals can be assigned to an Intake Coordinator.', 'info'); return; }
+    const cases: ReassignCase[] = pendingIds.map((id) => {
+      const rec = all.find((r) => r.id === id);
+      return { authId: id, member: rec?.member ?? id, type: rec?.source ?? 'Referral', queue: 'Pending Intake', priority: 'Routine', owner: rec?.intakeCoordinator ?? 'Unclaimed' };
+    });
+    const coordinators = this.cmData.intakeCoordinatorStats();
+    this.rx.open({
+      title: `Assign ${pendingIds.length} referral${pendingIds.length > 1 ? 's' : ''} to an Intake Coordinator`,
+      cases, nurses: coordinators, preselectAll: true, queueTargets: [],
+      apply: (assignedIds, target, mode) => {
+        if (mode === 'queue') { this.ix.toast('Intake Coordinators are assigned directly, not by queue.', 'info'); return; }
+        assignedIds.forEach((id) => this.cmData.assignIntakeCoordinator(id, target));
+        this.ix.toast(`${assignedIds.length} referral(s) assigned to ${target} for completeness review.`);
+        this.data.addHistory('swap', 'Referrals assigned to Intake Coordinator', `${assignedIds.length} referral(s) → ${target}`);
         this.selected.set(new Set());
       },
     });

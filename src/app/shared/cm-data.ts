@@ -1,7 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
-import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS } from '../data/cm-intake';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -218,6 +218,23 @@ export class CmData {
   /** Assigning a pending referral to a care manager IS the triage decision — moves it to Accepted. */
   reassignReferral(id: string, toCm: string) {
     this.referrals.update((list) => list.map((r) => (r.id === id ? { ...r, careManager: toCm, status: 'Accepted' as const } : r)));
+  }
+
+  /** Handing a referral to an Intake Coordinator for completeness work is NOT the clinical
+   *  decision — status/careManager are untouched, so it's only meaningful while still Pending. */
+  assignIntakeCoordinator(id: string, coordinator: string) {
+    this.referrals.update((list) => list.map((r) => (r.id === id ? { ...r, intakeCoordinator: coordinator } : r)));
+  }
+
+  /** Least-loaded-first roster for the Intake Coordinator assign panel — "active" = how many
+   *  still-Pending referrals are currently on that coordinator's plate. Capacity is nominal (15)
+   *  since coordinators only ever hold intake volume, never a full CM-sized caseload. */
+  private readonly IC_CAPACITY = 15;
+  intakeCoordinatorStats(): { name: string; active: number; utilization: number }[] {
+    return INTAKE_COORDINATORS.map((name) => {
+      const active = this.referrals().filter((r) => r.intakeCoordinator === name && r.status === 'Pending').length;
+      return { name, active, utilization: Math.min(100, Math.round((active / this.IC_CAPACITY) * 100)) };
+    });
   }
 
   /** One real assignment of the oldest still-pending referral to the least-utilized care manager —
