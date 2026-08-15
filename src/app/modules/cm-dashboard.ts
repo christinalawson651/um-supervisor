@@ -12,7 +12,7 @@ import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
-import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, consentAtRisk, tatAdherent } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Pto } from '../shared/pto';
@@ -32,9 +32,11 @@ const CM_WORKFORCE_WIDGETS = [
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 const CM_INTAKE_WIDGETS = [
-  { id: 'stages', title: 'Lifecycle Stages' }, { id: 'referralsBySource', title: 'Referrals by Source' },
-  { id: 'referralsByStatus', title: 'Referrals by Status' }, { id: 'consent', title: 'Consent' },
-  { id: 'assessments', title: 'Assessments' }, { id: 'outreach', title: 'Outreach' },
+  { id: 'stages', title: 'Lifecycle Stages' }, { id: 'icWorkload', title: 'Intake Coordinator Workload' },
+  { id: 'referralsBySource', title: 'Referrals by Source' }, { id: 'acceptedByCm', title: 'Accepted by Care Manager' },
+  { id: 'referralsByStatus', title: 'Referrals by Status' }, { id: 'pendReasons', title: 'Pending — Blocked By' },
+  { id: 'referralTat', title: 'Referral TAT' }, { id: 'byReferralReason', title: 'By Referral Reason' },
+  { id: 'consent', title: 'Consent' }, { id: 'assessments', title: 'Assessments' }, { id: 'outreach', title: 'Outreach' },
 ];
 const CM_REFERRALS_WIDGETS = [
   { id: 'intakeQueue', title: 'Referral Intake Queue' }, { id: 'sources', title: 'Referral Sources (MTD)' },
@@ -52,6 +54,11 @@ const CM_BALANCE_STRATEGIES = [
   { label: 'Standard — rebalance 3 members', n: 3 },
   { label: 'Aggressive — rebalance 6 members', n: 6 },
   { label: 'Even out — level everyone toward the team average', n: 5 },
+];
+const IC_BALANCE_STRATEGIES = [
+  { label: 'Light — move 1 referral from the busiest coordinator', n: 1 },
+  { label: 'Standard — rebalance 3 referrals', n: 3 },
+  { label: 'Aggressive — rebalance 6 referrals', n: 6 },
 ];
 // AI / NextGen is temporarily hidden — not deleted, just not listed/switched to (same pattern as
 // UM's hidden AI tab in shell.ts). To bring it back, add 'AI / NextGen' at the end here — its
@@ -280,13 +287,52 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             <button class="btn outline sm" (click)="assignToIntakeCoordinator()"><z-icon name="swap" [size]="13"></z-icon> Assign Referral</button>
           </div>
         </div>
-        <div class="grid-2">
+
+        @if (!visIntake.isHidden('icWorkload')) {
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head">
+            <h3 class="pt">Intake Coordinator Workload</h3>
+            <div class="flex gap-8 center">
+              <label class="sortsel">
+                <span>Modality</span>
+                <select [value]="icSourceFilter()" (change)="icSourceFilter.set($any($event.target).value)">
+                  <option value="all">All Modalities</option>
+                  @for (s of referralSources; track s) { <option [value]="s">{{ s }}</option> }
+                </select>
+              </label>
+              <button class="btn outline sm" (click)="balanceIntakeCoordinators()"><z-icon name="balance" [size]="13"></z-icon> Balance</button>
+              <z-widget-actions (exportClick)="exportIcWorkload()" (removeClick)="visIntake.remove('icWorkload')"></z-widget-actions>
+            </div>
+          </div>
+          <div class="am-tiles ct-tiles">
+            @for (w of icWorkload(); track w.name) {
+              <div class="am-tile" (click)="openIcWorkload(w.name)">
+                <div class="am-count">{{ w.count }}</div>
+                <div class="am-label">{{ w.name }}</div>
+              </div>
+            }
+          </div>
+          <div class="section-note" style="padding:0 16px 14px">Pending referrals only — these are Intake Coordinator (or CM-doing-own-intake) assignments, not the clinical Care Manager decision.</div>
+        </div>
+        }
+
+        <div class="grid-2 mt-6">
           @if (!visIntake.isHidden('referralsBySource')) {
           <div class="panel panel-pad">
             <div class="tbl-head"><h3 class="pt">By Source ({{ lookbackLabel() }})</h3><z-widget-actions (exportClick)="exportReferralsBySource()" (removeClick)="visIntake.remove('referralsBySource')"></z-widget-actions></div>
             <div class="bars">
               @for (r of referralsBySource(); track r.label) {
                 <div class="bar-row"><span class="bl">{{ r.label }}</span><span class="bt"><span class="bf" [style.width.%]="r.pct" [style.background]="r.color"></span></span><span class="bv clk" (click)="openReferralSource(r.label)">{{ r.value }}</span></div>
+              }
+            </div>
+          </div>
+          }
+          @if (!visIntake.isHidden('acceptedByCm')) {
+          <div class="panel panel-pad">
+            <div class="tbl-head"><h3 class="pt">Accepted by Care Manager</h3><z-widget-actions (exportClick)="exportAcceptedByCm()" (removeClick)="visIntake.remove('acceptedByCm')"></z-widget-actions></div>
+            <div class="bars">
+              @for (r of acceptedByCm(); track r.name) {
+                <div class="bar-row"><span class="bl">{{ r.name }}</span><span class="bt"><span class="bf" [style.width.%]="pct(r.count, acceptedTotal())" style="background:#0d9488"></span></span><span class="bv clk" (click)="openAcceptedByCm(r.name)">{{ r.count }}</span></div>
               }
             </div>
           </div>
@@ -300,6 +346,42 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
                   <div class="am-count">{{ r.count }}</div>
                   <div class="am-label">{{ r.status }}</div>
                 </div>
+              }
+            </div>
+          </div>
+          }
+          @if (!visIntake.isHidden('pendReasons')) {
+          <div class="panel panel-pad">
+            <div class="tbl-head"><h3 class="pt">Pending — Blocked By</h3><z-widget-actions (exportClick)="exportPendReasons()" (removeClick)="visIntake.remove('pendReasons')"></z-widget-actions></div>
+            <div class="am-tiles">
+              @for (r of pendReasonBreakdown(); track r.reason) {
+                <div class="am-tile" [class.warn-tile]="r.reason === 'Missing Information'" [class.bad-tile]="r.reason === 'Missing Eligibility'" (click)="openPendReason(r.reason)">
+                  <div class="am-count">{{ r.count }}</div>
+                  <div class="am-label">{{ r.reason }}</div>
+                </div>
+              }
+            </div>
+          </div>
+          }
+          @if (!visIntake.isHidden('referralTat')) {
+          <div class="panel panel-pad">
+            <div class="tbl-head"><h3 class="pt">Referral TAT</h3><z-widget-actions (exportClick)="exportReferralTat()" (removeClick)="visIntake.remove('referralTat')"></z-widget-actions></div>
+            <div class="am-tiles">
+              @for (r of referralTatBreakdown(); track r.band) {
+                <div class="am-tile" [class.warn-tile]="r.band === 'dueSoon'" [class.bad-tile]="r.band === 'overdue'" (click)="openReferralTat(r.band)">
+                  <div class="am-count">{{ r.count }}</div>
+                  <div class="am-label">{{ tatLabel(r.band) }}</div>
+                </div>
+              }
+            </div>
+          </div>
+          }
+          @if (!visIntake.isHidden('byReferralReason')) {
+          <div class="panel panel-pad">
+            <div class="tbl-head"><h3 class="pt">By Referral Reason</h3><z-widget-actions (exportClick)="exportByReferralReason()" (removeClick)="visIntake.remove('byReferralReason')"></z-widget-actions></div>
+            <div class="bars">
+              @for (r of referralReasonBreakdown(); track r.reason) {
+                <div class="bar-row"><span class="bl wide">{{ r.reason }}</span><span class="bt"><span class="bf" [style.width.%]="pct(r.count, referralReasonTotal())" style="background:#8b5cf6"></span></span><span class="bv clk" (click)="openReferralReason(r.reason)">{{ r.count }}</span></div>
               }
             </div>
           </div>
@@ -616,6 +698,10 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .am-tiles.small-tiles .am-tile { padding: 10px 12px; }
     .am-tiles.small-tiles .am-count { font-size: 17px; }
     .am-tiles.small-tiles .am-label { font-size: 10.5px; }
+    /* Flag a tile as an active blocker (amber) or the more severe one (red) — Pending-reason and
+       referral-TAT tiles share this so "just arrived, nothing wrong" stays visually neutral. */
+    .am-tile.warn-tile { border-left: 3px solid var(--amber); } .am-tile.warn-tile .am-count { color: var(--amber-fg); }
+    .am-tile.bad-tile { border-left: 3px solid var(--red); } .am-tile.bad-tile .am-count { color: var(--red-fg); }
     .qcard { position: relative; background:#fff; border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
     .qcard:hover z-widget-actions, .tbl-head:hover z-widget-actions { opacity: 1; }
     .tbl-head { position: relative; }
@@ -685,6 +771,18 @@ export class CmDashboard {
   });
   readonly referralCmFilter = signal('all');
   readonly careManagerNames = CARE_MANAGERS.map((cm) => cm.name);
+  readonly referralSources = REFERRAL_SOURCES;
+  readonly icSourceFilter = signal<'all' | ReferralSource>('all');
+  /** Pending workload per Intake Coordinator (+ "Unclaimed") — independent of the Care Manager
+   *  filter above (that's the clinical-assignment dimension; this is the pre-decision one). Still
+   *  respects LOB/Lookback so the shared top-bar filters apply here too. */
+  readonly icWorkload = computed(() => {
+    const lob = this.lobFilter.value();
+    const scope = this.cmData.referrals().filter((r) => lob === 'all' || r.lob === lob);
+    const icSource = this.icSourceFilter();
+    const source = icSource === 'all' ? undefined : icSource;
+    return this.cmData.intakeCoordinatorWorkload(source, scope);
+  });
   readonly scopedReferrals = computed(() => {
     const lob = this.lobFilter.value();
     const cmFilter = this.referralCmFilter();
@@ -797,8 +895,13 @@ export class CmDashboard {
       title: 'Intake & Assessment SLA', name: 'cm-intake-assessment-sla_2026-07-17', columns: stageCols, rows: stageRows,
       sections: [
         { label: 'Lifecycle Stages', name: 'cm-intake-assessment-sla_2026-07-17', columns: stageCols, rows: stageRows },
+        { label: 'Intake Coordinator Workload', name: 'cm-ic-workload_2026-07-17', columns: ['Assigned To', 'Pending Referrals'], rows: this.icWorkload().map((w) => [w.name, w.count]) },
         { label: 'Referrals by Source', name: 'cm-referrals-by-source_2026-07-17', columns: ['Source', 'Count', '% of Total'], rows: this.referralsBySource().map((r) => [r.label, r.value, r.pct]) },
+        { label: 'Accepted by Care Manager', name: 'cm-accepted-by-cm_2026-07-17', columns: ['Care Manager', 'Accepted Referrals'], rows: this.acceptedByCm().map((r) => [r.name, r.count]) },
         { label: 'Referrals by Status', name: 'cm-referrals-by-status_2026-07-17', columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) },
+        { label: 'Pending — Blocked By', name: 'cm-pending-blocked-by_2026-07-17', columns: ['Reason', 'Count'], rows: this.pendReasonBreakdown().map((r) => [r.reason, r.count]) },
+        { label: 'Referral TAT', name: 'cm-referral-tat_2026-07-17', columns: ['Band', 'Count'], rows: this.referralTatBreakdown().map((r) => [this.tatLabel(r.band), r.count]) },
+        { label: 'By Referral Reason', name: 'cm-referral-reason_2026-07-17', columns: ['Reason', 'Count'], rows: this.referralReasonBreakdown().map((r) => [r.reason, r.count]) },
         { label: 'Consent', name: 'cm-consent-by-type_2026-07-17', columns: ['Consent Type', 'Members', 'At Risk of Expiring'], rows: this.consentBreakdown().map((c) => [c.type, c.count, c.atRisk]) },
         { label: 'Assessments', name: 'cm-assessments-by-type_2026-07-17', columns: ['Assessment Type', 'Members', 'TAT Adherent'], rows: this.assessmentBreakdown().map((a) => [a.type, a.count, a.adherent]) },
         { label: 'Outreach', name: 'cm-outreach-stats_2026-07-17', columns: ['Metric', 'Value'], rows: [['Success Rate %', this.outreachStats().successRate], ['Avg Attempts', this.outreachStats().avgAttempts], ['UTR Letters Sent', this.outreachStats().utrCount]] },
@@ -824,9 +927,9 @@ export class CmDashboard {
     const statuses: ReferralStatus[] = ['Pending', 'Accepted', 'CM Declined', 'Member Declined'];
     return statuses.map((status) => ({ status, count: all.filter((r) => r.status === status).length }));
   });
-  private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Assigned To', 'Care Manager', 'Source', 'Status', 'Pend Reason', 'Received', 'LOB'];
+  private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Assigned To', 'Care Manager', 'Source', 'Referral Reason', 'Status', 'Pend Reason', 'Received', 'LOB'];
   private referralToRow(r: ReferralIntakeRec): (string | number)[] {
-    return [r.id, r.member, r.intakeCoordinator ?? 'Unclaimed', r.careManager ?? 'Unassigned', r.source, r.status, r.pendReason ?? '—', r.received, r.lob];
+    return [r.id, r.member, r.intakeCoordinator ?? 'Unclaimed', r.careManager ?? 'Unassigned', r.source, r.reason, r.status, r.pendReason ?? '—', r.received, r.lob];
   }
   /** Every referral drill-down opens through the shared Explorer (search/sort/Customize/export/bulk
    *  Reassign) instead of a static drawer — same upgrade already applied to the case-list drills. */
@@ -856,6 +959,89 @@ export class CmDashboard {
   exportReferralsByStatus() {
     this.exporter.open({ title: 'Referrals by Status', name: 'cm-referrals-by-status_2026-07-17',
       columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) });
+  }
+
+  // ---- Accepted-by-CM / Declined breakdown, Pending blockers, Referral TAT, By Reason ----
+  readonly acceptedByCm = computed(() => this.cmData.acceptedByCareManager(this.scopedReferrals()));
+  readonly acceptedTotal = computed(() => this.acceptedByCm().reduce((s, r) => s + r.count, 0) || 1);
+  readonly pendReasonBreakdown = computed(() => this.cmData.pendReasonBreakdown(this.scopedReferrals()));
+  readonly referralTatBreakdown = computed(() => this.cmData.referralTatBreakdown(this.scopedReferrals()));
+  readonly referralReasonBreakdown = computed(() => this.cmData.referralReasonBreakdown(this.scopedReferrals()));
+  readonly referralReasonTotal = computed(() => this.referralReasonBreakdown().reduce((s, r) => s + r.count, 0) || 1);
+
+  tatLabel(band: ReferralTatBand): string {
+    return band === 'onTrack' ? 'On Track' : band === 'dueSoon' ? 'Due Soon' : 'Overdue';
+  }
+
+  openIcWorkload(name: string) {
+    const lob = this.lobFilter.value();
+    const scope = this.cmData.referrals().filter((r) => lob === 'all' || r.lob === lob);
+    const icSource = this.icSourceFilter();
+    const source = icSource === 'all' ? undefined : icSource;
+    const rows = scope.filter((r) => r.status === 'Pending' && (!source || r.source === source) &&
+      (name === 'Unclaimed' ? r.intakeCoordinator === null : r.intakeCoordinator === name));
+    this.openReferralsExplorer(`${name} — Pending Workload`, rows, `ic-${slug(name)}`);
+  }
+  openAcceptedByCm(name: string) {
+    const rows = this.scopedReferrals().filter((r) => r.status === 'Accepted' && r.careManager === name);
+    this.openReferralsExplorer(`Accepted — ${name}`, rows, `accepted-${slug(name)}`);
+  }
+  openPendReason(reason: ReferralPendReason) {
+    const rows = this.scopedReferrals().filter((r) => r.status === 'Pending' && r.pendReason === reason);
+    this.openReferralsExplorer(`Pending — ${reason}`, rows, `pend-${slug(reason)}`);
+  }
+  openReferralTat(band: ReferralTatBand) {
+    const rows = this.scopedReferrals().filter((r) => r.status === 'Pending' && referralTatBandOf(r) === band);
+    this.openReferralsExplorer(`Referral TAT — ${this.tatLabel(band)}`, rows, `tat-${band}`);
+  }
+  openReferralReason(reason: ReferralReason) {
+    const rows = this.scopedReferrals().filter((r) => r.reason === reason);
+    this.openReferralsExplorer(`Referral Reason: ${reason}`, rows, `reason-${slug(reason)}`);
+  }
+  exportIcWorkload() {
+    this.exporter.open({ title: 'Intake Coordinator Workload', name: 'cm-ic-workload_2026-07-17',
+      columns: ['Assigned To', 'Pending Referrals'], rows: this.icWorkload().map((w) => [w.name, w.count]) });
+  }
+  exportAcceptedByCm() {
+    this.exporter.open({ title: 'Accepted by Care Manager', name: 'cm-accepted-by-cm_2026-07-17',
+      columns: ['Care Manager', 'Accepted Referrals'], rows: this.acceptedByCm().map((r) => [r.name, r.count]) });
+  }
+  exportPendReasons() {
+    this.exporter.open({ title: 'Pending — Blocked By', name: 'cm-pending-blocked-by_2026-07-17',
+      columns: ['Reason', 'Count'], rows: this.pendReasonBreakdown().map((r) => [r.reason, r.count]) });
+  }
+  exportReferralTat() {
+    this.exporter.open({ title: 'Referral TAT', name: 'cm-referral-tat_2026-07-17',
+      columns: ['Band', 'Count'], rows: this.referralTatBreakdown().map((r) => [this.tatLabel(r.band), r.count]) });
+  }
+  exportByReferralReason() {
+    this.exporter.open({ title: 'By Referral Reason', name: 'cm-referral-reason_2026-07-17',
+      columns: ['Reason', 'Count'], rows: this.referralReasonBreakdown().map((r) => [r.reason, r.count]) });
+  }
+  /** Same strategy-picker Balance shape as cmBalance(), but rebalancing Pending referrals between
+   *  Intake Coordinators — never an Accept, so it can't run afoul of the "no bulk accept" rule
+   *  (see CaseExplorer.openReferralDetail/acceptOneReferral). */
+  balanceIntakeCoordinators() {
+    const pendingCount = this.icWorkload().filter((w) => w.name !== 'Unclaimed').reduce((s, w) => s + w.count, 0);
+    this.ix.choose({
+      title: 'Balance Intake Coordinator workload', body: 'Choose how aggressively to rebalance referrals from over-loaded coordinators to those with capacity.',
+      label: 'Balancing strategy', options: IC_BALANCE_STRATEGIES.map((s) => s.label), confirmLabel: 'Continue', tone: 'teal',
+      onChoose: (opt) => {
+        const strat = IC_BALANCE_STRATEGIES.find((s) => s.label === opt)!;
+        const n = Math.min(strat.n, pendingCount);
+        if (!n) { this.ix.toast('No coordinator workload to rebalance.', 'info'); return; }
+        this.ix.ask({
+          title: `Rebalance ${n} referral${n > 1 ? 's' : ''}`, body: 'Move referrals from over-loaded coordinators to those with capacity:',
+          confirmLabel: 'Rebalance', tone: 'teal',
+          onConfirm: () => {
+            const moves: { member: string; from: string; to: string }[] = [];
+            for (let i = 0; i < n; i++) { const m = this.cmData.reassignBusiestReferral(); if (m) moves.push(m); }
+            this.ix.toast(`${moves.length} referral(s) rebalanced.`);
+            this.data.addHistory('balance', 'Intake Coordinator workload rebalanced', `${opt.split(' — ')[0]} · ${this.summarizeMoves(moves)}`);
+          },
+        });
+      },
+    });
   }
   /** Completeness handoff — gives a still-undecided referral a working owner (usually an Intake
    *  Coordinator, sometimes a Care Manager for clients where CMs do their own intake) without

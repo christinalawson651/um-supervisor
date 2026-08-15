@@ -1,7 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
-import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf } from '../data/cm-intake';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -243,5 +243,76 @@ export class CmData {
    *  come first in the list since they're the common case. */
   referralAssigneeStats(): { name: string; active: number; utilization: number }[] {
     return [...this.intakeCoordinatorStats(), ...this.managerStats().map((m) => ({ name: m.name, active: m.active, utilization: m.utilization }))];
+  }
+
+  /** Pending referral workload per Intake Coordinator (+ "Unclaimed" for ones nobody's picked up
+   *  yet) — same "workload per worker" shape as managerStats(), just for the intake layer.
+   *  Optionally narrowed to one intake channel/modality. These are NOT Care Manager assignments —
+   *  a referral here has no bearing on which CM it'll eventually go to once accepted. */
+  intakeCoordinatorWorkload(source?: ReferralSource, scope?: ReferralIntakeRec[]): { name: string; count: number }[] {
+    const refs = (scope ?? this.referrals()).filter((r) => r.status === 'Pending' && (!source || r.source === source));
+    const rows = INTAKE_COORDINATORS.map((name) => ({ name, count: refs.filter((r) => r.intakeCoordinator === name).length }));
+    rows.push({ name: 'Unclaimed', count: refs.filter((r) => r.intakeCoordinator === null).length });
+    return rows;
+  }
+
+  /** Accepted referrals by the Care Manager they were routed to — "how many were accepted, and to whom." */
+  acceptedByCareManager(scope?: ReferralIntakeRec[]): { name: string; count: number }[] {
+    const refs = (scope ?? this.referrals()).filter((r) => r.status === 'Accepted');
+    return CARE_MANAGERS.map((cm) => ({ name: cm.name, count: refs.filter((r) => r.careManager === cm.name).length }));
+  }
+
+  /** Pending referrals by operational blocker — "how many have an issue holding them up." */
+  pendReasonBreakdown(scope?: ReferralIntakeRec[]): { reason: ReferralPendReason; count: number }[] {
+    const refs = (scope ?? this.referrals()).filter((r) => r.status === 'Pending');
+    const reasons: ReferralPendReason[] = ['Pending Intake', 'Missing Information', 'Missing Eligibility'];
+    return reasons.map((reason) => ({ reason, count: refs.filter((r) => r.pendReason === reason).length }));
+  }
+
+  /** Pending referrals banded by intake TAT — "where things stand against the clock." */
+  referralTatBreakdown(scope?: ReferralIntakeRec[]): { band: ReferralTatBand; count: number }[] {
+    const refs = (scope ?? this.referrals()).filter((r) => r.status === 'Pending');
+    const bands: ReferralTatBand[] = ['onTrack', 'dueSoon', 'overdue'];
+    return bands.map((band) => ({ band, count: refs.filter((r) => referralTatBandOf(r) === band).length }));
+  }
+
+  /** Referrals by clinical/programmatic reason — independent of status, reflects the full funnel. */
+  referralReasonBreakdown(scope?: ReferralIntakeRec[]): { reason: ReferralReason; count: number }[] {
+    const refs = scope ?? this.referrals();
+    return REFERRAL_REASONS.map((reason) => ({ reason, count: refs.filter((r) => r.reason === reason).length }));
+  }
+
+  /** Non-mutating preview of N greedy busiest->least-loaded Intake Coordinator moves — same shape
+   *  as simulateBalance() for Care Managers, just counting Pending referrals instead of utilization
+   *  %. Only moves between named coordinators — "Unclaimed" is never a rebalance source or target
+   *  (that's what Assign Referral is for). */
+  simulateIntakeBalance(n: number): { from: string; to: string }[] {
+    const sim = this.intakeCoordinatorStats().map((s) => ({ name: s.name, count: s.active }));
+    const plan: { from: string; to: string }[] = [];
+    for (let i = 0; i < n && sim.length > 1; i++) {
+      const from = [...sim].sort((a, b) => b.count - a.count)[0];
+      const to = [...sim].sort((a, b) => a.count - b.count)[0];
+      if (from.name === to.name || from.count - to.count < 2) break;
+      plan.push({ from: from.name, to: to.name });
+      const fromRef = sim.find((s) => s.name === from.name)!;
+      const toRef = sim.find((s) => s.name === to.name)!;
+      fromRef.count--; toRef.count++;
+    }
+    return plan;
+  }
+
+  /** One real move of the oldest Pending referral from the busiest Intake Coordinator to the
+   *  least-loaded one — same "recommend the least-loaded target" logic as reassignBusiestCase(),
+   *  single-move so the caller can call it N times. Returns null once balanced. */
+  reassignBusiestReferral(): { member: string; from: string; to: string } | null {
+    const stats = this.intakeCoordinatorStats();
+    if (stats.length < 2) return null;
+    const from = stats.reduce((a, b) => (b.active > a.active ? b : a));
+    const to = stats.reduce((a, b) => (b.active < a.active ? b : a));
+    if (from.name === to.name || from.active - to.active < 2) return null;
+    const candidate = this.referrals().filter((r) => r.intakeCoordinator === from.name && r.status === 'Pending').sort((a, b) => a.received.localeCompare(b.received))[0];
+    if (!candidate) return null;
+    this.assignIntakeCoordinator(candidate.id, to.name);
+    return { member: candidate.member, from: from.name, to: to.name };
   }
 }

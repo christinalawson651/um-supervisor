@@ -33,6 +33,13 @@ export type ReferralStatus = 'Pending' | 'Accepted' | 'CM Declined' | 'Member De
 // blockers. Null once a decision (Accepted/Declined) has been made — the reason no longer applies.
 export type ReferralPendReason = 'Pending Intake' | 'Missing Information' | 'Missing Eligibility';
 
+// The clinical/programmatic reason a member was referred — independent of source (the intake
+// CHANNEL) and pendReason (an operational blocker). Length 6 is deliberate: distinct from every
+// other length-4 enum on this record (source, lob) so a plain affine function of `i` can't
+// accidentally bijection-correlate reason with them the way the original LOB generator did.
+export type ReferralReason = 'Post-Discharge Follow-Up' | 'High-Risk Care Coordination' | 'Disease Management' | 'Behavioral Health Integration' | 'SDOH / Community Referral' | 'Complex Case Management';
+export const REFERRAL_REASONS: ReferralReason[] = ['Post-Discharge Follow-Up', 'High-Risk Care Coordination', 'Disease Management', 'Behavioral Health Integration', 'SDOH / Community Referral', 'Complex Case Management'];
+
 // Intake Coordinators handle referral COMPLETENESS (OCR corrections, missing-field follow-up,
 // basic non-clinical checks) before a Care Manager makes the clinical accept/decline call — a
 // distinct, non-clinical pool from CARE_MANAGERS (cm-case-pool.ts). Kept local to this file (no
@@ -43,6 +50,7 @@ export const INTAKE_COORDINATORS: string[] = ['Priya Shah', 'Connor Blake', 'Nat
 
 export interface ReferralIntakeRec {
   id: string; member: string; source: ReferralSource; status: ReferralStatus;
+  reason: ReferralReason;                 // why the member was referred — set at intake, never changes
   pendReason: ReferralPendReason | null;  // only meaningful while status === 'Pending'
   // Who's currently working this referral while it's Pending — usually an Intake Coordinator, but
   // some clients have a Care Manager doing their own intake, so this isn't restricted to the
@@ -82,12 +90,24 @@ function buildReferralIntake(): ReferralIntakeRec[] {
     // (still sitting brand-new); everything older has already had a completeness pass, regardless
     // of where it ended up (Pending awaiting CM decision, or already Accepted/Declined).
     const intakeCoordinator = daysAgo <= 1 ? null : INTAKE_COORDINATORS[(i * 9 + 4) % INTAKE_COORDINATORS.length];
-    out.push({ id: `REF-${1000 + i}`, member, source, status, pendReason, intakeCoordinator, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
+    const reason = REFERRAL_REASONS[(i * 13 + 5) % REFERRAL_REASONS.length];
+    out.push({ id: `REF-${1000 + i}`, member, source, status, reason, pendReason, intakeCoordinator, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
   }
   return out;
 }
 
 export const CM_REFERRAL_INTAKE: ReferralIntakeRec[] = buildReferralIntake();
+
+// Referral intake TAT — same fresh/dueSoon/overdue shape as the case-lifecycle SLA bands
+// (slaBandOf) and queue-age bands (queueBandOf) elsewhere, just measured in days-since-received
+// instead of hours-in-queue. The 3-day window matches the generator's own definition of "Pending"
+// (daysAgo <= 3) — every currently-Pending referral is by construction within this window, so
+// "overdue" here means the oldest slice of that population, not an unrelated external deadline.
+export type ReferralTatBand = 'onTrack' | 'dueSoon' | 'overdue';
+export function referralTatBandOf(r: ReferralIntakeRec): ReferralTatBand {
+  const days = Math.round((TODAY.getTime() - new Date(`${r.received}T00:00:00`).getTime()) / 86400000);
+  return days >= 3 ? 'overdue' : days === 2 ? 'dueSoon' : 'onTrack';
+}
 
 /** Consent renewal due within 30 days (or already past due) — same "at risk" framing as SLA bands elsewhere. */
 export function consentAtRisk(c: CmCaseRec): boolean {
