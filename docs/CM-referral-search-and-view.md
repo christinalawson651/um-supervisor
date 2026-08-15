@@ -1,6 +1,6 @@
 # Search & View Referrals Assigned to a Care Manager (CM Supervisor)
 
-**Status**: Implemented (`command-center`, commits `13a7d61`, `0841633`, `fa5cd1c`, `ca6e4d4`, `ea06cc2`)
+**Status**: Implemented (`command-center`, commits `13a7d61`, `0841633`, `fa5cd1c`, `ca6e4d4`, `ea06cc2`, `8003ce8`, `922cd61`)
 **Module**: CM (Care Management) — Referral Intake
 **Role**: CM Supervisor
 **Location in app**: CM Supervisor Dashboard → **Intake & Assessment SLA** tab → **REFERRALS** subsection
@@ -374,6 +374,73 @@ for Intake Coordinator Workload (clicking "Priya Shah" showed exactly her 3 Pend
 
 **AC-5.4**: The Explorer's referral column set gained a **Referral Reason** column (between Source
 and Status) so it's searchable/sortable/exportable there too, not just in the new breakdown panel.
+
+---
+
+## FR-6 — Case-lifecycle stage rename + dedicated "New Referrals" view (commits `8003ce8`, `922cd61`)
+
+**Naming fix**: the case-lifecycle stage `'New Referral'` (`CM_STAGES`, `cm-case-pool.ts`) was
+renamed to **`'Newly Accepted'`**. That stage card lives in Lifecycle Stages and queries the
+already-accepted case pool (`CmCaseRec.stage`), not the referral funnel — but its old name made it
+read as if it were incoming/undecided referrals. Chose "Accepted" over "Assigned" deliberately:
+"Assigned" already means something specific and different in the referral funnel (the Intake
+Coordinator/nurse holding a Pending referral), so reusing it for the CM-assignment event would
+reintroduce the same ambiguity one level up. Renamed in all 4 places it appeared: `CM_STAGES`, the
+roster's next-task lookup (`cm-roster.ts`), and two KPI-drill filters (`cm-dashboard.ts`).
+`CM_QUEUES`' `'New Referral Queue'` is a distinct, correct concept (an operational work queue for
+active cases) and was left untouched.
+
+**New dedicated "New Referrals" view**: the general "View Referrals" list (FR-1/FR-2) necessarily
+mixes Pending, Accepted, and Declined referrals, so it keeps a Care Manager column (meaningful for
+Accepted rows) and the full field set. A genuinely *incoming-only* view needed different columns —
+built as a separate entry point rather than replacing the general list:
+
+```ts
+// cm-intake.ts — new field, set at intake like `reason`
+caseType: CaseType;  // reuses the existing CaseType enum, decorrelated from `source` the same way `lob` is
+
+// new literal countdown alongside the existing banded referralTatBandOf()
+export function referralTatCountdown(r: ReferralIntakeRec): string {
+  const days = Math.round((TODAY.getTime() - new Date(`${r.received}T00:00:00`).getTime()) / 86400000);
+  const left = 3 - days;
+  if (left < 0) return `Overdue by ${-left}d`;
+  if (left === 0) return 'Due today';
+  if (left === 1) return '1 day left';
+  return `${left} days left`;
+}
+```
+
+```ts
+// cm-dashboard.ts
+private readonly NEW_REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Referral Reason', 'Case Type', 'Status', 'Assigned To', 'Received', 'TAT'];
+openNewReferrals() {
+  const refs = this.scopedReferrals().filter((r) => r.status === 'Pending');
+  this.ix.openExplorer({ title: 'New Referrals', context: `${refs.length} referral(s) awaiting a decision`,
+    columns: this.NEW_REFERRAL_COLUMNS, rows: refs.map((r) => this.newReferralToRow(r)),
+    exportName: 'cm-new-referrals_2026-07-17', memberColumn: 1 });
+}
+```
+
+**AC-6.1**: The view is scoped to `status === 'Pending'` only (plus the existing LOB/Lookback/CM
+filters) — no Care Manager column, since nothing is set there pre-decision.
+
+**AC-6.2**: "Assigned To" shows the Intake Coordinator/nurse name or `'Unclaimed'` — there is no
+separate real queue concept for referrals in this app today; `'Unclaimed'` stands in for "sitting
+unclaimed," per an explicit design call rather than a silent assumption.
+
+**AC-6.3**: Reached via a new **"New Referrals (N)"** toolbar button, count-matched to the button
+label (verified live: button read "New Referrals (8)", opened list showed exactly 8 rows, all
+`Pending`).
+
+**AC-6.4**: The KPI strip's existing **"New Referrals"** tile was deliberately **not** rerouted to
+this view — that tile's displayed count (`scopedReferrals().length`) includes every status within
+the Lookback window, not just Pending, so pointing its drill-through at a Pending-only list would
+make the tile's number and the opened list disagree. The tile still opens the general "View
+Referrals" list.
+
+**AC-6.5**: The review-then-accept drawer (FR-3) works unchanged from this view — it looks up the
+full record by ID rather than reading from the displayed columns, so "Accept & Assign to Care
+Manager" still appears correctly for every Pending row here despite the narrower column set.
 
 ---
 
