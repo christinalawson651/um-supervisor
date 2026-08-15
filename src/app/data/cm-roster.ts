@@ -18,7 +18,7 @@ export interface RosterRow {
 }
 
 const NEXT_TASK: Record<string, string> = {
-  'New Referral': 'Schedule intake call',
+  'Newly Accepted': 'Schedule intake call',
   'Assessment Scheduled': 'Complete initial assessment',
   'Care Plan Development': 'Finalize care plan',
   'Active Monitoring': 'Monthly check-in call',

@@ -17,7 +17,7 @@ export const CARE_MANAGERS: CareManagerMeta[] = [
 // Case lifecycle stage — the member's overall journey (owned by the Intake & Assessment SLA and
 // Care Plan & Outcomes tabs, not Workforce & Caseload). Kept here as shared infra for when those
 // tabs get the same treatment; Workforce & Caseload no longer renders cards from this.
-export const CM_STAGES = ['New Referral', 'Assessment Scheduled', 'Care Plan Development', 'Active Monitoring', 'Care Plan Review Due'];
+export const CM_STAGES = ['Newly Accepted', 'Assessment Scheduled', 'Care Plan Development', 'Active Monitoring', 'Care Plan Review Due'];
 
 // Operational work queues — typical CM staffing queues: where actionable, unclaimed work is
 // sitting right now, independent of a member's overall lifecycle stage. This is what

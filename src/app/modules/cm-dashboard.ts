@@ -800,7 +800,7 @@ export class CmDashboard {
     const highAcuity = cs.filter((c) => c.tags.includes('highAcuity')).length;
     const highCost = cs.filter((c) => c.tags.includes('highCost')).length;
     const slaAtRisk = cs.filter((c) => c.tags.includes('slaAtRisk')).length;
-    const activeCarePlans = cs.filter((c) => c.stage !== 'New Referral').length;
+    const activeCarePlans = cs.filter((c) => c.stage !== 'Newly Accepted').length;
     const newReferrals = this.scopedReferrals().length;
     const intakeSlaPct = Math.round(((total - slaAtRisk) / total) * 100);
     return [
@@ -821,7 +821,7 @@ export class CmDashboard {
       case 'highAcuity': this.openCmCases('High-Acuity Members', cs.filter((c) => c.tags.includes('highAcuity')), 'kpi-high-acuity'); break;
       case 'highCost': this.openCmCases('High-Cost Members (>$100k)', cs.filter((c) => c.tags.includes('highCost')), 'kpi-high-cost'); break;
       case 'slaAtRisk': this.openCmCases('SLA At-Risk Members', cs.filter((c) => c.tags.includes('slaAtRisk')), 'kpi-sla-at-risk'); break;
-      case 'activeCarePlans': this.openCmCases('Active Care Plans', cs.filter((c) => c.stage !== 'New Referral'), 'kpi-active-care-plans'); break;
+      case 'activeCarePlans': this.openCmCases('Active Care Plans', cs.filter((c) => c.stage !== 'Newly Accepted'), 'kpi-active-care-plans'); break;
       case 'membersManaged': this.openCmCases('Members Managed', cs, 'kpi-members-managed'); break;
       case 'newReferrals': this.openReferralsExplorer('New Referrals', this.scopedReferrals(), 'kpi-new'); break;
     }
