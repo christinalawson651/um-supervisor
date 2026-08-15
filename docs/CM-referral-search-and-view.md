@@ -1,6 +1,6 @@
 # Search & View Referrals Assigned to a Care Manager (CM Supervisor)
 
-**Status**: Implemented (`command-center`, commits `13a7d61`, `0841633`, `fa5cd1c`, `ca6e4d4`)
+**Status**: Implemented (`command-center`, commits `13a7d61`, `0841633`, `fa5cd1c`, `ca6e4d4`, `ea06cc2`)
 **Module**: CM (Care Management) — Referral Intake
 **Role**: CM Supervisor
 **Location in app**: CM Supervisor Dashboard → **Intake & Assessment SLA** tab → **REFERRALS** subsection
@@ -331,6 +331,49 @@ export interface ReferralIntakeRec {
 `status` values: `'Pending' | 'Accepted' | 'CM Declined' | 'Member Declined'` — only `'Pending'` is
 ever mutable (for `pendReason`, `intakeCoordinator`, or `careManager`). `pendReason` is cleared to
 `null` the moment a referral is Accepted (`CmData.reassignReferral`).
+
+---
+
+## FR-5 — Five referral breakdown panels (commit `ea06cc2`)
+
+**Where**: `src/app/data/cm-intake.ts`, `src/app/shared/cm-data.ts`, `src/app/modules/cm-dashboard.ts`.
+
+Prompted by "we should address all areas in which we show referrals" — the funnel previously only
+had two breakdown panels (By Source, By Status). Five more were added, each following the same
+established pattern (computed → panel → click-through to Explorer → export → Customize toggle):
+
+| Panel | Data | Notes |
+|---|---|---|
+| **Intake Coordinator Workload** | `CmData.intakeCoordinatorWorkload(source?, scope?)` | Pending referrals per coordinator + "Unclaimed", filterable by modality (`ReferralSource`). Explicitly **not** a Care Manager assignment. |
+| **Accepted by Care Manager** | `CmData.acceptedByCareManager(scope?)` | Which CM each Accepted referral landed with. |
+| **By Status** (existing, unchanged) | `referralsByStatus` | Already split `CM Declined`/`Member Declined` — kept as-is, not collapsed. |
+| **Pending — Blocked By** | `CmData.pendReasonBreakdown(scope?)` | `Pending Intake` / `Missing Information` / `Missing Eligibility` counts; the latter two are visually flagged (amber/red via `.warn-tile`/`.bad-tile`). |
+| **Referral TAT** | `CmData.referralTatBreakdown(scope?)` | `onTrack`/`dueSoon`/`overdue` bands on Pending referrals via `referralTatBandOf()` (`cm-intake.ts`) — a 3-day window, matching the generator's own definition of "Pending" (`daysAgo <= 3`). Same day-based banding shape as `slaBandOf`/`queueBandOf` elsewhere in this file, just for referrals. |
+| **By Referral Reason** | `CmData.referralReasonBreakdown(scope?)` | New `reason: ReferralReason` field on `ReferralIntakeRec` — why the member was referred (`Post-Discharge Follow-Up`, `Disease Management`, etc.), independent of `source` (intake channel) and `pendReason` (operational blocker). |
+
+**Rebalancing (Intake Coordinator Workload panel only)**: a **"Balance"** button opens a
+strategy-picker (`IC_BALANCE_STRATEGIES` — Light/Standard/Aggressive, worded for referrals, kept
+separate from `CM_BALANCE_STRATEGIES`'s Care-Manager wording), backed by
+`CmData.simulateIntakeBalance(n)` (preview) and `CmData.reassignBusiestReferral()` (single real
+move, called N times) — same "busiest → least-loaded" shape as the Care Manager caseload's
+`simulateBalance`/`reassignBusiestCase`. This only ever moves `intakeCoordinator`, never `status` or
+`careManager` — it cannot become an Accept action, so it doesn't need the review gate FR-3 requires
+for accepting.
+
+**AC-5.1**: All five panels respect the same LOB/Lookback/Care-Manager-filter scoping as every
+other referral view on this tab (each takes `this.scopedReferrals()` or an equivalently-scoped list
+as input).
+
+**AC-5.2**: Every panel's counts sum to the same total as the existing `By Status`
+tile for that status bucket (verified live: Intake Coordinator Workload sums to the Pending count;
+Pending — Blocked By sums to the Pending count; Referral TAT sums to the Pending count; By Referral
+Reason sums to the full referral count).
+
+**AC-5.3**: Clicking any tile/bar opens the Explorer, scoped to exactly that slice — verified live
+for Intake Coordinator Workload (clicking "Priya Shah" showed exactly her 3 Pending referrals).
+
+**AC-5.4**: The Explorer's referral column set gained a **Referral Reason** column (between Source
+and Status) so it's searchable/sortable/exportable there too, not just in the new breakdown panel.
 
 ---
 
