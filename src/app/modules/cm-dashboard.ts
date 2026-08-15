@@ -1212,10 +1212,23 @@ export class CmDashboard {
     const cases = this.scopedCases().filter((x) => x.careManager === c.name && x.tags.includes(flag));
     this.openCmCases(`${c.name} — ${flag}`, cases, `${slug(c.name)}-${slug(flag)}`);
   }
+  // Queues are the shared unclaimed-work pool — a CM "draws" a case from a queue to become its
+  // owner (AssignmentMethod: 'Queue Draw'). So a case's *current* Care Manager isn't the relevant
+  // fact while it's sitting in queue-drill views; showing it here reads as if the case were
+  // already spoken for, when the point of a queue listing is that it's still up for grabs.
+  private readonly QUEUE_COLUMNS = CM_COLUMNS.filter((c) => c !== 'Care Manager');
+  private queueCaseRow(c: CmCaseRec): (string | number)[] {
+    const cmIdx = CM_COLUMNS.indexOf('Care Manager');
+    return cmToRow(c).filter((_, i) => i !== cmIdx);
+  }
   openQueueBand(queue: string, band: QueueBand) {
     const labels: Record<QueueBand, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const cases = this.scopedCases().filter((x) => x.queue === queue && queueBandOf(x) === band);
-    this.openCmCases(`${queue} — ${labels[band]}`, cases, `${slug(queue)}-${slug(band)}`);
+    this.ix.openExplorer({
+      title: `${queue} — ${labels[band]}`, context: `${cases.length} member(s)`,
+      columns: this.QUEUE_COLUMNS, rows: cases.map((c) => this.queueCaseRow(c)),
+      exportName: `cm-${slug(queue)}-${slug(band)}_2026-07-17`, memberColumn: 1,
+    });
   }
 
   /** URL to the real per-person Roster page (what this care manager sees when they log in) —
