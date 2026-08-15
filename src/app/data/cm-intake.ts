@@ -51,6 +51,7 @@ export const INTAKE_COORDINATORS: string[] = ['Priya Shah', 'Connor Blake', 'Nat
 export interface ReferralIntakeRec {
   id: string; member: string; source: ReferralSource; status: ReferralStatus;
   reason: ReferralReason;                 // why the member was referred — set at intake, never changes
+  caseType: CaseType;                     // the intake wizard's own Case Type field — set at intake, known before any decision
   pendReason: ReferralPendReason | null;  // only meaningful while status === 'Pending'
   // Who's currently working this referral while it's Pending — usually an Intake Coordinator, but
   // some clients have a Care Manager doing their own intake, so this isn't restricted to the
@@ -91,7 +92,12 @@ function buildReferralIntake(): ReferralIntakeRec[] {
     // of where it ended up (Pending awaiting CM decision, or already Accepted/Declined).
     const intakeCoordinator = daysAgo <= 1 ? null : INTAKE_COORDINATORS[(i * 9 + 4) % INTAKE_COORDINATORS.length];
     const reason = REFERRAL_REASONS[(i * 13 + 5) % REFERRAL_REASONS.length];
-    out.push({ id: `REF-${1000 + i}`, member, source, status, reason, pendReason, intakeCoordinator, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
+    // Same floor(i/4) decorrelation as `lob` above — CASE_TYPES and REFERRAL_SOURCES are both
+    // length 4, so a plain affine function of `i` alone would bijection-correlate case type with
+    // source. Different constants than `lob`'s formula so the two don't end up correlated with
+    // each other either.
+    const caseType = CASE_TYPES[(i * 3 + Math.floor(i / 4) * 7 + 2) % CASE_TYPES.length];
+    out.push({ id: `REF-${1000 + i}`, member, source, status, reason, caseType, pendReason, intakeCoordinator, careManager: null, received: isoDate(addDays(TODAY, -daysAgo)), lob });
   }
   return out;
 }
@@ -107,6 +113,18 @@ export type ReferralTatBand = 'onTrack' | 'dueSoon' | 'overdue';
 export function referralTatBandOf(r: ReferralIntakeRec): ReferralTatBand {
   const days = Math.round((TODAY.getTime() - new Date(`${r.received}T00:00:00`).getTime()) / 86400000);
   return days >= 3 ? 'overdue' : days === 2 ? 'dueSoon' : 'onTrack';
+}
+
+/** Literal countdown text for a single referral — same "Xd overdue / Due today / Due tomorrow"
+ *  shape already used for case SLA dates in cm-roster.ts, just measured against the 3-day
+ *  intake-TAT window instead of a per-case slaDueDate. */
+export function referralTatCountdown(r: ReferralIntakeRec): string {
+  const days = Math.round((TODAY.getTime() - new Date(`${r.received}T00:00:00`).getTime()) / 86400000);
+  const left = 3 - days;
+  if (left < 0) return `Overdue by ${-left}d`;
+  if (left === 0) return 'Due today';
+  if (left === 1) return '1 day left';
+  return `${left} days left`;
 }
 
 /** Consent renewal due within 30 days (or already past due) — same "at risk" framing as SLA bands elsewhere. */

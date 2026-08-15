@@ -12,7 +12,7 @@ import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
-import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, consentAtRisk, tatAdherent } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Pto } from '../shared/pto';
@@ -284,6 +284,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               </select>
             </label>
             <button class="btn outline sm" (click)="openAllReferrals()">View Referrals ({{ scopedReferrals().length }})</button>
+            <button class="btn outline sm" (click)="openNewReferrals()">New Referrals ({{ newReferralsPendingCount() }})</button>
             <button class="btn outline sm" (click)="assignToIntakeCoordinator()"><z-icon name="swap" [size]="13"></z-icon> Assign Referral</button>
           </div>
         </div>
@@ -792,6 +793,7 @@ export class CmDashboard {
       (cmFilter === 'all' || (cmFilter === 'unassigned' ? r.careManager === null : r.careManager === cmFilter)));
   });
   readonly lookbackLabel = computed(() => this.lookback.periods.find((p) => p.id === this.lookback.period())?.label ?? '30 days');
+  readonly newReferralsPendingCount = computed(() => this.scopedReferrals().filter((r) => r.status === 'Pending').length);
 
   readonly displayKpis = computed((): KpiItem[] => {
     const cs = this.scopedCases();
@@ -938,6 +940,23 @@ export class CmDashboard {
       title, context: context ?? `${refs.length} referral(s) in the last ${this.lookbackLabel()}`,
       columns: this.REFERRAL_COLUMNS, rows: refs.map((r) => this.referralToRow(r)),
       exportName: `cm-referrals-${exportSlug}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  // ---- Dedicated "New Referrals" view — Pending only, purpose-built column set. Deliberately
+  // narrower than REFERRAL_COLUMNS above: no Care Manager (nothing to show — it isn't set until
+  // Accept), no Source/LOB (not asked for). "Assigned To" covers Intake Coordinator, a Care
+  // Manager doing their own intake, or "Unclaimed" (there's no separate queue concept for
+  // referrals in this app today, so Unclaimed stands in for "sitting in queue, unclaimed"). ----
+  private readonly NEW_REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Referral Reason', 'Case Type', 'Status', 'Assigned To', 'Received', 'TAT'];
+  private newReferralToRow(r: ReferralIntakeRec): (string | number)[] {
+    return [r.id, r.member, r.reason, r.caseType, r.status, r.intakeCoordinator ?? 'Unclaimed', r.received, referralTatCountdown(r)];
+  }
+  openNewReferrals() {
+    const refs = this.scopedReferrals().filter((r) => r.status === 'Pending');
+    this.ix.openExplorer({
+      title: 'New Referrals', context: `${refs.length} referral(s) awaiting a decision`,
+      columns: this.NEW_REFERRAL_COLUMNS, rows: refs.map((r) => this.newReferralToRow(r)),
+      exportName: 'cm-new-referrals_2026-07-17', memberColumn: 1,
     });
   }
   openAllReferrals() {
