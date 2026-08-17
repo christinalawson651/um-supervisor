@@ -35,8 +35,10 @@ readonly referralCmFilter = signal('all');
 readonly careManagerNames = CARE_MANAGERS.map((cm) => cm.name);
 ```
 
-**AC-1.1**: Selecting a specific Care Manager narrows every referral view (By Source, By Status,
-View Referrals, New Referrals KPI) to only referrals whose `careManager` field equals that name.
+**AC-1.1**: Selecting a specific Care Manager narrows every referral view to only referrals whose
+`careManager` field equals that name — this covers By Source, By Status, View Referrals, the New
+Referrals KPI, all five FR-5 breakdown panels, and the FR-6 "New Referrals" view, since every one of
+them is built on the same `scopedReferrals()` computed below (not individually wired).
 
 **AC-1.2**: Selecting "Unassigned" narrows to referrals where `careManager === null`.
 
@@ -55,10 +57,10 @@ readonly scopedReferrals = computed(() => {
 });
 ```
 
-**AC-1.4**: Every panel/button that reads `scopedReferrals()` (By Source bars, By Status tiles, the
-"New Referrals" KPI tile, `exportReferralsBySource`/`exportReferralsByStatus`, `reassignReferrals`,
-`balanceReferrals`) automatically reflects the Care Manager filter with no additional wiring, since
-they all read the same computed.
+**AC-1.4**: Every panel/button that reads `scopedReferrals()` automatically reflects the Care
+Manager filter with no additional wiring, since they all read the same computed. `exportReferralsBySource`/`exportReferralsByStatus` still exist unchanged; `reassignReferrals`/`balanceReferrals`,
+which this AC originally cited, were later deleted entirely in FR-3's second revision (the
+"no bulk accept" rule) — see FR-3, Action 2.
 
 ---
 
@@ -83,9 +85,11 @@ to the same Explorer path:
 - `openReferralStatus(status)` — clicking a By Status tile
 - `onKpi('newReferrals')` — clicking the KPI strip's "New Referrals" tile
 
-All four share one helper:
+All four share one helper. `REFERRAL_COLUMNS` shown below is this doc's original (`commit 13a7d61`)
+set — it was extended twice more since (FR-3 added Assigned To/Pend Reason, FR-5 added Referral
+Reason); **see "Final column reference" after the Data model section for the authoritative current
+set.**
 ```ts
-private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Intake Coordinator', 'Care Manager', 'Source', 'Status', 'Received', 'LOB'];
 private openReferralsExplorer(title: string, refs: ReferralIntakeRec[], exportSlug: string, context?: string) {
   this.ix.openExplorer({
     title, context: context ?? `${refs.length} referral(s) in the last ${this.lookbackLabel()}`,
@@ -95,8 +99,8 @@ private openReferralsExplorer(title: string, refs: ReferralIntakeRec[], exportSl
 }
 ```
 
-**AC-2.1**: The results table shows columns Referral ID, Member, Care Manager (`Unassigned` when
-null), Source, Status, Received, LOB.
+**AC-2.1**: The results table shows every column in the current `REFERRAL_COLUMNS` (see "Final
+column reference"), including Care Manager (`Unassigned` when null).
 
 **AC-2.2**: Clicking a column header sorts ascending; clicking again reverses to descending
 (existing `Explorer.sortBy()` — no referral-specific change needed).
@@ -288,13 +292,10 @@ is still fine there, since handing off a referral for completeness work isn't th
 
 ### Referral list column addition
 
-`REFERRAL_COLUMNS` (`cm-dashboard.ts`) and the Explorer table now include an **Assigned To** column
-(renamed from "Intake Coordinator" once the target roster broadened — see FR-3's data model note
-below) between Member and Care Manager, plus a **Pend Reason** column:
-
-```ts
-private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Assigned To', 'Care Manager', 'Source', 'Status', 'Pend Reason', 'Received', 'LOB'];
-```
+`REFERRAL_COLUMNS` (`cm-dashboard.ts`) and the Explorer table gained an **Assigned To** column
+(renamed from "Intake Coordinator" once the target roster broadened) between Member and Care
+Manager, plus a **Pend Reason** column. FR-5 later added **Referral Reason** too — see "Final
+column reference" after the Data model section for the complete, current set.
 
 ---
 
@@ -318,19 +319,42 @@ readonly itemNoun = computed(() => this.isReferralList() ? 'referral' : this.isC
 
 ## Data model
 
-`ReferralIntakeRec` (`src/app/data/cm-intake.ts`) — current shape:
+`ReferralIntakeRec` (`src/app/data/cm-intake.ts`) — complete current shape, every field's origin
+noted:
 ```ts
 export interface ReferralIntakeRec {
-  id: string; member: string; source: ReferralSource; status: ReferralStatus;
-  pendReason: ReferralPendReason | null;
-  intakeCoordinator: string | null;
-  careManager: string | null;
-  received: string; lob: string;
+  id: string;
+  member: string;
+  source: ReferralSource;              // intake channel — Fax | Provider Portal | Call | UM Referral
+  status: ReferralStatus;              // Pending | Accepted | CM Declined | Member Declined
+  reason: ReferralReason;               // FR-5 — why the member was referred; set at intake, never changes
+  caseType: CaseType;                   // FR-6 — reuses the case-side CaseType enum; set at intake, never changes
+  pendReason: ReferralPendReason | null; // FR-3 — only meaningful while status === 'Pending'
+  intakeCoordinator: string | null;      // FR-3 — who's working it pre-decision (IC name, CM name, or null = "Unclaimed")
+  careManager: string | null;            // set only once Accepted (the clinical decision)
+  received: string;
+  lob: string;
 }
 ```
-`status` values: `'Pending' | 'Accepted' | 'CM Declined' | 'Member Declined'` — only `'Pending'` is
-ever mutable (for `pendReason`, `intakeCoordinator`, or `careManager`). `pendReason` is cleared to
-`null` the moment a referral is Accepted (`CmData.reassignReferral`).
+
+**Mutability**: `pendReason`, `intakeCoordinator`, and `careManager` are the only fields that ever
+change after generation, and only while `status === 'Pending'` (`careManager`/`status` change
+together, exactly once, at Accept). `reason` and `caseType` are set at intake and never change —
+they describe the referral itself, not its processing state. `pendReason` is cleared to `null` the
+moment a referral is Accepted (`CmData.reassignReferral`).
+
+### Final column reference
+
+Two distinct Explorer column sets exist for referrals — don't confuse them:
+
+```ts
+// General list — all statuses, every referral drill-down except the dedicated view below
+// (View Referrals, By Source, By Status, KPI "New Referrals", and all five FR-5 panels)
+private readonly REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Assigned To', 'Care Manager', 'Source', 'Referral Reason', 'Status', 'Pend Reason', 'Received', 'LOB'];
+
+// Dedicated "New Referrals" view (FR-6) — Pending only, no Care Manager column
+private readonly NEW_REFERRAL_COLUMNS = ['Referral ID', 'Member', 'Referral Reason', 'Case Type', 'Status', 'Assigned To', 'Received', 'TAT'];
+```
 
 ---
 
