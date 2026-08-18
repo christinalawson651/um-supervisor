@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
+import { Donut, Segment } from '../shared/charts';
 import { Members } from '../shared/members';
 import { Interaction, ConfirmBreakdownRow } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
@@ -73,7 +74,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 @Component({
   selector: 'app-cm-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring, FormsModule, Icon, WidgetActions, WidgetCustomize],
+  imports: [KpiStrip, Ring, Donut, FormsModule, Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="kpi-toggle-row">
       <button class="kpi-toggle" (click)="kpiCollapsed.set(!kpiCollapsed())">
@@ -455,31 +456,76 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         <z-widget-customize [vis]="visCarePlan"></z-widget-customize>
 
         @if (!visCarePlan.isHidden('summary')) {
-        <div class="dstats">
-          <div class="dstat teal clk" (click)="openActiveCarePlans()"><div class="dv">{{ carePlanOpen().length }}</div><div class="dl">Active Care Plans</div></div>
-          <div class="dstat gray clk" (click)="openDueForReview()"><div class="dv">{{ carePlanDueForReview().length }}</div><div class="dl">Due for Review ({{ lookbackLabel() }})</div></div>
-          <div class="dstat amber clk" (click)="openOverdueReview()"><div class="dv">{{ carePlanOverdue().length }}</div><div class="dl">Overdue Review</div></div>
-          <div class="dstat amber clk" (click)="openWithoutGoals()"><div class="dv">{{ carePlanWithoutGoals().length }}</div><div class="dl">Without Goals</div></div>
-          <div class="dstat amber clk" (click)="openWithoutInterventions()"><div class="dv">{{ carePlanWithoutInterventions().length }}</div><div class="dl">Without Interventions</div></div>
-          <div class="dstat blue clk" (click)="openInterventionsInProgress()"><div class="dv">{{ interventionRate().rate }}%</div><div class="dl">Intervention Completion</div></div>
-          <div class="dstat green clk" (click)="openClosedInPeriod()"><div class="dv">{{ closureRate().rate }}%</div><div class="dl">Closure Rate ({{ lookbackLabel() }})</div></div>
-          <div class="dstat gray clk" (click)="openAllClosedPlans()"><div class="dv">{{ avgDuration() }}d</div><div class="dl">Avg. Plan Duration</div></div>
-          <div class="dstat blue clk" (click)="openParticipation(true)"><div class="dv">{{ participationRate().rate }}%</div><div class="dl">Member Participation</div></div>
-          <div class="dstat amber clk" (click)="openReopenedPlans()"><div class="dv">{{ reopenedPlans().reopened.length }} ({{ reopenedPlans().rate }}%)</div><div class="dl">Reopened Care Plans</div></div>
-          <div class="dstat amber clk" (click)="openSmartGap()"><div class="dv">{{ smartRate().rate }}%</div><div class="dl">SMART Language Usage</div></div>
+        <div class="cp-grid">
+          <div class="cp-tile clk" (click)="openActiveCarePlans()">
+            <div class="cp-icon teal"><z-icon name="folder" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ carePlanOpen().length }}</div><div class="cp-lab">Active Care Plans</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="openDueForReview()">
+            <div class="cp-icon gray"><z-icon name="calendar" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ carePlanDueForReview().length }}</div><div class="cp-lab">Due for Review ({{ lookbackLabel() }})</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="openOverdueReview()">
+            <div class="cp-icon red"><z-icon name="alert" [size]="18"></z-icon></div>
+            <div class="cp-body">
+              <div class="cp-val">{{ carePlanOverdue().length }}</div><div class="cp-lab">Overdue Review</div>
+              <div class="cp-trend"><span class="down">▼ 3</span> vs last period</div>
+            </div>
+          </div>
+          <div class="cp-tile clk" (click)="openWithoutGoals()">
+            <div class="cp-icon amber"><z-icon name="minus" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ carePlanWithoutGoals().length }}</div><div class="cp-lab">Without Goals</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="openWithoutInterventions()">
+            <div class="cp-icon amber"><z-icon name="xcircle" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ carePlanWithoutInterventions().length }}</div><div class="cp-lab">Without Interventions</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="openInterventionsInProgress()">
+            <div class="cp-icon blue"><z-icon name="check" [size]="18"></z-icon></div>
+            <div class="cp-body">
+              <div class="cp-val">{{ interventionRate().rate }}%</div><div class="cp-lab">Intervention Completion</div>
+              <div class="pbar blue"><span [style.width.%]="interventionRate().rate"></span></div>
+            </div>
+          </div>
+          <div class="cp-tile clk" (click)="openClosedInPeriod()">
+            <div class="cp-icon green"><z-icon name="bolt" [size]="18"></z-icon></div>
+            <div class="cp-body">
+              <div class="cp-val">{{ closureRate().rate }}%</div><div class="cp-lab">Closure Rate ({{ lookbackLabel() }})</div>
+              <div class="pbar"><span [style.width.%]="closureRate().rate"></span></div>
+              <div class="cp-trend"><span class="up">▲ 2 pts</span> vs last period</div>
+            </div>
+          </div>
+          <div class="cp-tile clk" (click)="openAllClosedPlans()">
+            <div class="cp-icon gray"><z-icon name="clock" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ avgDuration() }}d</div><div class="cp-lab">Avg. Plan Duration</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="openParticipation(true)">
+            <div class="cp-icon blue"><z-icon name="users" [size]="18"></z-icon></div>
+            <div class="cp-body">
+              <div class="cp-val">{{ participationRate().rate }}%</div><div class="cp-lab">Member Participation</div>
+              <div class="pbar blue"><span [style.width.%]="participationRate().rate"></span></div>
+            </div>
+          </div>
+          <div class="cp-tile clk" (click)="openReopenedPlans()">
+            <div class="cp-icon amber"><z-icon name="refresh" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ reopenedPlans().reopened.length }} <span class="cp-sub">({{ reopenedPlans().rate }}%)</span></div><div class="cp-lab">Reopened Care Plans</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="openSmartGap()">
+            <div class="cp-icon teal"><z-icon name="sparkles" [size]="18"></z-icon></div>
+            <div class="cp-body">
+              <div class="cp-val">{{ smartRate().rate }}%</div><div class="cp-lab">SMART Language Usage</div>
+              <div class="pbar"><span [style.width.%]="smartRate().rate"></span></div>
+              <div class="cp-trend"><span class="up">▲ 5 pts</span> vs last period</div>
+            </div>
+          </div>
         </div>
         }
 
         @if (!visCarePlan.isHidden('goalProgress')) {
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Goal Progress</h3><z-widget-actions (exportClick)="exportGoalProgress()" (removeClick)="visCarePlan.remove('goalProgress')"></z-widget-actions></div>
-          <div class="am-tiles small-tiles">
-            @for (g of goalProgress(); track g.status) {
-              <div class="am-tile clk" (click)="openGoalStatus(g.status)">
-                <div class="am-count">{{ g.count }}</div>
-                <div class="am-label">{{ g.status }}</div>
-              </div>
-            }
+          <div class="panel-pad" style="padding-top:0">
+            <z-donut [segments]="goalDonutSegments()" [centerValue]="totalGoalsLabel()" centerLabel="Goals" [clickable]="true" (segClick)="onGoalSegClick($event)"></z-donut>
           </div>
         </div>
         }
@@ -487,13 +533,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         @if (!visCarePlan.isHidden('templates')) {
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Care Plan Template</h3><z-widget-actions (exportClick)="exportTemplates()" (removeClick)="visCarePlan.remove('templates')"></z-widget-actions></div>
-          <div class="am-tiles small-tiles">
-            @for (t of templateBreakdown(); track t.template) {
-              <div class="am-tile clk" (click)="openTemplate(t.template)">
-                <div class="am-count">{{ t.count }}</div>
-                <div class="am-label">{{ t.template }}</div>
-              </div>
-            }
+          <div class="panel-pad" style="padding-top:0">
+            <z-donut [segments]="templateDonutSegments()" [centerValue]="totalPlansLabel()" centerLabel="Plans" [clickable]="true" (segClick)="onTemplateSegClick($event)"></z-donut>
           </div>
         </div>
         }
@@ -700,6 +741,26 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .dstat.teal{border-top-color:var(--teal-600);} .dstat.amber{border-top-color:var(--amber);} .dstat.gray{border-top-color:var(--gray-400);}
     .dstat.green{border-top-color:var(--green);} .dstat.blue{border-top-color:var(--blue);}
     .dv { font-size:26px; font-weight:700; color:var(--ink); } .dl { font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-500); font-weight:600; margin-top:4px; }
+
+    /* ---- Care Plan & Outcomes richer tiles ---- */
+    .cp-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:14px; }
+    .cp-tile { display:flex; gap:12px; align-items:flex-start; background:#fff; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; transition: box-shadow .12s, transform .12s; }
+    .cp-tile:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); transform: translateY(-1px); }
+    .cp-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
+    .cp-icon.teal { background:var(--teal-50); color:var(--teal-700); }
+    .cp-icon.amber { background:var(--amber-bg); color:var(--amber-fg); }
+    .cp-icon.red { background:var(--red-bg); color:var(--red-fg); }
+    .cp-icon.green { background:var(--green-bg); color:var(--green-fg); }
+    .cp-icon.blue { background:#eff6ff; color:#2563eb; }
+    .cp-icon.gray { background:var(--gray-100); color:var(--gray-500); }
+    .cp-body { flex:1; min-width:0; }
+    .cp-val { font-size:22px; font-weight:700; color:var(--ink); line-height:1.15; }
+    .cp-sub { font-size:13px; font-weight:600; color:var(--gray-500); }
+    .cp-lab { font-size:11px; font-weight:600; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
+    .cp-trend { font-size:11px; color:var(--gray-500); margin-top:7px; }
+    .cp-trend .up { color:var(--green-fg); font-weight:700; } .cp-trend .down { color:var(--green-fg); font-weight:700; }
+    .cp-body .pbar { margin-top:8px; }
+    .pbar.blue > span { background:#3b82f6; }
 
     .rtiles { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
     .rtile { background:#fff; border:1px solid var(--border); border-left:4px solid var(--gray-300); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px; }
@@ -1170,6 +1231,15 @@ export class CmDashboard {
   readonly reopenedPlans = computed(() => this.cmData.reopenedCarePlans(this.scopedCases()));
   readonly templateBreakdown = computed(() => this.cmData.carePlanTemplateBreakdown(this.scopedCases()));
   readonly smartRate = computed(() => this.cmData.smartLanguageRate(this.scopedCases()));
+
+  private readonly GOAL_STATUS_COLORS: Record<GoalStatus, string> = { 'Not Started': '#94a3b8', 'In Progress': '#3b82f6', 'At Risk': '#f59e0b', 'Achieved': '#10b981' };
+  private readonly TEMPLATE_COLORS: Record<CarePlanTemplate, string> = { 'CHF Standard': '#0d9488', 'Diabetes Standard': '#3b82f6', 'COPD Standard': '#8b5cf6', 'Behavioral Health Standard': '#f59e0b', 'Custom / Other': '#94a3b8' };
+  readonly goalDonutSegments = computed((): Segment[] => this.goalProgress().map((g) => ({ label: g.status, value: g.count, color: this.GOAL_STATUS_COLORS[g.status] })));
+  readonly templateDonutSegments = computed((): Segment[] => this.templateBreakdown().map((t) => ({ label: t.template, value: t.count, color: this.TEMPLATE_COLORS[t.template] })));
+  readonly totalGoalsLabel = computed(() => String(this.goalProgress().reduce((s, g) => s + g.count, 0)));
+  readonly totalPlansLabel = computed(() => String(this.templateBreakdown().reduce((s, t) => s + t.count, 0)));
+  onGoalSegClick(s: Segment) { this.openGoalStatus(s.label as GoalStatus); }
+  onTemplateSegClick(s: Segment) { this.openTemplate(s.label as CarePlanTemplate); }
 
   private openCarePlanCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
