@@ -403,6 +403,65 @@ export class CaseExplorer {
     });
   }
 
+  /** "Balance" for a CM case-list drill-down — previously fell straight through to the UM-only
+   *  branch below (CASE_POOL/this.bal/this.data.nurses(), none of which match a CM memberId), so
+   *  it silently did nothing useful for any CM drill-down. With items selected, spreads exactly
+   *  those across care managers by least-utilization-first (same shape as the UM "selected" path);
+   *  with nothing selected, opens the same strategy-picker flow as CmDashboard.cmBalance(), just
+   *  duplicated locally since Explorer is a shared component with no reference to that class. */
+  private balanceCm(ids: string[]) {
+    if (!ids.length) {
+      this.ix.choose({
+        title: 'Balance workload', body: 'Choose how aggressively to rebalance members from over-utilized care managers to those with capacity.',
+        label: 'Balancing strategy',
+        options: ['Light — move 1 member from the busiest care manager', 'Standard — rebalance 3 members', 'Aggressive — rebalance 6 members', 'Even out — level everyone toward the team average'],
+        confirmLabel: 'Continue', tone: 'teal',
+        onChoose: (opt) => {
+          const n = opt.startsWith('Light') ? 1 : opt.startsWith('Standard') ? 3 : opt.startsWith('Aggressive') ? 6 : 5;
+          const plan = this.cmData.simulateBalance(n);
+          if (!plan.length) { this.ix.toast('Caseloads are already balanced.', 'info'); return; }
+          const byTarget = new Map<string, number>();
+          plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
+          const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'member' : 'members', target }));
+          this.ix.ask({
+            title: `Balance ${plan.length} member${plan.length > 1 ? 's' : ''}`,
+            body: 'Move members from over-utilized care managers to those with capacity:',
+            breakdown, confirmLabel: 'Balance', tone: 'teal',
+            onConfirm: () => {
+              const moves = plan.map(() => this.cmData.reassignBusiestCase()).filter((m): m is { member: string; from: string; to: string } => !!m);
+              this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} member${moves.length > 1 ? 's' : ''} moved).`);
+              this.data.addHistory('balance', 'CM caseload balanced', `${opt.split(' — ')[0]} · ${moves.map((m) => `${m.member} → ${m.to}`).join(', ') || 'no moves'}`);
+            },
+          });
+        },
+      });
+      return;
+    }
+    const all = this.cmData.cases();
+    const owners = new Map(ids.map((id) => [id, all.find((c) => c.memberId === id)?.careManager ?? null]));
+    const sim = this.cmData.managerStats().map((m) => ({ name: m.name, utilization: m.utilization }));
+    const plan = ids.map((id) => {
+      sim.sort((a, b) => a.utilization - b.utilization);
+      const target = sim[0];
+      target.utilization = Math.min(100, target.utilization + 2);
+      return { memberId: id, from: owners.get(id) ?? null, to: target.name };
+    });
+    const byTarget = new Map<string, number>();
+    plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
+    const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'member' : 'members', target }));
+    this.ix.ask({
+      title: `Balance ${ids.length} selected member${ids.length > 1 ? 's' : ''}`,
+      body: 'Move these members to the care managers with the most capacity:',
+      breakdown, confirmLabel: 'Balance', tone: 'teal',
+      onConfirm: () => {
+        plan.forEach((p) => this.cmData.reassignCase(p.memberId, p.to));
+        this.ix.toast(`${ids.length} member(s) balanced across ${byTarget.size} care manager(s).`);
+        this.data.addHistory('balance', 'Selected members balanced', `${ids.length} member(s) across ${byTarget.size} care manager(s)`);
+        this.selected.set(new Set());
+      },
+    });
+  }
+
   /** Click a Referral ID to review it before acting — Accept has no bulk path (see below); a
    *  Supervisor/CM must open and look at a referral (and, if needed, the member's chart) before
    *  making the clinical accept/decline call. */
@@ -505,6 +564,7 @@ export class CaseExplorer {
    * to the generic team-wide rebalance.
    */
   balance(_e: { columns: string[]; rows: (string | number)[][]; memberColumn?: number }) {
+    if (this.isCmList()) { this.balanceCm([...this.selected()]); return; }
     const ids = [...this.selected()];
     if (!ids.length) { this.bal.run(); return; }
 

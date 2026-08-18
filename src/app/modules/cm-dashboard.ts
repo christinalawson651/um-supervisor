@@ -10,7 +10,8 @@ import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
-import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow } from '../shared/cm-data';
+import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow } from '../shared/cm-data';
+import { GoalStatus } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
@@ -40,6 +41,9 @@ const CM_INTAKE_WIDGETS = [
 ];
 const CM_REFERRALS_WIDGETS = [
   { id: 'intakeQueue', title: 'Referral Intake Queue' }, { id: 'sources', title: 'Referral Sources (MTD)' },
+];
+const CM_CAREPLAN_WIDGETS = [
+  { id: 'summary', title: 'Care Plan Summary' }, { id: 'goalProgress', title: 'Goal Progress' },
 ];
 const CM_AI_WIDGETS = [
   { id: 'recommendations', title: 'AI Recommendations' }, { id: 'riskGauges', title: 'Predictive Risk Gauges' },
@@ -439,21 +443,44 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
 
       <!-- 2: Care Plan & Outcomes -->
       @case (2) {
-        <div class="tab-head"><h2>Care Plan &amp; Outcomes</h2><span class="section-note">Care-plan status and goal attainment</span></div>
-        <div class="dstats">
-          <div class="dstat teal"><div class="dv">68</div><div class="dl">Active</div></div>
-          <div class="dstat amber"><div class="dv">24</div><div class="dl">In Progress</div></div>
-          <div class="dstat gray"><div class="dv">6</div><div class="dl">On Hold</div></div>
-          <div class="dstat green"><div class="dv">41</div><div class="dl">Closed (MTD)</div></div>
-          <div class="dstat blue"><div class="dv">91%</div><div class="dl">Adherence</div></div>
-          <div class="dstat teal"><div class="dv">73%</div><div class="dl">Goals Met</div></div>
+        <div class="tab-head">
+          <div><h2>Care Plan &amp; Outcomes</h2><span class="section-note">Care-plan status and goal attainment — every number below is drillable, reassignable and balanceable</span></div>
+          <div class="flex gap-8">
+            <button class="btn outline sm" (click)="exportCarePlanSummary()">Export</button>
+            <button class="btn outline sm" (click)="visCarePlan.customizing() ? visCarePlan.cancel() : visCarePlan.open()">Customize</button>
+          </div>
         </div>
-        <div class="panel mt-6"><div class="panel-pad"><h3 class="pt">Goals at Risk</h3></div>
-          <table class="z-table"><thead><tr><th>Member</th><th>Goal</th><th>Target</th><th>Status</th><th>Barrier</th></tr></thead>
-          <tbody>@for (g of goalsAtRisk; track g.member) {
-            <tr class="clk" (click)="members.openByName(g.member)"><td><a class="ml">{{ g.member }}</a></td><td>{{ g.goal }}</td><td>{{ g.target }}</td>
-              <td><span class="badge amber">{{ g.status }}</span></td><td>{{ g.barrier }}</td></tr>
-          }</tbody></table></div>
+
+        <z-widget-customize [vis]="visCarePlan"></z-widget-customize>
+
+        @if (!visCarePlan.isHidden('summary')) {
+        <div class="dstats">
+          <div class="dstat teal clk" (click)="openActiveCarePlans()"><div class="dv">{{ carePlanOpen().length }}</div><div class="dl">Active Care Plans</div></div>
+          <div class="dstat gray clk" (click)="openDueForReview()"><div class="dv">{{ carePlanDueForReview().length }}</div><div class="dl">Due for Review ({{ lookbackLabel() }})</div></div>
+          <div class="dstat amber clk" (click)="openOverdueReview()"><div class="dv">{{ carePlanOverdue().length }}</div><div class="dl">Overdue Review</div></div>
+          <div class="dstat amber clk" (click)="openWithoutGoals()"><div class="dv">{{ carePlanWithoutGoals().length }}</div><div class="dl">Without Goals</div></div>
+          <div class="dstat amber clk" (click)="openWithoutInterventions()"><div class="dv">{{ carePlanWithoutInterventions().length }}</div><div class="dl">Without Interventions</div></div>
+          <div class="dstat blue clk" (click)="openInterventionsInProgress()"><div class="dv">{{ interventionRate().rate }}%</div><div class="dl">Intervention Completion</div></div>
+          <div class="dstat green clk" (click)="openClosedInPeriod()"><div class="dv">{{ closureRate().rate }}%</div><div class="dl">Closure Rate ({{ lookbackLabel() }})</div></div>
+          <div class="dstat gray clk" (click)="openAllClosedPlans()"><div class="dv">{{ avgDuration() }}d</div><div class="dl">Avg. Plan Duration</div></div>
+          <div class="dstat blue clk" (click)="openParticipation(true)"><div class="dv">{{ participationRate().rate }}%</div><div class="dl">Member Participation</div></div>
+          <div class="dstat amber clk" (click)="openReopenedPlans()"><div class="dv">{{ reopenedPlans().reopened.length }} ({{ reopenedPlans().rate }}%)</div><div class="dl">Reopened Care Plans</div></div>
+        </div>
+        }
+
+        @if (!visCarePlan.isHidden('goalProgress')) {
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Goal Progress</h3><z-widget-actions (exportClick)="exportGoalProgress()" (removeClick)="visCarePlan.remove('goalProgress')"></z-widget-actions></div>
+          <div class="am-tiles small-tiles">
+            @for (g of goalProgress(); track g.status) {
+              <div class="am-tile clk" (click)="openGoalStatus(g.status)">
+                <div class="am-count">{{ g.count }}</div>
+                <div class="am-label">{{ g.status }}</div>
+              </div>
+            }
+          </div>
+        </div>
+        }
       }
 
       <!-- 3: Risk & Escalation -->
@@ -759,6 +786,7 @@ export class CmDashboard {
   readonly visIntake = new WidgetVisibility('zyter-cm-intake-widgets-v1', CM_INTAKE_WIDGETS);
   readonly visReferrals = new WidgetVisibility('zyter-cm-referrals-widgets-v1', CM_REFERRALS_WIDGETS);
   readonly visAi = new WidgetVisibility('zyter-cm-ai-widgets-v1', CM_AI_WIDGETS);
+  readonly visCarePlan = new WidgetVisibility('zyter-cm-careplan-widgets-v1', CM_CAREPLAN_WIDGETS);
 
   // ---- shared top-bar filters actually scoping CM's data now, not just cosmetic ----
   // LOB narrows every steady-state panel (queues/workload/stages/case type/assignment/consent/
@@ -802,7 +830,7 @@ export class CmDashboard {
     const highAcuity = cs.filter((c) => c.tags.includes('highAcuity')).length;
     const highCost = cs.filter((c) => c.tags.includes('highCost')).length;
     const slaAtRisk = cs.filter((c) => c.tags.includes('slaAtRisk')).length;
-    const activeCarePlans = cs.filter((c) => c.stage !== 'Newly Accepted').length;
+    const activeCarePlans = cs.filter((c) => c.carePlanStatus === 'Open').length;
     const newReferrals = this.scopedReferrals().length;
     const intakeSlaPct = Math.round(((total - slaAtRisk) / total) * 100);
     return [
@@ -823,7 +851,7 @@ export class CmDashboard {
       case 'highAcuity': this.openCmCases('High-Acuity Members', cs.filter((c) => c.tags.includes('highAcuity')), 'kpi-high-acuity'); break;
       case 'highCost': this.openCmCases('High-Cost Members (>$100k)', cs.filter((c) => c.tags.includes('highCost')), 'kpi-high-cost'); break;
       case 'slaAtRisk': this.openCmCases('SLA At-Risk Members', cs.filter((c) => c.tags.includes('slaAtRisk')), 'kpi-sla-at-risk'); break;
-      case 'activeCarePlans': this.openCmCases('Active Care Plans', cs.filter((c) => c.stage !== 'Newly Accepted'), 'kpi-active-care-plans'); break;
+      case 'activeCarePlans': this.openCarePlanCases('Active Care Plans', cs.filter((c) => c.carePlanStatus === 'Open'), 'kpi-active-care-plans'); break;
       case 'membersManaged': this.openCmCases('Members Managed', cs, 'kpi-members-managed'); break;
       case 'newReferrals': this.openReferralsExplorer('New Referrals', this.scopedReferrals(), 'kpi-new'); break;
     }
@@ -838,11 +866,6 @@ export class CmDashboard {
     { name: 'Ronald Pierce', dx: 'Type 2 diabetes', risk: 5.1, level: 'Moderate', acuity: 'Medium', cost: '$74k', sla: 'On track', slaTone: 'green', cm: 'Angela Ruiz, RN' },
   ];
   readonly referrals = signal<Referral[]>([...REFERRALS]);
-  readonly goalsAtRisk = [
-    { member: 'Marcus Webb', goal: 'Fluid management adherence', target: '2026-08-10', status: 'At Risk', barrier: 'Missed dialysis sessions' },
-    { member: 'Denise Holloway', goal: 'Smoking cessation', target: '2026-09-01', status: 'At Risk', barrier: 'Low engagement' },
-    { member: 'Kristina Anderson', goal: 'Daily weight monitoring', target: '2026-08-15', status: 'At Risk', barrier: 'No home scale (SDOH)' },
-  ];
   readonly programs = [
     { label: 'CHF DM', value: 42, pct: 100, color: '#0d9488' },
     { label: 'Diabetes', value: 38, pct: 90, color: '#3b82f6' },
@@ -1112,6 +1135,73 @@ export class CmDashboard {
     const s = this.outreachStats();
     this.exporter.open({ title: 'Outreach', name: 'cm-outreach-stats_2026-07-17',
       columns: ['Metric', 'Value'], rows: [['Success Rate %', s.successRate], ['Avg Attempts', s.avgAttempts], ['UTR Letters Sent', s.utrCount]] });
+  }
+
+  // ---- Care Plan & Outcomes — a care plan is fields directly on CmCaseRec; every metric below
+  // is scoped by the same LOB filter as everything else in this module (scopedCases()). Metrics
+  // framed against a reporting period ("Due for Review", "Closure Rate") use the shared Lookback
+  // window so changing that top-bar control moves these numbers too, same as the referral funnel. -
+  readonly carePlanOpen = computed(() => this.cmData.carePlansOpen(this.scopedCases()));
+  readonly carePlanDueForReview = computed(() => this.cmData.carePlansDueForReview(this.lookback.windowDays(), this.scopedCases()));
+  readonly carePlanOverdue = computed(() => this.cmData.carePlansOverdue(this.scopedCases()));
+  readonly carePlanWithoutGoals = computed(() => this.cmData.carePlansWithoutGoals(this.scopedCases()));
+  readonly carePlanWithoutInterventions = computed(() => this.cmData.carePlansWithoutInterventions(this.scopedCases()));
+  readonly goalProgress = computed(() => this.cmData.goalProgress(this.scopedCases()));
+  readonly interventionRate = computed(() => this.cmData.interventionCompletionRate(this.scopedCases()));
+  readonly closureRate = computed(() => this.cmData.carePlanClosureRate(this.lookback.windowDays(), this.scopedCases()));
+  readonly avgDuration = computed(() => this.cmData.averageCarePlanDuration(this.scopedCases()));
+  readonly participationRate = computed(() => this.cmData.memberParticipationRate(this.scopedCases()));
+  readonly reopenedPlans = computed(() => this.cmData.reopenedCarePlans(this.scopedCases()));
+
+  private openCarePlanCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
+    this.ix.openExplorer({
+      title, context: context ?? `${cases.length} member(s)`,
+      columns: CARE_PLAN_COLUMNS, rows: cases.map(carePlanRow),
+      exportName: `cm-careplan-${exportSlug}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  openActiveCarePlans() { this.openCarePlanCases('Active Care Plans', this.carePlanOpen(), 'active'); }
+  openDueForReview() { this.openCarePlanCases('Care Plans Due for Review', this.carePlanDueForReview(), 'due-review', `within ${this.lookbackLabel()}`); }
+  openOverdueReview() { this.openCarePlanCases('Overdue Care Plans', this.carePlanOverdue(), 'overdue'); }
+  openWithoutGoals() { this.openCarePlanCases('Care Plans Without Goals', this.carePlanWithoutGoals(), 'no-goals'); }
+  openWithoutInterventions() { this.openCarePlanCases('Care Plans Without Interventions', this.carePlanWithoutInterventions(), 'no-intervention'); }
+  openGoalStatus(status: GoalStatus) {
+    this.openCarePlanCases(`Goals — ${status}`, this.cmData.casesWithGoalStatus(status, this.scopedCases()), `goal-${slug(status)}`);
+  }
+  openInterventionsInProgress() {
+    this.openCarePlanCases('Interventions In Progress', this.cmData.casesWithActiveIntervention(this.scopedCases()), 'intervention-active');
+  }
+  openClosedInPeriod() { this.openCarePlanCases(`Closed — Last ${this.lookbackLabel()}`, this.closureRate().closed, 'closed-period', `within ${this.lookbackLabel()}`); }
+  openAllClosedPlans() {
+    const cases = this.scopedCases().filter((c) => c.carePlanStatus === 'Closed');
+    this.openCarePlanCases('Closed Care Plans (All Time)', cases, 'closed-all');
+  }
+  openParticipation(has: boolean) {
+    const cases = has ? this.participationRate().withParticipation : this.scopedCases().filter((c) => !c.memberParticipation);
+    this.openCarePlanCases(has ? 'Member Participation on File' : 'No Documented Participation', cases, has ? 'participation-yes' : 'participation-no');
+  }
+  openReopenedPlans() { this.openCarePlanCases('Reopened Care Plans', this.reopenedPlans().reopened, 'reopened'); }
+
+  exportGoalProgress() {
+    this.exporter.open({ title: 'Goal Progress', name: 'cm-careplan-goal-progress_2026-07-17',
+      columns: ['Status', 'Goals'], rows: this.goalProgress().map((g) => [g.status, g.count]) });
+  }
+  exportCarePlanSummary() {
+    this.exporter.open({ title: 'Care Plan & Outcomes Summary', name: 'cm-careplan-summary_2026-07-17',
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['Active Care Plans', this.carePlanOpen().length],
+        [`Due for Review (${this.lookbackLabel()})`, this.carePlanDueForReview().length],
+        ['Overdue Review', this.carePlanOverdue().length],
+        ['Without Goals', this.carePlanWithoutGoals().length],
+        ['Without Interventions', this.carePlanWithoutInterventions().length],
+        ['Intervention Completion Rate %', this.interventionRate().rate],
+        [`Closure Rate % (${this.lookbackLabel()})`, this.closureRate().rate],
+        ['Average Plan Duration (days)', this.avgDuration()],
+        ['Member Participation Rate %', this.participationRate().rate],
+        ['Reopened', this.reopenedPlans().reopened.length],
+        ['Reopened %', this.reopenedPlans().rate],
+      ] });
   }
 
   // ---- how members were assigned (queue draw vs direct) — independent of the operational queues above ----

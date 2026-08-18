@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod } from '../data/cm-case-pool';
+import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod, GoalStatus } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
 import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf } from '../data/cm-intake';
 
@@ -28,6 +28,7 @@ export type QueueBand = 'fresh' | 'day2' | 'over48' | 'breach';
 const CAPACITY_PER_CM = 40;
 
 function daysUntil(iso: string): number { return Math.round((new Date(`${iso}T00:00:00`).getTime() - TODAY.getTime()) / 86400000); }
+function daysSince(iso: string): number { return -daysUntil(iso); }
 
 /** Lifecycle-stage SLA banding — infra for the Intake & Assessment SLA / Care Plan & Outcomes
  *  tabs when they get this same treatment; Workforce & Caseload uses queueBandOf instead. */
@@ -45,6 +46,16 @@ export function queueBandOf(c: CmCaseRec): QueueBand {
 export const CM_COLUMNS = ['Member ID', 'Member', 'LOB', 'Primary Dx', 'Program', 'Care Manager', 'Risk', 'Acuity', 'Annual Cost', 'Stage', 'Queue', 'Assignment', 'SLA Due'];
 export function cmToRow(c: CmCaseRec): (string | number)[] {
   return [c.memberId, c.member, c.lob, c.dx, c.program, c.careManager, `${c.riskScore} · ${c.riskLevel}`, c.acuity, `$${c.cost.toLocaleString()}`, c.stage, c.queue ?? '—', c.assignmentMethod, c.slaDueDate];
+}
+
+// Care Plan & Outcomes drill-downs care about plan-specific fields (opened/review dates, goal
+// coverage, participation) that CM_COLUMNS doesn't carry — a dedicated column set, same treatment
+// as QUEUE_COLUMNS in cm-dashboard.ts. columns[0] is still 'Member ID' so Explorer's isCmList()
+// (and therefore Reassign/Balance) picks it up exactly like any other CM case list.
+export const CARE_PLAN_COLUMNS = ['Member ID', 'Member', 'LOB', 'Care Manager', 'Plan Status', 'Opened', 'Review Due', 'Goals', 'No Intervention', 'Participation'];
+export function carePlanRow(c: CmCaseRec): (string | number)[] {
+  const noIntervention = c.goals.filter((g) => g.interventionStatus === 'None').length;
+  return [c.memberId, c.member, c.lob, c.careManager, c.carePlanStatus, c.carePlanOpenedDate, c.carePlanReviewDate, c.goals.length, noIntervention, c.memberParticipation ? 'Yes' : 'No'];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -164,6 +175,76 @@ export class CmData {
     const avgAttempts = cs.reduce((s, c) => s + c.outreachAttempts, 0) / total;
     const utrCount = cs.filter((c) => c.utrLetterSent).length;
     return { successRate: Math.round((successful / total) * 100), avgAttempts: Math.round(avgAttempts * 10) / 10, utrCount };
+  }
+
+  // ---- Care Plan & Outcomes — a care plan is fields directly on CmCaseRec (one plan per case),
+  // not a separate historical entity, matching this file's consent/assessment/outreach treatment.
+  // Every metric below scopes off currently-Open plans except closure/duration/reopen, which need
+  // Closed plans (and the full population) too. ----
+
+  carePlansOpen(scope?: CmCaseRec[]): CmCaseRec[] {
+    return (scope ?? this.cases()).filter((c) => c.carePlanStatus === 'Open');
+  }
+  carePlansDueForReview(windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
+    return this.carePlansOpen(scope).filter((c) => { const d = daysUntil(c.carePlanReviewDate); return d >= 0 && d <= windowDays; });
+  }
+  carePlansOverdue(scope?: CmCaseRec[]): CmCaseRec[] {
+    return this.carePlansOpen(scope).filter((c) => daysUntil(c.carePlanReviewDate) < 0);
+  }
+  carePlansWithoutGoals(scope?: CmCaseRec[]): CmCaseRec[] {
+    return this.carePlansOpen(scope).filter((c) => c.goals.length === 0);
+  }
+  carePlansWithoutInterventions(scope?: CmCaseRec[]): CmCaseRec[] {
+    return this.carePlansOpen(scope).filter((c) => c.goals.some((g) => g.interventionStatus === 'None'));
+  }
+
+  /** Every goal across open care plans, banded by status. */
+  goalProgress(scope?: CmCaseRec[]): { status: GoalStatus; count: number }[] {
+    const goals = this.carePlansOpen(scope).flatMap((c) => c.goals);
+    const statuses: GoalStatus[] = ['Not Started', 'In Progress', 'At Risk', 'Achieved'];
+    return statuses.map((status) => ({ status, count: goals.filter((g) => g.status === status).length }));
+  }
+  /** Cases with at least one goal at the given status — the drill-down behind goalProgress(). */
+  casesWithGoalStatus(status: GoalStatus, scope?: CmCaseRec[]): CmCaseRec[] {
+    return this.carePlansOpen(scope).filter((c) => c.goals.some((g) => g.status === status));
+  }
+
+  /** Completed interventions ÷ interventions due (goals where an intervention was ever assigned, i.e. not 'None'). */
+  interventionCompletionRate(scope?: CmCaseRec[]): { completed: number; due: number; rate: number } {
+    const goals = this.carePlansOpen(scope).flatMap((c) => c.goals);
+    const due = goals.filter((g) => g.interventionStatus !== 'None').length;
+    const completed = goals.filter((g) => g.interventionStatus === 'Completed').length;
+    return { completed, due, rate: due ? Math.round((completed / due) * 100) : 0 };
+  }
+  /** Cases with an intervention still Active (assigned, not yet completed) — the shortfall behind interventionCompletionRate(). */
+  casesWithActiveIntervention(scope?: CmCaseRec[]): CmCaseRec[] {
+    return this.carePlansOpen(scope).filter((c) => c.goals.some((g) => g.interventionStatus === 'Active'));
+  }
+
+  /** Plans closed within the given trailing window, against the full open+closed population. */
+  carePlanClosureRate(windowDays: number, scope?: CmCaseRec[]): { closed: CmCaseRec[]; total: number; rate: number } {
+    const cs = scope ?? this.cases();
+    const closed = cs.filter((c) => c.carePlanStatus === 'Closed' && c.carePlanClosedDate && daysSince(c.carePlanClosedDate) <= windowDays);
+    return { closed, total: cs.length || 1, rate: Math.round((closed.length / (cs.length || 1)) * 100) };
+  }
+  /** Average days from opened to closed, over plans that have actually closed. */
+  averageCarePlanDuration(scope?: CmCaseRec[]): number {
+    const closed = (scope ?? this.cases()).filter((c) => c.carePlanStatus === 'Closed' && c.carePlanClosedDate);
+    if (!closed.length) return 0;
+    const totalDays = closed.reduce((s, c) => s + (daysSince(c.carePlanOpenedDate) - daysSince(c.carePlanClosedDate!)), 0);
+    return Math.round(totalDays / closed.length);
+  }
+  /** Plans with documented member agreement/participation, against the full caseload. */
+  memberParticipationRate(scope?: CmCaseRec[]): { withParticipation: CmCaseRec[]; total: number; rate: number } {
+    const cs = scope ?? this.cases();
+    const withParticipation = cs.filter((c) => c.memberParticipation);
+    return { withParticipation, total: cs.length || 1, rate: Math.round((withParticipation.length / (cs.length || 1)) * 100) };
+  }
+  /** Plans reopened at least once after a prior closure. */
+  reopenedCarePlans(scope?: CmCaseRec[]): { reopened: CmCaseRec[]; total: number; rate: number } {
+    const cs = scope ?? this.cases();
+    const reopened = cs.filter((c) => c.carePlanReopened);
+    return { reopened, total: cs.length || 1, rate: Math.round((reopened.length / (cs.length || 1)) * 100) };
   }
 
   reassignCase(memberId: string, toCm: string) {

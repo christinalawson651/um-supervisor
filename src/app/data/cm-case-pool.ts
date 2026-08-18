@@ -27,6 +27,19 @@ export const CM_QUEUES = ['New Referral Queue', 'Outreach Queue', 'Reassessment 
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
 export type Acuity = 'Low' | 'Medium' | 'High';
 
+// Care Plan & Outcomes vocabulary — a care plan is modeled as fields directly on CmCaseRec (one
+// plan per case, matching this app's existing "flat fields, not a separate historical entity"
+// convention for consent/assessment/outreach) rather than a separate CarePlanRec collection. A
+// case that's `Closed` still keeps its plan's dates/goals visible (read-only history), same
+// pattern as a Declined/Accepted referral staying visible after its decision.
+export type CarePlanStatus = 'Open' | 'Closed';
+export type GoalStatus = 'Not Started' | 'In Progress' | 'At Risk' | 'Achieved';
+// Length 3 (not 4) is deliberate — distinct from GoalStatus and every other length-4 field on this
+// record (lob, caseType, consentType, assessmentType) so a plain affine function of `i` can't
+// bijection-correlate intervention coverage with any of them the way the original LOB bug did.
+export type InterventionStatus = 'None' | 'Active' | 'Completed';
+export interface CarePlanGoal { id: string; description: string; status: GoalStatus; interventionStatus: InterventionStatus; }
+
 // How this case's CURRENT care manager came to own it — independent of whether it has an
 // active work item queued right now. 'Queue Draw' = pulled from a shared queue; the two Direct
 // variants never sat in a shared queue at all (Smart = system/AI routing rule, Manual = a
@@ -60,11 +73,20 @@ export interface CmCaseRec {
   outreachSuccessful: boolean;
   utrLetterSent: boolean;       // sent once outreach repeatedly fails to reach the member
   tags: string[];        // 'highRisk' | 'highAcuity' | 'highCost' | 'slaAtRisk'
+  // ---- Care Plan & Outcomes ----
+  carePlanStatus: CarePlanStatus;
+  carePlanOpenedDate: string;          // ISO date
+  carePlanClosedDate: string | null;   // ISO date — set only when carePlanStatus === 'Closed'
+  carePlanReviewDate: string;          // ISO date — next review due; distinct from slaDueDate (that's the shared intake-SLA milestone, this is care-plan-cadence specific)
+  carePlanReopened: boolean;           // reopened at least once after a prior closure
+  memberParticipation: boolean;        // documented member agreement/participation on file
+  goals: CarePlanGoal[];               // empty array = "no goals documented"
 }
 
 const FIRST = ['James', 'Maria', 'Robert', 'Linda', 'Michael', 'Patricia', 'David', 'Barbara', 'William', 'Elizabeth', 'Richard', 'Jennifer', 'Joseph', 'Susan', 'Thomas', 'Jessica', 'Charles', 'Karen', 'Daniel', 'Nancy', 'Mark', 'Lisa', 'Paul', 'Betty', 'Steven', 'Sandra', 'Andrew', 'Ashley', 'Kenneth', 'Donna'];
 const LAST = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker'];
 const DX_POOL = ['ESRD on dialysis', 'Breast cancer', 'Congestive heart failure', 'High-risk pregnancy', 'COPD, severe', 'Type 2 diabetes', 'Chronic kidney disease', 'Major depressive disorder', 'Asthma, uncontrolled', 'Post-stroke rehabilitation', 'Sickle cell disease', 'Rheumatoid arthritis', 'Hypertension, uncontrolled', 'Substance use disorder', 'Multiple sclerosis', 'Bipolar disorder', 'Cirrhosis', "Parkinson's disease", 'Chronic pain syndrome', 'Obesity, morbid'];
+const GOAL_DESCRIPTIONS = ['Medication adherence', 'Daily weight monitoring', 'Smoking cessation', 'Fluid management adherence', 'Post-discharge follow-up visit', 'Diabetes self-management education', 'Fall prevention', 'Depression screening follow-up'];
 
 // Risk-score shift per discipline (in score units, not raw seed units) — Complex Care and
 // Transitional Care caseloads skew sicker than Medication Mgmt, matching real-world case mix.
@@ -139,6 +161,33 @@ function buildActive(): CmCaseRec[] {
       const outreachAttempts = 1 + (seedRaw % 5);
       const outreachSuccessful = outreachAttempts <= 3;
       const utrLetterSent = !outreachSuccessful && i % 3 === 0;
+      // Care Plan & Outcomes — opened shortly after the case's own received date; most plans are
+      // still Open, a real minority (~22%) already Closed, so Closure Rate/Duration have something
+      // beyond zero to report on.
+      const cpSeed = (i * 41 + 19) % 100;
+      const carePlanStatus: CarePlanStatus = cpSeed < 78 ? 'Open' : 'Closed';
+      const openedDaysAgo = Math.max(1, receivedDaysAgo - (2 + (seedRaw % 4)));
+      const carePlanOpenedDate = isoDate(addDays(TODAY, -openedDaysAgo));
+      const durationDays = 20 + ((i * 31 + 7) % 180); // closed plans ran 20-200 days
+      const carePlanClosedDate = carePlanStatus === 'Closed' ? isoDate(addDays(TODAY, -Math.max(0, openedDaysAgo - durationDays))) : null;
+      // Review-date offset: a deliberate minority land overdue (<0) — same "minority at risk"
+      // shape as consentExpiresDate/slaOffset above, not a blanket third of the caseload.
+      const reviewSeed = (i * 23 + 9) % 100;
+      const reviewOffset = reviewSeed < 15 ? -(1 + (reviewSeed % 12)) : (reviewSeed % 45) - 5;
+      const carePlanReviewDate = isoDate(addDays(TODAY, reviewOffset));
+      const carePlanReopened = (i * 47 + 13) % 100 < 9;
+      const memberParticipation = (i * 59 + 21) % 100 < 85;
+      // A real minority of plans have no goals documented at all; the rest carry 1-4.
+      const goalCountSeed = (i * 61 + 27) % 100;
+      const goalCount = goalCountSeed < 8 ? 0 : 1 + (goalCountSeed % 4);
+      const goals: CarePlanGoal[] = Array.from({ length: goalCount }, (_, gi) => {
+        const gStatusSeed = (i * 7 + gi * 5 + 3) % 4;
+        const status = (['Not Started', 'In Progress', 'At Risk', 'Achieved'] as GoalStatus[])[gStatusSeed];
+        // Intervention coverage gap is a real minority (~10%), not half the goal list.
+        const iSeed = (i * 17 + gi * 7 + 2) % 100;
+        const interventionStatus: InterventionStatus = iSeed < 10 ? 'None' : iSeed < 55 ? 'Active' : 'Completed';
+        return { id: `${i}-G${gi}`, description: GOAL_DESCRIPTIONS[(i * 3 + gi * 2 + 1) % GOAL_DESCRIPTIONS.length], status, interventionStatus };
+      });
       out.push({
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
@@ -147,6 +196,7 @@ function buildActive(): CmCaseRec[] {
         careManager: cm.name,
         riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod,
         caseType, consentType, consentExpiresDate, assessmentType, assessmentTatDays, outreachAttempts, outreachSuccessful, utrLetterSent, tags,
+        carePlanStatus, carePlanOpenedDate, carePlanClosedDate, carePlanReviewDate, carePlanReopened, memberParticipation, goals,
       });
     }
   });
