@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod, GoalStatus } from '../data/cm-case-pool';
+import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod, GoalStatus, CarePlanTemplate, CARE_PLAN_TEMPLATES } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
 import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf } from '../data/cm-intake';
 
@@ -52,10 +52,10 @@ export function cmToRow(c: CmCaseRec): (string | number)[] {
 // coverage, participation) that CM_COLUMNS doesn't carry — a dedicated column set, same treatment
 // as QUEUE_COLUMNS in cm-dashboard.ts. columns[0] is still 'Member ID' so Explorer's isCmList()
 // (and therefore Reassign/Balance) picks it up exactly like any other CM case list.
-export const CARE_PLAN_COLUMNS = ['Member ID', 'Member', 'LOB', 'Care Manager', 'Plan Status', 'Opened', 'Review Due', 'Goals', 'No Intervention', 'Participation'];
+export const CARE_PLAN_COLUMNS = ['Member ID', 'Member', 'LOB', 'Care Manager', 'Plan Status', 'Template', 'Opened', 'Review Due', 'Goals', 'No Intervention', 'Participation', 'SMART Language'];
 export function carePlanRow(c: CmCaseRec): (string | number)[] {
   const noIntervention = c.goals.filter((g) => g.interventionStatus === 'None').length;
-  return [c.memberId, c.member, c.lob, c.careManager, c.carePlanStatus, c.carePlanOpenedDate, c.carePlanReviewDate, c.goals.length, noIntervention, c.memberParticipation ? 'Yes' : 'No'];
+  return [c.memberId, c.member, c.lob, c.careManager, c.carePlanStatus, c.carePlanTemplate, c.carePlanOpenedDate, c.carePlanReviewDate, c.goals.length, noIntervention, c.memberParticipation ? 'Yes' : 'No', c.smartLanguageCompliant ? 'Yes' : 'No'];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -245,6 +245,27 @@ export class CmData {
     const cs = scope ?? this.cases();
     const reopened = cs.filter((c) => c.carePlanReopened);
     return { reopened, total: cs.length || 1, rate: Math.round((reopened.length / (cs.length || 1)) * 100) };
+  }
+
+  /** Which authored template each plan was built from. */
+  carePlanTemplateBreakdown(scope?: CmCaseRec[]): { template: CarePlanTemplate; count: number }[] {
+    const cs = scope ?? this.cases();
+    return CARE_PLAN_TEMPLATES.map((template) => ({ template, count: cs.filter((c) => c.carePlanTemplate === template).length }));
+  }
+  /** Plans built from the given template — the drill-down behind carePlanTemplateBreakdown(). */
+  casesWithTemplate(template: CarePlanTemplate, scope?: CmCaseRec[]): CmCaseRec[] {
+    return (scope ?? this.cases()).filter((c) => c.carePlanTemplate === template);
+  }
+
+  /** Plans whose goal/intervention language meets SMART criteria, against the full caseload. */
+  smartLanguageRate(scope?: CmCaseRec[]): { compliant: number; total: number; rate: number } {
+    const cs = scope ?? this.cases();
+    const compliant = cs.filter((c) => c.smartLanguageCompliant).length;
+    return { compliant, total: cs.length || 1, rate: Math.round((compliant / (cs.length || 1)) * 100) };
+  }
+  /** Plans NOT yet documented in SMART language — the actionable coaching gap. */
+  casesNotSmartCompliant(scope?: CmCaseRec[]): CmCaseRec[] {
+    return (scope ?? this.cases()).filter((c) => !c.smartLanguageCompliant);
   }
 
   reassignCase(memberId: string, toCm: string) {

@@ -11,7 +11,7 @@ import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow } from '../shared/cm-data';
-import { GoalStatus } from '../data/cm-case-pool';
+import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent } from '../data/cm-intake';
 import { Reassign, ReassignCase } from '../shared/reassign';
@@ -44,6 +44,7 @@ const CM_REFERRALS_WIDGETS = [
 ];
 const CM_CAREPLAN_WIDGETS = [
   { id: 'summary', title: 'Care Plan Summary' }, { id: 'goalProgress', title: 'Goal Progress' },
+  { id: 'templates', title: 'Care Plan Template' },
 ];
 const CM_AI_WIDGETS = [
   { id: 'recommendations', title: 'AI Recommendations' }, { id: 'riskGauges', title: 'Predictive Risk Gauges' },
@@ -465,6 +466,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           <div class="dstat gray clk" (click)="openAllClosedPlans()"><div class="dv">{{ avgDuration() }}d</div><div class="dl">Avg. Plan Duration</div></div>
           <div class="dstat blue clk" (click)="openParticipation(true)"><div class="dv">{{ participationRate().rate }}%</div><div class="dl">Member Participation</div></div>
           <div class="dstat amber clk" (click)="openReopenedPlans()"><div class="dv">{{ reopenedPlans().reopened.length }} ({{ reopenedPlans().rate }}%)</div><div class="dl">Reopened Care Plans</div></div>
+          <div class="dstat amber clk" (click)="openSmartGap()"><div class="dv">{{ smartRate().rate }}%</div><div class="dl">SMART Language Usage</div></div>
         </div>
         }
 
@@ -476,6 +478,20 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
               <div class="am-tile clk" (click)="openGoalStatus(g.status)">
                 <div class="am-count">{{ g.count }}</div>
                 <div class="am-label">{{ g.status }}</div>
+              </div>
+            }
+          </div>
+        </div>
+        }
+
+        @if (!visCarePlan.isHidden('templates')) {
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Care Plan Template</h3><z-widget-actions (exportClick)="exportTemplates()" (removeClick)="visCarePlan.remove('templates')"></z-widget-actions></div>
+          <div class="am-tiles small-tiles">
+            @for (t of templateBreakdown(); track t.template) {
+              <div class="am-tile clk" (click)="openTemplate(t.template)">
+                <div class="am-count">{{ t.count }}</div>
+                <div class="am-label">{{ t.template }}</div>
               </div>
             }
           </div>
@@ -1152,6 +1168,8 @@ export class CmDashboard {
   readonly avgDuration = computed(() => this.cmData.averageCarePlanDuration(this.scopedCases()));
   readonly participationRate = computed(() => this.cmData.memberParticipationRate(this.scopedCases()));
   readonly reopenedPlans = computed(() => this.cmData.reopenedCarePlans(this.scopedCases()));
+  readonly templateBreakdown = computed(() => this.cmData.carePlanTemplateBreakdown(this.scopedCases()));
+  readonly smartRate = computed(() => this.cmData.smartLanguageRate(this.scopedCases()));
 
   private openCarePlanCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
@@ -1181,10 +1199,16 @@ export class CmDashboard {
     this.openCarePlanCases(has ? 'Member Participation on File' : 'No Documented Participation', cases, has ? 'participation-yes' : 'participation-no');
   }
   openReopenedPlans() { this.openCarePlanCases('Reopened Care Plans', this.reopenedPlans().reopened, 'reopened'); }
+  openTemplate(template: CarePlanTemplate) { this.openCarePlanCases(`Template — ${template}`, this.cmData.casesWithTemplate(template, this.scopedCases()), `template-${slug(template)}`); }
+  openSmartGap() { this.openCarePlanCases('Not SMART-Language Compliant', this.cmData.casesNotSmartCompliant(this.scopedCases()), 'smart-gap'); }
 
   exportGoalProgress() {
     this.exporter.open({ title: 'Goal Progress', name: 'cm-careplan-goal-progress_2026-07-17',
       columns: ['Status', 'Goals'], rows: this.goalProgress().map((g) => [g.status, g.count]) });
+  }
+  exportTemplates() {
+    this.exporter.open({ title: 'Care Plan Template', name: 'cm-careplan-templates_2026-07-17',
+      columns: ['Template', 'Plans'], rows: this.templateBreakdown().map((t) => [t.template, t.count]) });
   }
   exportCarePlanSummary() {
     this.exporter.open({ title: 'Care Plan & Outcomes Summary', name: 'cm-careplan-summary_2026-07-17',
@@ -1201,6 +1225,7 @@ export class CmDashboard {
         ['Member Participation Rate %', this.participationRate().rate],
         ['Reopened', this.reopenedPlans().reopened.length],
         ['Reopened %', this.reopenedPlans().rate],
+        ['SMART Language Usage %', this.smartRate().rate],
       ] });
   }
 

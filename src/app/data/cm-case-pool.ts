@@ -40,6 +40,13 @@ export type GoalStatus = 'Not Started' | 'In Progress' | 'At Risk' | 'Achieved';
 export type InterventionStatus = 'None' | 'Active' | 'Completed';
 export interface CarePlanGoal { id: string; description: string; status: GoalStatus; interventionStatus: InterventionStatus; }
 
+// Which authored template built this plan — 'Custom / Other' means it was hand-built rather than
+// started from one of the condition-specific standard templates. Length 5 (not 4) so a plain
+// affine function of `i` can't bijection-correlate template choice with lob/caseType/consentType/
+// assessmentType, same guard as InterventionStatus's length-3 choice above.
+export type CarePlanTemplate = 'CHF Standard' | 'Diabetes Standard' | 'COPD Standard' | 'Behavioral Health Standard' | 'Custom / Other';
+export const CARE_PLAN_TEMPLATES: CarePlanTemplate[] = ['CHF Standard', 'Diabetes Standard', 'COPD Standard', 'Behavioral Health Standard', 'Custom / Other'];
+
 // How this case's CURRENT care manager came to own it — independent of whether it has an
 // active work item queued right now. 'Queue Draw' = pulled from a shared queue; the two Direct
 // variants never sat in a shared queue at all (Smart = system/AI routing rule, Manual = a
@@ -81,6 +88,8 @@ export interface CmCaseRec {
   carePlanReopened: boolean;           // reopened at least once after a prior closure
   memberParticipation: boolean;        // documented member agreement/participation on file
   goals: CarePlanGoal[];               // empty array = "no goals documented"
+  carePlanTemplate: CarePlanTemplate;
+  smartLanguageCompliant: boolean;     // goal/intervention language documented meets SMART criteria
 }
 
 const FIRST = ['James', 'Maria', 'Robert', 'Linda', 'Michael', 'Patricia', 'David', 'Barbara', 'William', 'Elizabeth', 'Richard', 'Jennifer', 'Joseph', 'Susan', 'Thomas', 'Jessica', 'Charles', 'Karen', 'Daniel', 'Nancy', 'Mark', 'Lisa', 'Paul', 'Betty', 'Steven', 'Sandra', 'Andrew', 'Ashley', 'Kenneth', 'Donna'];
@@ -188,6 +197,10 @@ function buildActive(): CmCaseRec[] {
         const interventionStatus: InterventionStatus = iSeed < 10 ? 'None' : iSeed < 55 ? 'Active' : 'Completed';
         return { id: `${i}-G${gi}`, description: GOAL_DESCRIPTIONS[(i * 3 + gi * 2 + 1) % GOAL_DESCRIPTIONS.length], status, interventionStatus };
       });
+      // Decorrelated with the length-4 fields above via the floor(i/5) term, same guard as lob/caseType.
+      const carePlanTemplate = CARE_PLAN_TEMPLATES[(i * 19 + Math.floor(i / 5) * 3 + 4) % CARE_PLAN_TEMPLATES.length];
+      // SMART-language documentation is a quality gap, not a majority failure — most plans meet it.
+      const smartLanguageCompliant = (i * 31 + 17) % 100 >= 24;
       out.push({
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
@@ -197,6 +210,7 @@ function buildActive(): CmCaseRec[] {
         riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod,
         caseType, consentType, consentExpiresDate, assessmentType, assessmentTatDays, outreachAttempts, outreachSuccessful, utrLetterSent, tags,
         carePlanStatus, carePlanOpenedDate, carePlanClosedDate, carePlanReviewDate, carePlanReopened, memberParticipation, goals,
+        carePlanTemplate, smartLanguageCompliant,
       });
     }
   });
