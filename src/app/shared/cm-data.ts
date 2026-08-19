@@ -2,7 +2,7 @@ import { Injectable, computed, signal } from '@angular/core';
 import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod, GoalStatus, CarePlanTemplate, CARE_PLAN_TEMPLATES } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
 import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, suggestedDisciplineFor } from '../data/cm-intake';
-import { CM_WEEK_SCHEDULES, CM_ADHERENCE, CmWeekSchedule, CmAdherenceDay, AdherenceStatus } from '../data/cm-schedule';
+import { CM_WEEK_SCHEDULES, CM_ADHERENCE, CmWeekSchedule, CmAdherenceDay, AdherenceStatus, CmWeekBlock, CM_ROLLING_4_WEEKS, CM_MONTHLY_WEEKS, CM_UPCOMING_WEEKS, CmPtoBalance, CM_PTO_BALANCES, SchedulePeriod } from '../data/cm-schedule';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -439,46 +439,102 @@ export class CmData {
   }
 
   // ---- Scheduling & Adherence — a fixed weekly shift pattern per care manager, plus simulated
-  // clock-in/out against it. Both are precomputed once at module load (see cm-schedule.ts) since
-  // they're read-only reference data for this demo, not something Reassign/Balance mutate. ----
+  // clock-in/out against it, generalized across periods (Daily/Weekly/Rolling 4 Weeks/Monthly) and
+  // sliceable by team. All precomputed once at module load (see cm-schedule.ts) since it's
+  // read-only reference data for this demo, not something Reassign/Balance mutate. ----
+  private cmTeam(cmName: string): string | undefined { return CARE_MANAGERS.find((c) => c.name === cmName)?.team; }
+  private readonly TODAY_ISO = isoDateCm(TODAY);
+  todayIso(): string { return this.TODAY_ISO; }
+
   weekSchedules(): CmWeekSchedule[] { return CM_WEEK_SCHEDULES; }
-  adherenceRecords(): CmAdherenceDay[] { return CM_ADHERENCE; }
-  /** Per-CM on-time rate against their own scheduled shifts this week. */
-  adherenceStats(): { cm: string; discipline: string; onTime: number; total: number; rate: number }[] {
+  ptoBalances(team?: string): CmPtoBalance[] {
+    return team ? CM_PTO_BALANCES.filter((p) => this.cmTeam(p.cm) === team) : CM_PTO_BALANCES;
+  }
+  /** Who's on PTO in the next 3 weeks (today forward), for the "upcoming PTO" list. */
+  upcomingPto(team?: string): { cm: string; date: string; day: string }[] {
+    const out: { cm: string; date: string; day: string }[] = [];
+    CM_UPCOMING_WEEKS.forEach((block) => {
+      block.schedules.forEach((s) => {
+        if (team && this.cmTeam(s.cm) !== team) return;
+        s.days.forEach((d) => { if (d.type === 'PTO' && d.date >= this.TODAY_ISO) out.push({ cm: s.cm, date: d.date, day: d.day }); });
+      });
+    });
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /** Schedule/adherence week blocks for the requested period. Daily/Weekly both scope off the
+   *  current week (Daily is further filtered to just today by the caller); Rolling 4 Weeks and
+   *  Monthly (a rolling ~5-week window, not calendar-month-exact) pull their own precomputed
+   *  multi-week windows so exceptions/PTO don't repeat identically week to week. */
+  weekBlocksFor(period: SchedulePeriod): CmWeekBlock[] {
+    if (period === 'rolling4') return CM_ROLLING_4_WEEKS;
+    if (period === 'monthly') return CM_MONTHLY_WEEKS;
+    return [{ weekOffset: 0, weekStart: this.TODAY_ISO, schedules: CM_WEEK_SCHEDULES, adherence: CM_ADHERENCE }];
+  }
+  /** Every adherence record (On Time included) for the given period/team — the full pool the
+   *  status donut and its per-status drill-down both read from. */
+  adherenceRecords(period: SchedulePeriod = 'weekly', team?: string): CmAdherenceDay[] {
+    const all = period === 'daily'
+      ? CM_ADHERENCE.filter((a) => a.date === this.TODAY_ISO)
+      : this.weekBlocksFor(period).flatMap((b) => b.adherence);
+    return team ? all.filter((a) => this.cmTeam(a.cm) === team) : all;
+  }
+  private adherenceForPeriod(period: SchedulePeriod, team?: string): CmAdherenceDay[] { return this.adherenceRecords(period, team); }
+  /** Per-CM on-time rate against their own scheduled shifts in the given period. */
+  adherenceStats(period: SchedulePeriod = 'weekly', team?: string): { cm: string; discipline: string; onTime: number; total: number; rate: number }[] {
+    const recs = this.adherenceForPeriod(period, team);
     const byCm = new Map<string, CmAdherenceDay[]>();
-    CM_ADHERENCE.forEach((a) => { if (!byCm.has(a.cm)) byCm.set(a.cm, []); byCm.get(a.cm)!.push(a); });
-    return CARE_MANAGERS.map((cm) => {
-      const recs = byCm.get(cm.name) ?? [];
-      const onTime = recs.filter((r) => r.status === 'On Time').length;
-      return { cm: cm.name, discipline: cm.discipline, onTime, total: recs.length, rate: recs.length ? Math.round((onTime / recs.length) * 100) : 100 };
+    recs.forEach((a) => { if (!byCm.has(a.cm)) byCm.set(a.cm, []); byCm.get(a.cm)!.push(a); });
+    return CARE_MANAGERS.filter((cm) => !team || cm.team === team).map((cm) => {
+      const mine = byCm.get(cm.name) ?? [];
+      const onTime = mine.filter((r) => r.status === 'On Time').length;
+      return { cm: cm.name, discipline: cm.discipline, onTime, total: mine.length, rate: mine.length ? Math.round((onTime / mine.length) * 100) : 100 };
     });
   }
-  teamAdherenceRate(): number {
-    const total = CM_ADHERENCE.length || 1;
-    const onTime = CM_ADHERENCE.filter((a) => a.status === 'On Time').length;
-    return Math.round((onTime / total) * 100);
+  teamAdherenceRate(period: SchedulePeriod = 'weekly', team?: string): number {
+    const recs = this.adherenceForPeriod(period, team);
+    const total = recs.length || 1;
+    return Math.round((recs.filter((a) => a.status === 'On Time').length / total) * 100);
   }
-  /** Every scheduled shift this week that didn't go exactly as planned — the actionable worklist
-   *  behind the team adherence rate. */
-  adherenceExceptions(): CmAdherenceDay[] { return CM_ADHERENCE.filter((a) => a.status !== 'On Time'); }
-  adherenceStatusBreakdown(): { status: AdherenceStatus; count: number }[] {
+  /** Every scheduled shift in the period that didn't go exactly as planned — the actionable
+   *  worklist behind the team adherence rate. */
+  adherenceExceptions(period: SchedulePeriod = 'weekly', team?: string): CmAdherenceDay[] {
+    return this.adherenceForPeriod(period, team).filter((a) => a.status !== 'On Time');
+  }
+  adherenceStatusBreakdown(period: SchedulePeriod = 'weekly', team?: string): { status: AdherenceStatus; count: number }[] {
+    const recs = this.adherenceForPeriod(period, team);
     const statuses: AdherenceStatus[] = ['On Time', 'Late Start', 'Early Leave', 'Overtime', 'Absence'];
-    return statuses.map((status) => ({ status, count: CM_ADHERENCE.filter((a) => a.status === status).length }));
+    return statuses.map((status) => ({ status, count: recs.filter((a) => a.status === status).length }));
+  }
+  /** PTO shift-days scheduled in the given period, optionally scoped to one team. */
+  ptoDaysForPeriod(period: SchedulePeriod, team?: string): number {
+    const schedules = period === 'daily'
+      ? CM_WEEK_SCHEDULES
+      : this.weekBlocksFor(period).flatMap((b) => b.schedules);
+    return schedules
+      .filter((s) => !team || this.cmTeam(s.cm) === team)
+      .reduce((sum, s) => sum + s.days.filter((d) => d.type === 'PTO' && (period !== 'daily' || d.date === this.TODAY_ISO)).length, 0);
   }
 
   // ---- Demand analysis / forecasting — weekly referral volume bucketed straight from each
   // referral's own `received` date (real data, not fabricated), plus a simple trailing-average
-  // projection for next week and a comparison against the team's nominal intake capacity. ----
+  // projection for next week and a comparison against capacity. Optionally sliced "by team": a
+  // referral has no team of its own pre-acceptance, so it's attributed to the team whose
+  // discipline its clinical reason maps to (see REASON_DISCIPLINE_MAP in cm-intake.ts) — the same
+  // rule proficiencyMatch() uses to suggest a CM. ----
+  private teamForDiscipline(discipline: string): string | undefined { return CARE_MANAGERS.find((cm) => cm.discipline === discipline)?.team; }
+  private teamForReferral(r: ReferralIntakeRec): string { return this.teamForDiscipline(suggestedDisciplineFor(r.reason)) ?? 'Unassigned'; }
   /** Referral counts by the Monday-starting week they were received, oldest first. The most
    *  recent bucket is this week-to-date (partial, since TODAY sits mid-week) — included in the
    *  trend line for visibility, but excluded from the forecast basis below. */
-  weeklyReferralVolume(weeksBack = 8): { label: string; start: string; count: number }[] {
+  weeklyReferralVolume(weeksBack = 8, team?: string): { label: string; start: string; count: number }[] {
     const thisMonday = mondayOfWeek(TODAY);
     const buckets = Array.from({ length: weeksBack }, (_, i) => {
       const start = addDaysCm(thisMonday, -(weeksBack - 1 - i) * 7);
       return { start, end: addDaysCm(start, 6), count: 0 };
     });
-    this.referrals().forEach((r) => {
+    const refs = team ? this.referrals().filter((r) => this.teamForReferral(r) === team) : this.referrals();
+    refs.forEach((r) => {
       const d = new Date(`${r.received}T00:00:00`);
       const b = buckets.find((bk) => d >= bk.start && d <= bk.end);
       if (b) b.count++;
@@ -486,13 +542,23 @@ export class CmData {
     return buckets.map((b) => ({ label: `${b.start.getMonth() + 1}/${b.start.getDate()}`, start: isoDateCm(b.start), count: b.count }));
   }
   /** Trailing 4-complete-week average as the next-week projection — simple on purpose (this is a
-   *  staffing-planning heuristic for a supervisor, not a statistical forecasting model). */
-  demandForecast(): { history: { label: string; start: string; count: number }[]; projected: number; teamCapacity: number; overCapacity: boolean } {
-    const weeks = this.weeklyReferralVolume(9);
+   *  staffing-planning heuristic for a supervisor, not a statistical forecasting model). "Team
+   *  capacity" means two different things depending on scope: overall, it's the team's nominal
+   *  intake-processing capacity (Intake Coordinators × their nominal load); per-team, it's that
+   *  team's remaining ACTIVE CASELOAD headroom (capacity minus current active), since a team has
+   *  no intake-coordinator capacity of its own — coordinators serve every team. */
+  demandForecast(team?: string): { history: { label: string; start: string; count: number }[]; projected: number; teamCapacity: number; overCapacity: boolean } {
+    const weeks = this.weeklyReferralVolume(9, team);
     const complete = weeks.slice(0, -1);
     const recentBasis = complete.slice(-4).map((w) => w.count);
     const projected = recentBasis.length ? Math.round(recentBasis.reduce((s, v) => s + v, 0) / recentBasis.length) : 0;
-    const teamCapacity = INTAKE_COORDINATORS.length * this.IC_CAPACITY;
+    let teamCapacity: number;
+    if (team) {
+      const stat = this.teamStats().find((t) => t.name === team);
+      teamCapacity = stat ? Math.max(0, stat.managers.length * CAPACITY_PER_CM - stat.active) : 0;
+    } else {
+      teamCapacity = INTAKE_COORDINATORS.length * this.IC_CAPACITY;
+    }
     return { history: weeks, projected, teamCapacity, overCapacity: projected > teamCapacity };
   }
 }

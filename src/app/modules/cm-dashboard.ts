@@ -15,7 +15,7 @@ import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf,
 import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent, INTAKE_COORDINATORS } from '../data/cm-intake';
-import { AdherenceStatus } from '../data/cm-schedule';
+import { AdherenceStatus, SchedulePeriod, CmWeekSchedule, CmShiftDay } from '../data/cm-schedule';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Pto } from '../shared/pto';
@@ -68,9 +68,26 @@ const IC_BALANCE_STRATEGIES = [
   { label: 'Aggressive — rebalance 6 referrals', n: 6 },
 ];
 // AI / NextGen is temporarily hidden — not deleted, just not listed/switched to (same pattern as
-// UM's hidden AI tab in shell.ts). To bring it back, add 'AI / NextGen' at the end here — its
-// @case (11) block below is untouched and already sits at the end of the switch.
-const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance','Scheduling & Adherence','Demand & Forecasting'];
+// UM's hidden AI tab in shell.ts). To bring it back, add its def below — its @case('ai') block is
+// untouched and still sits at the end of the switch.
+//
+// Tabs are keyed by a stable string id, not by array position — @switch(sel()) matches on
+// TAB.key, so reordering this list (display order) never requires renumbering/moving any
+// @case block in the template below. sel() itself holds a key, not an index.
+interface TabDef { key: string; label: string; }
+const TAB_DEFS: TabDef[] = [
+  { key: 'workforce', label: 'Workforce & Caseload' },
+  { key: 'schedule', label: 'Scheduling & Adherence' },
+  { key: 'intake', label: 'Intake & Assessment SLA' },
+  { key: 'careplan', label: 'Care Plan & Outcomes' },
+  { key: 'risk', label: 'Risk & Escalation' },
+  { key: 'program', label: 'Program Management' },
+  { key: 'documentation', label: 'Documentation' },
+  { key: 'referrals', label: 'Referrals & Sources' },
+  { key: 'financial', label: 'Financial / Cost' },
+  { key: 'audit', label: 'Audit & Compliance' },
+  { key: 'demand', label: 'Demand & Forecasting' },
+];
 
 @Component({
   selector: 'app-cm-dashboard',
@@ -88,14 +105,14 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     }
 
     <nav class="subtabs">
-      @for (t of tabs; track t; let i = $index) {
-        <button class="subtab" [class.active]="sel() === i" (click)="sel.set(i)">{{ t }}</button>
+      @for (t of tabs; track t.key) {
+        <button class="subtab" [class.active]="sel() === t.key" (click)="sel.set(t.key)">{{ t.label }}</button>
       }
     </nav>
 
     @switch (sel()) {
-      <!-- 0: Workforce & Caseload -->
-      @case (0) {
+      <!-- Workforce & Caseload -->
+      @case ('workforce') {
         <div class="tab-head"><h2>Caseload &amp; Workload Balancing</h2>
           <div class="flex gap-8">
             <button class="btn primary" (click)="cmReassign()"><z-icon name="swap" [size]="14"></z-icon> Reassign</button>
@@ -246,8 +263,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         </div>
       }
 
-      <!-- 1: Intake & Assessment SLA -->
-      @case (1) {
+      <!-- Intake & Assessment SLA -->
+      @case ('intake') {
         <div class="tab-head">
           <div><h2>Intake &amp; Assessment SLA</h2><span class="section-note">Members by lifecycle stage, banded by SLA status</span></div>
           <div class="flex gap-8">
@@ -444,8 +461,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         }
       }
 
-      <!-- 2: Care Plan & Outcomes -->
-      @case (2) {
+      <!-- Care Plan & Outcomes -->
+      @case ('careplan') {
         <div class="tab-head">
           <div><h2>Care Plan &amp; Outcomes</h2><span class="section-note">Care-plan status and goal attainment — every number below is drillable, reassignable and balanceable</span></div>
           <div class="flex gap-8">
@@ -543,8 +560,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         </div>
       }
 
-      <!-- 3: Risk & Escalation -->
-      @case (3) {
+      <!-- Risk & Escalation -->
+      @case ('risk') {
         <div class="tab-head"><h2>Risk &amp; Escalation</h2><span class="section-note note-warn">High-risk, high-acuity &amp; high-cost members</span></div>
         <div class="rtiles">
           <div class="rtile red"><div class="rl">High-Risk Members</div><div class="rv">23</div><div class="rf">8 rising this week</div></div>
@@ -571,8 +588,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           } @empty { <tr><td colspan="8" class="empty">No members match "{{ wlSearch() }}".</td></tr> }</tbody></table></div>
       }
 
-      <!-- 4: Program Management -->
-      @case (4) {
+      <!-- Program Management -->
+      @case ('program') {
         <div class="tab-head"><h2>Program Management</h2><span class="section-note">Enrollment &amp; program outcomes</span></div>
         <div class="panel panel-pad"><h3 class="pt">Program Enrollment</h3>
           <div class="bars">@for (p of programs; track p.label) {
@@ -586,8 +603,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }</tbody></table></div>
       }
 
-      <!-- 5: Documentation -->
-      @case (5) {
+      <!-- Documentation -->
+      @case ('documentation') {
         <div class="tab-head"><h2>Documentation</h2><span class="section-note">Assessment completion &amp; documentation quality</span></div>
         <div class="grid-3">
           <div class="panel panel-pad bar-block"><div class="bar-top">HRA Completion</div><div class="bar-val">88%</div><div class="pbar"><span style="width:88%"></span></div></div>
@@ -602,8 +619,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }</tbody></table></div>
       }
 
-      <!-- 6: Referrals & Sources -->
-      @case (6) {
+      <!-- Referrals & Sources -->
+      @case ('referrals') {
         <div class="tab-head">
           <div><h2>Referrals &amp; Sources</h2><span class="section-note">Incoming referrals — including UM → CM</span></div>
           <button class="btn outline sm" (click)="visReferrals.customizing() ? visReferrals.cancel() : visReferrals.open()">Customize</button>
@@ -629,8 +646,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         }
       }
 
-      <!-- 7: Financial / Cost -->
-      @case (7) {
+      <!-- Financial / Cost -->
+      @case ('financial') {
         <div class="tab-head"><h2>Financial / Cost</h2><span class="section-note">Cost avoidance and high-cost members</span></div>
         <div class="grid-3">
           <div class="metric-tile"><div class="val">$0.4M</div><div class="lab">Cost Avoided (MTD)</div></div>
@@ -645,8 +662,8 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }</tbody></table></div>
       }
 
-      <!-- 8: Audit & Compliance -->
-      @case (8) {
+      <!-- Audit & Compliance -->
+      @case ('audit') {
         <div class="tab-head"><h2>Audit &amp; Compliance</h2><span class="section-note">Documentation &amp; regulatory compliance</span></div>
         <div class="grid-3">
           <div class="panel panel-pad"><div class="clab">Care Plan Timeliness</div><div class="cval">92%</div><div class="pbar"><span style="width:92%"></span></div></div>
@@ -661,42 +678,92 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }</tbody></table></div>
       }
 
-      <!-- 9: Scheduling & Adherence -->
-      @case (9) {
-        <div class="tab-head"><h2>Scheduling &amp; Adherence</h2><span class="section-note">This week's shift schedule and clock-in/out adherence</span></div>
+      <!-- Scheduling & Adherence -->
+      @case ('schedule') {
+        <div class="tab-head">
+          <div><h2>Scheduling &amp; Adherence</h2><span class="section-note">Shift schedule, adherence, and PTO — {{ schedulePeriodLabel() }}</span></div>
+          <div class="flex gap-8 center">
+            <label class="sortsel">
+              <span>Team</span>
+              <select [value]="scheduleTeamFilter()" (change)="scheduleTeamFilter.set($any($event.target).value)">
+                <option value="all">All Teams</option>
+                @for (t of cmTeams(); track t.name) { <option [value]="t.name">{{ t.name }}</option> }
+              </select>
+            </label>
+            <div class="seg-toggle">
+              <button [class.on]="schedulePeriod() === 'daily'" (click)="schedulePeriod.set('daily')">Daily</button>
+              <button [class.on]="schedulePeriod() === 'weekly'" (click)="schedulePeriod.set('weekly')">Weekly</button>
+              <button [class.on]="schedulePeriod() === 'rolling4'" (click)="schedulePeriod.set('rolling4')">Rolling 4 Weeks</button>
+              <button [class.on]="schedulePeriod() === 'monthly'" (click)="schedulePeriod.set('monthly')">Monthly</button>
+            </div>
+          </div>
+        </div>
+
         <div class="cp-grid">
           <div class="cp-tile">
             <div class="cp-icon green"><z-icon name="check" [size]="18"></z-icon></div>
             <div class="cp-body">
-              <div class="cp-val">{{ teamAdherenceRate() }}%</div><div class="cp-lab">Team Adherence Rate</div>
+              <div class="cp-val">{{ teamAdherenceRate() }}%</div><div class="cp-lab">Adherence Rate</div>
               <div class="pbar"><span [style.width.%]="teamAdherenceRate()"></span></div>
             </div>
           </div>
           <div class="cp-tile clk" (click)="adherenceStatusFilter.set('all')">
             <div class="cp-icon amber"><z-icon name="alert" [size]="18"></z-icon></div>
-            <div class="cp-body"><div class="cp-val">{{ adherenceExceptions().length }}</div><div class="cp-lab">Exceptions This Week</div></div>
+            <div class="cp-body"><div class="cp-val">{{ adherenceExceptions().length }}</div><div class="cp-lab">Exceptions</div></div>
           </div>
           <div class="cp-tile">
             <div class="cp-icon blue"><z-icon name="users" [size]="18"></z-icon></div>
-            <div class="cp-body"><div class="cp-val">{{ weekSchedules().length }}</div><div class="cp-lab">Care Managers Scheduled</div></div>
+            <div class="cp-body"><div class="cp-val">{{ scheduledCmCount() }}</div><div class="cp-lab">Care Managers Scheduled</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon teal"><z-icon name="calendar" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ ptoDaysForPeriod() }}</div><div class="cp-lab">PTO Days ({{ schedulePeriodLabel() }})</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="schedulePeriod.set('rolling4')">
+            <div class="cp-icon amber"><z-icon name="calendar" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ upcomingPto().length }}</div><div class="cp-lab">Upcoming PTO (Next 3 Weeks)</div></div>
           </div>
         </div>
 
+        @if (schedulePeriod() === 'weekly' || schedulePeriod() === 'daily') {
         <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">This Week's Schedule</h3><button class="btn outline sm" (click)="exportSchedule()">Export</button></div>
+          <div class="panel-pad tbl-head"><h3 class="pt">{{ schedulePeriodLabel() }}'s Schedule</h3><button class="btn outline sm" (click)="exportSchedule()">Export</button></div>
           <table class="z-table sched-table">
-            <thead><tr><th>Care Manager</th><th>Discipline</th>@for (d of weekDayLabels; track d) { <th>{{ d }}</th> }</tr></thead>
+            <thead><tr><th>Care Manager</th><th>Discipline</th>
+              @if (schedulePeriod() === 'weekly') { @for (d of weekDayLabels; track d) { <th>{{ d }}</th> } }
+              @else { <th>Today</th> }
+            </tr></thead>
             <tbody>
-            @for (w of weekSchedules(); track w.cm) {
+            @for (w of weekScheduleRows(); track w.cm) {
               <tr><td class="strong">{{ w.cm }}</td><td>{{ w.discipline }}</td>
-                @for (d of w.days; track d.date) {
-                  <td><span class="shift-chip" [attr.data-type]="d.type">{{ d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : d.start + '–' + d.end }}</span></td>
+                @if (schedulePeriod() === 'weekly') {
+                  @for (d of w.days; track d.date) {
+                    <td><span class="shift-chip" [attr.data-type]="d.type">{{ d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : d.start + '–' + d.end }}</span></td>
+                  }
+                } @else {
+                  @let today = todayDayOf(w);
+                  <td><span class="shift-chip" [attr.data-type]="today.type">{{ today.type === 'Off' ? '—' : today.type === 'PTO' ? 'PTO' : today.start + '–' + today.end }}</span></td>
                 }
               </tr>
             }
             </tbody>
           </table>
         </div>
+        } @else {
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">{{ schedulePeriodLabel() }} Schedule Summary</h3><button class="btn outline sm" (click)="exportSchedule()">Export</button></div>
+          <table class="z-table sched-table">
+            <thead><tr><th>Care Manager</th><th>Discipline</th>@for (w of weekBlocks(); track w.weekOffset) { <th>Week of {{ w.weekStart }}</th> }</tr></thead>
+            <tbody>
+            @for (row of weekRollup(); track row.cm) {
+              <tr><td class="strong">{{ row.cm }}</td><td>{{ row.discipline }}</td>
+                @for (w of row.weeks; track w.weekStart) { <td>{{ w.shifts }} shifts{{ w.pto ? ' · ' + w.pto + ' PTO' : '' }}</td> }
+              </tr>
+            }
+            </tbody>
+          </table>
+        </div>
+        }
 
         <div class="cp-donut-row mt-6">
           <div class="panel">
@@ -723,11 +790,35 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
             </table>
           </div>
         </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Adherence &amp; PTO by Care Manager</h3><button class="btn outline sm" (click)="exportPtoBalances()">Export</button></div>
+          <table class="z-table">
+            <thead><tr><th>Care Manager</th><th>Discipline</th><th>Adherence Rate ({{ schedulePeriodLabel() }})</th><th>PTO Accrued (YTD)</th><th>PTO Used</th><th>PTO Remaining</th></tr></thead>
+            <tbody>
+            @for (p of cmSummaryRows(); track p.cm) {
+              <tr><td class="strong">{{ p.cm }}</td><td>{{ p.discipline }}</td>
+                <td><span class="badge" [class.red]="p.adherenceRate < 70" [class.amber]="p.adherenceRate >= 70 && p.adherenceRate < 90" [class.green]="p.adherenceRate >= 90">{{ p.adherenceRate }}%</span></td>
+                <td>{{ p.accruedDays }}d</td><td>{{ p.usedDays }}d</td>
+                <td><span class="badge" [class.red]="p.remainingDays <= 2" [class.amber]="p.remainingDays > 2 && p.remainingDays <= 5" [class.green]="p.remainingDays > 5">{{ p.remainingDays }}d</span></td></tr>
+            }
+            </tbody>
+          </table>
+        </div>
       }
 
-      <!-- 10: Demand & Forecasting -->
-      @case (10) {
-        <div class="tab-head"><h2>Demand &amp; Forecasting</h2><span class="section-note">Referral intake volume, projected demand, and capacity coverage</span></div>
+      <!-- Demand & Forecasting -->
+      @case ('demand') {
+        <div class="tab-head">
+          <div><h2>Demand &amp; Forecasting</h2><span class="section-note">Referral intake volume, projected demand, and capacity coverage</span></div>
+          <label class="sortsel">
+            <span>Team</span>
+            <select [value]="demandTeamFilter()" (change)="demandTeamFilter.set($any($event.target).value)">
+              <option value="all">All Teams</option>
+              @for (t of cmTeams(); track t.name) { <option [value]="t.name">{{ t.name }}</option> }
+            </select>
+          </label>
+        </div>
         <div class="cp-grid">
           <div class="cp-tile">
             <div class="cp-icon blue"><z-icon name="inbox" [size]="18"></z-icon></div>
@@ -739,7 +830,7 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           </div>
           <div class="cp-tile">
             <div class="cp-icon gray"><z-icon name="users" [size]="18"></z-icon></div>
-            <div class="cp-body"><div class="cp-val">{{ demandForecast().teamCapacity }}</div><div class="cp-lab">Team Intake Capacity</div></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().teamCapacity }}</div><div class="cp-lab">{{ demandTeamFilter() === 'all' ? 'Team Intake Capacity' : 'Caseload Headroom' }}</div></div>
           </div>
           <div class="cp-tile">
             <div class="cp-icon" [class.red]="demandForecast().overCapacity" [class.green]="!demandForecast().overCapacity"><z-icon [name]="demandForecast().overCapacity ? 'alert' : 'check'" [size]="18"></z-icon></div>
@@ -748,18 +839,21 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         </div>
 
         <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Weekly Referral Volume (8 Weeks)</h3><button class="btn outline sm" (click)="exportDemand()">Export</button></div>
+          <div class="panel-pad tbl-head"><h3 class="pt">Weekly Referral Volume (8 Weeks){{ demandTeamFilter() === 'all' ? '' : ' — ' + demandTeamFilter() }}</h3><button class="btn outline sm" (click)="exportDemand()">Export</button></div>
           <div class="panel-pad" style="padding-top:0">
             <z-trend [points]="demandTrendPoints()" [labels]="demandTrendLabels()" color="#0d9488"></z-trend>
           </div>
         </div>
 
-        <div class="qhint mt-6">Projection is a trailing 4-week average of completed weeks (excludes the current partial week). Team Intake Capacity is the nominal referral load {{ intakeCoordinators.length }} Intake Coordinators can carry at once.</div>
+        <div class="qhint mt-6">
+          Projection is a trailing 4-week average of completed weeks (excludes the current partial week).
+          @if (demandTeamFilter() === 'all') { Team Intake Capacity is the nominal referral load {{ intakeCoordinators.length }} Intake Coordinators can carry at once. }
+          @else { Caseload Headroom is how many more active cases {{ demandTeamFilter() }} could take on right now (capacity minus current active) — referrals are attributed to a team by the discipline their reason maps to (see Automated Routing), since a Pending referral has no team of its own yet. }
+        </div>
       }
 
-      <!-- 11: AI / NextGen (hidden — see TABS comment above; renumbered from 9 to make room for
-           Scheduling & Adherence (9) and Demand & Forecasting (10)) -->
-      @case (11) {
+      <!-- AI / NextGen (hidden — see TAB_DEFS comment above) -->
+      @case ('ai') {
         <div class="ai-shell">
           <div class="ai-head"><h2>AI / NextGen Intelligence</h2>
             <div class="flex gap-8 center">
@@ -963,8 +1057,8 @@ export class CmDashboard {
   private rx = inject(Reassign);
   private esc = inject(Escalate);
   private pto = inject(Pto);
-  readonly tabs = TABS;
-  readonly sel = signal(0);
+  readonly tabs = TAB_DEFS;
+  readonly sel = signal('workforce');
   readonly kpiCollapsed = signal(false);
 
   readonly vis = new WidgetVisibility('zyter-cm-workforce-widgets-v2', CM_WORKFORCE_WIDGETS);
@@ -1412,45 +1506,100 @@ export class CmDashboard {
 
   // ---- Scheduling & Adherence — a fixed weekly shift pattern per care manager plus simulated
   // clock-in/out against it (see cm-schedule.ts). Not LOB-scoped: shifts are a staffing concept,
-  // not tied to a member's line of business. ----
+  // not tied to a member's line of business — sliceable by team instead, and by period
+  // (Daily/Weekly/Rolling 4 Weeks/Monthly), same "slice and dice" treatment as Workload's team
+  // filter elsewhere in this tab set. ----
   readonly weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   readonly intakeCoordinators = INTAKE_COORDINATORS;
+  readonly schedulePeriod = signal<SchedulePeriod>('weekly');
+  readonly scheduleTeamFilter = signal('all');
+  private readonly scheduleTeam = computed(() => this.scheduleTeamFilter() === 'all' ? undefined : this.scheduleTeamFilter());
+  readonly schedulePeriodLabel = computed(() => {
+    const p = this.schedulePeriod();
+    return p === 'daily' ? 'Today' : p === 'weekly' ? 'This Week' : p === 'rolling4' ? 'Rolling 4 Weeks' : 'Monthly (~5 Weeks)';
+  });
+  private cmTeamOf(name: string): string | undefined { return CARE_MANAGERS.find((c) => c.name === name)?.team; }
+  readonly scheduledCmCount = computed(() => CARE_MANAGERS.filter((cm) => !this.scheduleTeam() || cm.team === this.scheduleTeam()).length);
   readonly weekSchedules = computed(() => this.cmData.weekSchedules());
-  readonly teamAdherenceRate = computed(() => this.cmData.teamAdherenceRate());
+  readonly weekScheduleRows = computed(() => {
+    const team = this.scheduleTeam();
+    return team ? this.weekSchedules().filter((w) => this.cmTeamOf(w.cm) === team) : this.weekSchedules();
+  });
+  todayDayOf(w: CmWeekSchedule): CmShiftDay { return w.days.find((d) => d.date === this.cmData.todayIso()) ?? w.days[0]; }
+  readonly weekBlocks = computed(() => this.cmData.weekBlocksFor(this.schedulePeriod()));
+  readonly weekRollup = computed(() => {
+    const team = this.scheduleTeam();
+    const blocks = this.weekBlocks();
+    return CARE_MANAGERS.filter((cm) => !team || cm.team === team).map((cm) => ({
+      cm: cm.name, discipline: cm.discipline,
+      weeks: blocks.map((b) => {
+        const sched = b.schedules.find((s) => s.cm === cm.name);
+        const shifts = sched ? sched.days.filter((d) => d.type === 'Day' || d.type === 'Evening').length : 0;
+        const pto = sched ? sched.days.filter((d) => d.type === 'PTO').length : 0;
+        return { weekStart: b.weekStart, shifts, pto };
+      }),
+    }));
+  });
+  readonly teamAdherenceRate = computed(() => this.cmData.teamAdherenceRate(this.schedulePeriod(), this.scheduleTeam()));
   readonly teamAdherenceRateLabel = computed(() => `${this.teamAdherenceRate()}%`);
-  readonly adherenceExceptions = computed(() => this.cmData.adherenceExceptions());
-  readonly adherenceBreakdown = computed(() => this.cmData.adherenceStatusBreakdown());
+  readonly adherenceExceptions = computed(() => this.cmData.adherenceExceptions(this.schedulePeriod(), this.scheduleTeam()));
+  readonly adherenceBreakdown = computed(() => this.cmData.adherenceStatusBreakdown(this.schedulePeriod(), this.scheduleTeam()));
   readonly adherenceStatusFilter = signal<AdherenceStatus | 'all'>('all');
   readonly filteredAdherence = computed(() => {
     const f = this.adherenceStatusFilter();
-    return f === 'all' ? this.adherenceExceptions() : this.cmData.adherenceRecords().filter((a) => a.status === f);
+    const all = this.cmData.adherenceRecords(this.schedulePeriod(), this.scheduleTeam());
+    return f === 'all' ? this.adherenceExceptions() : all.filter((a) => a.status === f);
+  });
+  readonly ptoDaysForPeriod = computed(() => this.cmData.ptoDaysForPeriod(this.schedulePeriod(), this.scheduleTeam()));
+  readonly upcomingPto = computed(() => this.cmData.upcomingPto(this.scheduleTeam()));
+  readonly ptoBalances = computed(() => this.cmData.ptoBalances(this.scheduleTeam()));
+  readonly cmSummaryRows = computed(() => {
+    const stats = this.cmData.adherenceStats(this.schedulePeriod(), this.scheduleTeam());
+    const balances = new Map(this.ptoBalances().map((p) => [p.cm, p]));
+    return stats.map((s) => {
+      const bal = balances.get(s.cm);
+      return { cm: s.cm, discipline: s.discipline, adherenceRate: s.rate, accruedDays: bal?.accruedDays ?? 0, usedDays: bal?.usedDays ?? 0, remainingDays: bal?.remainingDays ?? 0 };
+    });
   });
   private readonly ADHERENCE_COLORS: Record<AdherenceStatus, string> = { 'On Time': '#10b981', 'Late Start': '#f59e0b', 'Early Leave': '#f97316', 'Overtime': '#3b82f6', 'Absence': '#ef4444' };
   readonly adherenceDonutSegments = computed((): Segment[] => this.adherenceBreakdown().map((b) => ({ label: b.status, value: b.count, color: this.ADHERENCE_COLORS[b.status] })));
   onAdherenceSegClick(s: Segment) { this.adherenceStatusFilter.set(s.label as AdherenceStatus); }
   exportSchedule() {
-    const rows = this.weekSchedules().map((w) => [w.cm, w.discipline, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
-    this.exporter.open({ title: "This Week's Schedule", name: 'cm-schedule_2026-07-17', columns: ['Care Manager', 'Discipline', ...this.weekDayLabels], rows });
+    if (this.schedulePeriod() === 'weekly' || this.schedulePeriod() === 'daily') {
+      const rows = this.weekScheduleRows().map((w) => [w.cm, w.discipline, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
+      this.exporter.open({ title: `${this.schedulePeriodLabel()}'s Schedule`, name: 'cm-schedule_2026-07-17', columns: ['Care Manager', 'Discipline', ...this.weekDayLabels], rows });
+      return;
+    }
+    const rows = this.weekRollup().map((r) => [r.cm, r.discipline, ...r.weeks.map((w) => `${w.shifts} shifts${w.pto ? ` · ${w.pto} PTO` : ''}`)]);
+    this.exporter.open({ title: `${this.schedulePeriodLabel()} Schedule Summary`, name: 'cm-schedule-summary_2026-07-17',
+      columns: ['Care Manager', 'Discipline', ...this.weekBlocks().map((b) => `Week of ${b.weekStart}`)], rows });
   }
   exportAdherence() {
     this.exporter.open({ title: 'Adherence Exceptions', name: 'cm-adherence_2026-07-17',
       columns: ['Care Manager', 'Day', 'Scheduled', 'Actual', 'Status', 'Variance (min)'],
       rows: this.adherenceExceptions().map((a) => [a.cm, a.day, `${a.scheduledStart}-${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}-${a.actualEnd}` : '—', a.status, a.varianceMin]) });
   }
+  exportPtoBalances() {
+    this.exporter.open({ title: 'Adherence & PTO by Care Manager', name: 'cm-adherence-pto-summary_2026-07-17',
+      columns: ['Care Manager', 'Discipline', 'Adherence Rate %', 'PTO Accrued (YTD)', 'PTO Used', 'PTO Remaining'],
+      rows: this.cmSummaryRows().map((p) => [p.cm, p.discipline, p.adherenceRate, p.accruedDays, p.usedDays, p.remainingDays]) });
+  }
 
   // ---- Demand & Forecasting — weekly referral volume from real `received` dates, plus a simple
-  // trailing-average projection and a comparison against the team's nominal intake capacity. ----
-  readonly demandForecast = computed(() => this.cmData.demandForecast());
+  // trailing-average projection and a comparison against capacity, sliceable by team. ----
+  readonly demandTeamFilter = signal('all');
+  readonly demandForecast = computed(() => this.cmData.demandForecast(this.demandTeamFilter() === 'all' ? undefined : this.demandTeamFilter()));
   readonly demandTrendPoints = computed(() => this.demandForecast().history.map((h) => h.count));
   readonly demandTrendLabels = computed(() => this.demandForecast().history.map((h) => h.label));
   exportDemand() {
     const f = this.demandForecast();
+    const capacityLabel = this.demandTeamFilter() === 'all' ? 'Team Intake Capacity' : 'Caseload Headroom';
     this.exporter.open({ title: 'Demand & Forecasting', name: 'cm-demand-forecast_2026-07-17',
       columns: ['Week Of', 'Referrals'], rows: f.history.map((h) => [h.start, h.count]),
       sections: [
         { label: 'Weekly Volume', name: 'cm-demand-weekly_2026-07-17', columns: ['Week Of', 'Referrals'], rows: f.history.map((h) => [h.start, h.count]) },
         { label: 'Forecast Summary', name: 'cm-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
-          rows: [['Projected Next Week', f.projected], ['Team Intake Capacity', f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
+          rows: [['Projected Next Week', f.projected], [capacityLabel, f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
   }
 
