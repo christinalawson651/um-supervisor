@@ -2,12 +2,19 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
+import { Donut, Segment, Trend } from '../shared/charts';
+import { Icon } from '../shared/icon';
 import { Members } from '../shared/members';
 import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
+import {
+  APPEALS_REVIEWERS, SchedulePeriod, AdherenceStatus, ReviewerWeekSchedule, ReviewerShiftDay, ReviewerWeekBlock, ReviewerAdherenceDay,
+  APPEALS_WEEK_SCHEDULES, APPEALS_ADHERENCE, APPEALS_ROLLING_4_WEEKS, APPEALS_MONTHLY_WEEKS,
+  APPEALS_UPCOMING_WEEKS, APPEALS_PTO_BALANCES, APPEALS_TODAY_ISO, APPEALS_WEEK_START, appealsIsoDate, appealsAddDays,
+} from '../data/appeals-schedule';
 
 interface Appeal {
   appealId: string; auth: string; member: string; service: string;
@@ -16,24 +23,41 @@ interface Appeal {
 }
 interface Reviewer { name: string; role: string; open: number; nearSla: number; overdue: number; overturnRate: number; utilization: number; }
 
-const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Insights','Risk & Escalation','Level & Aging','Intake & Documentation','Provider Patterns','Overturn Cost Impact','Audit & Compliance','AI / NextGen'];
+// Tabs are keyed by a stable string id, not by array position — @switch(sel()) matches on
+// TAB.key, so reordering this list never requires renumbering any @case block below (same
+// convention as CM's cm-dashboard.ts TAB_DEFS).
+interface TabDef { key: string; label: string; }
+const TAB_DEFS: TabDef[] = [
+  { key: 'workforce', label: 'Workforce & Queue' },
+  { key: 'schedule', label: 'Scheduling & Adherence' },
+  { key: 'tat', label: 'TAT & Deadline Compliance' },
+  { key: 'determination', label: 'Determination Insights' },
+  { key: 'risk', label: 'Risk & Escalation' },
+  { key: 'level', label: 'Level & Aging' },
+  { key: 'intake', label: 'Intake & Documentation' },
+  { key: 'provider', label: 'Provider Patterns' },
+  { key: 'overturn', label: 'Overturn Cost Impact' },
+  { key: 'audit', label: 'Audit & Compliance' },
+  { key: 'demand', label: 'Demand & Forecasting' },
+  { key: 'ai', label: 'AI / NextGen' },
+];
 
 @Component({
   selector: 'app-appeals-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring, FormsModule],
+  imports: [KpiStrip, Ring, Donut, Trend, FormsModule, Icon],
   template: `
     <app-kpi-strip [items]="displayKpis()" />
 
     <nav class="subtabs">
-      @for (t of tabs; track t; let i = $index) {
-        <button class="subtab" [class.active]="sel() === i" (click)="sel.set(i)">{{ t }}</button>
+      @for (t of tabs; track t.key) {
+        <button class="subtab" [class.active]="sel() === t.key" (click)="sel.set(t.key)">{{ t.label }}</button>
       }
     </nav>
 
     @switch (sel()) {
-      <!-- 0: Workforce & Queue -->
-      @case (0) {
+      <!-- Workforce & Queue -->
+      @case ('workforce') {
         <div class="tab-head"><h2>Appeals Worklist</h2><span class="section-note">Prioritized by smart priority — deadline &amp; risk weighted</span></div>
         <div class="wl-tools">
           <div class="pills">
@@ -77,8 +101,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</tbody></table></div>
       }
 
-      <!-- 1: TAT & Deadline Compliance -->
-      @case (1) {
+      <!-- TAT & Deadline Compliance -->
+      @case ('tat') {
         <div class="tab-head"><h2>TAT &amp; Deadline Compliance</h2><span class="section-note">Regulatory deadline adherence</span></div>
         <div class="panel panel-pad"><div class="sla-grid">
           <div class="donut"><z-ring [value]="88" [size]="120" [thickness]="12" tone="teal"></z-ring><div class="dlab">On-Time Rate</div></div>
@@ -96,8 +120,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
         </div></div>
       }
 
-      <!-- 2: Determination Insights -->
-      @case (2) {
+      <!-- Determination Insights -->
+      @case ('determination') {
         <div class="tab-head"><h2>Determination Insights</h2><span class="section-note">Outcome mix and overturn drivers</span></div>
         <div class="dstats">
           <div class="dstat teal"><div class="dv">61%</div><div class="dl">Overturned</div></div>
@@ -115,8 +139,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</tbody></table></div>
       }
 
-      <!-- 3: Risk & Escalation -->
-      @case (3) {
+      <!-- Risk & Escalation -->
+      @case ('risk') {
         <div class="tab-head"><h2>Risk &amp; Escalation</h2><span class="section-note note-warn">Appeals at deadline or escalation risk</span></div>
         <div class="rtiles">
           <div class="rtile red"><div class="rl">Overdue</div><div class="rv">1</div><div class="rf">immediate action</div></div>
@@ -134,8 +158,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</tbody></table></div>
       }
 
-      <!-- 4: Level & Aging -->
-      @case (4) {
+      <!-- Level & Aging -->
+      @case ('level') {
         <div class="tab-head"><h2>Level &amp; Aging</h2><span class="section-note">Volume &amp; aging by appeal level</span></div>
         <div class="dstats">
           <div class="dstat blue"><div class="dv">11</div><div class="dl">Level 1 (Internal)</div></div>
@@ -148,8 +172,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</div></div>
       }
 
-      <!-- 5: Intake & Documentation -->
-      @case (5) {
+      <!-- Intake & Documentation -->
+      @case ('intake') {
         <div class="tab-head"><h2>Intake &amp; Documentation</h2><span class="section-note">Appeal intake completeness</span></div>
         <div class="grid-3">
           <div class="panel panel-pad bar-block"><div class="bar-top">Complete Intake</div><div class="bar-val">83%</div><div class="pbar"><span style="width:83%"></span></div></div>
@@ -163,8 +187,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</tbody></table></div>
       }
 
-      <!-- 6: Provider Patterns -->
-      @case (6) {
+      <!-- Provider Patterns -->
+      @case ('provider') {
         <div class="tab-head"><h2>Provider Appeal Patterns</h2><span class="section-note">Providers driving appeals &amp; overturns</span></div>
         <div class="panel"><table class="z-table">
           <thead><tr><th>Provider</th><th>Appeals</th><th>Overturn Rate</th><th>Top Service</th></tr></thead>
@@ -174,8 +198,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</tbody></table></div>
       }
 
-      <!-- 7: Overturn Cost Impact -->
-      @case (7) {
+      <!-- Overturn Cost Impact -->
+      @case ('overturn') {
         <div class="tab-head"><h2>Overturn Cost Impact</h2><span class="section-note">Financial impact of appeal determinations</span></div>
         <div class="grid-3">
           <div class="metric-tile"><div class="val">$0.2M</div><div class="lab">Cost Reinstated (overturns)</div></div>
@@ -190,8 +214,8 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</tbody></table></div>
       }
 
-      <!-- 8: Audit & Compliance -->
-      @case (8) {
+      <!-- Audit & Compliance -->
+      @case ('audit') {
         <div class="tab-head"><h2>Audit &amp; Compliance</h2><span class="section-note">Regulatory timeliness &amp; notices</span></div>
         <div class="grid-3">
           <div class="panel panel-pad"><div class="clab">Timely Determinations</div><div class="cval">96%</div><div class="pbar"><span style="width:96%"></span></div></div>
@@ -206,8 +230,157 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
           }</tbody></table></div>
       }
 
-      <!-- 9: AI / NextGen -->
-      @case (9) {
+      <!-- Scheduling & Adherence -->
+      @case ('schedule') {
+        <div class="tab-head">
+          <div><h2>Scheduling &amp; Adherence</h2><span class="section-note">Reviewer shift schedule, adherence, and PTO — {{ schedulePeriodLabel() }}</span></div>
+          <div class="seg-toggle">
+            <button [class.on]="schedulePeriod() === 'daily'" (click)="schedulePeriod.set('daily')">Daily</button>
+            <button [class.on]="schedulePeriod() === 'weekly'" (click)="schedulePeriod.set('weekly')">Weekly</button>
+            <button [class.on]="schedulePeriod() === 'rolling4'" (click)="schedulePeriod.set('rolling4')">Rolling 4 Weeks</button>
+            <button [class.on]="schedulePeriod() === 'monthly'" (click)="schedulePeriod.set('monthly')">Monthly</button>
+          </div>
+        </div>
+
+        <div class="cp-grid">
+          <div class="cp-tile">
+            <div class="cp-icon green"><z-icon name="check" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ teamAdherenceRate() }}%</div><div class="cp-lab">Adherence Rate</div><div class="pbar"><span [style.width.%]="teamAdherenceRate()"></span></div></div>
+          </div>
+          <div class="cp-tile clk" (click)="adherenceStatusFilter.set('all')">
+            <div class="cp-icon amber"><z-icon name="alert" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ adherenceExceptions().length }}</div><div class="cp-lab">Exceptions</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon blue"><z-icon name="user" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ APPEALS_REVIEWERS.length }}</div><div class="cp-lab">Reviewers Scheduled</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon teal"><z-icon name="calendar" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ ptoDaysForPeriod() }}</div><div class="cp-lab">PTO Days ({{ schedulePeriodLabel() }})</div></div>
+          </div>
+          <div class="cp-tile clk" (click)="schedulePeriod.set('rolling4')">
+            <div class="cp-icon amber"><z-icon name="calendar" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ upcomingPto().length }}</div><div class="cp-lab">Upcoming PTO (Next 3 Weeks)</div></div>
+          </div>
+        </div>
+
+        @if (schedulePeriod() === 'weekly' || schedulePeriod() === 'daily') {
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">{{ schedulePeriodLabel() }}'s Schedule</h3><button class="btn outline sm" (click)="exportSchedule()">Export</button></div>
+          <table class="z-table sched-table">
+            <thead><tr><th>Reviewer</th><th>Role</th>
+              @if (schedulePeriod() === 'weekly') { @for (d of weekDayLabels; track d) { <th>{{ d }}</th> } }
+              @else { <th>Today</th> }
+            </tr></thead>
+            <tbody>
+            @for (w of weekSchedules(); track w.reviewer) {
+              <tr><td class="strong">{{ w.reviewer }}</td><td>{{ w.role }}</td>
+                @if (schedulePeriod() === 'weekly') {
+                  @for (d of w.days; track d.date) {
+                    <td><span class="shift-chip" [attr.data-type]="d.type">{{ d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : d.start + '–' + d.end }}</span></td>
+                  }
+                } @else {
+                  @let today = todayDayOf(w);
+                  <td><span class="shift-chip" [attr.data-type]="today.type">{{ today.type === 'Off' ? '—' : today.type === 'PTO' ? 'PTO' : today.start + '–' + today.end }}</span></td>
+                }
+              </tr>
+            }
+            </tbody>
+          </table>
+        </div>
+        } @else {
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">{{ schedulePeriodLabel() }} Schedule Summary</h3><button class="btn outline sm" (click)="exportSchedule()">Export</button></div>
+          <table class="z-table sched-table">
+            <thead><tr><th>Reviewer</th><th>Role</th>@for (w of weekBlocks(); track w.weekOffset) { <th>Week of {{ w.weekStart }}</th> }</tr></thead>
+            <tbody>
+            @for (row of weekRollup(); track row.reviewer) {
+              <tr><td class="strong">{{ row.reviewer }}</td><td>{{ row.role }}</td>
+                @for (w of row.weeks; track w.weekStart) { <td>{{ w.shifts }} shifts{{ w.pto ? ' · ' + w.pto + ' PTO' : '' }}</td> }
+              </tr>
+            }
+            </tbody>
+          </table>
+        </div>
+        }
+
+        <div class="cp-donut-row mt-6">
+          <div class="panel">
+            <div class="panel-pad tbl-head"><h3 class="pt">Adherence Breakdown</h3></div>
+            <div class="panel-pad" style="padding-top:0">
+              <z-donut [segments]="adherenceDonutSegments()" [centerValue]="teamAdherenceRateLabel()" centerLabel="On Time" [clickable]="true" (segClick)="onAdherenceSegClick($event)"></z-donut>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-pad tbl-head">
+              <h3 class="pt">{{ adherenceStatusFilter() === 'all' ? 'Exceptions' : adherenceStatusFilter() }} ({{ filteredAdherence().length }})</h3>
+              @if (adherenceStatusFilter() !== 'all') { <button class="btn outline sm" (click)="adherenceStatusFilter.set('all')">Show Exceptions</button> }
+            </div>
+            <table class="z-table">
+              <thead><tr><th>Reviewer</th><th>Day</th><th>Scheduled</th><th>Actual</th><th>Status</th><th>Variance</th></tr></thead>
+              <tbody>
+              @for (a of filteredAdherence(); track a.reviewer + a.date) {
+                <tr><td class="strong">{{ a.reviewer }}</td><td>{{ a.day }}</td><td>{{ a.scheduledStart }}–{{ a.scheduledEnd }}</td>
+                  <td>{{ a.actualStart ?? '—' }}{{ a.actualEnd ? '–' + a.actualEnd : '' }}</td>
+                  <td><span class="badge" [class.red]="a.status==='Absence'" [class.amber]="a.status==='Late Start' || a.status==='Early Leave'" [class.blue]="a.status==='Overtime'" [class.green]="a.status==='On Time'">{{ a.status }}</span></td>
+                  <td>{{ a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm' }}</td></tr>
+              } @empty { <tr><td colspan="6" class="empty">No records for this filter.</td></tr> }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Adherence &amp; PTO by Reviewer</h3><button class="btn outline sm" (click)="exportPtoBalances()">Export</button></div>
+          <table class="z-table">
+            <thead><tr><th>Reviewer</th><th>Role</th><th>Adherence Rate</th><th>PTO Accrued (YTD)</th><th>PTO Used</th><th>PTO Remaining</th></tr></thead>
+            <tbody>
+            @for (p of reviewerSummaryRows(); track p.reviewer) {
+              <tr><td class="strong">{{ p.reviewer }}</td><td>{{ p.role }}</td>
+                <td><span class="badge" [class.red]="p.adherenceRate < 70" [class.amber]="p.adherenceRate >= 70 && p.adherenceRate < 90" [class.green]="p.adherenceRate >= 90">{{ p.adherenceRate }}%</span></td>
+                <td>{{ p.accruedDays }}d</td><td>{{ p.usedDays }}d</td>
+                <td><span class="badge" [class.red]="p.remainingDays <= 2" [class.amber]="p.remainingDays > 2 && p.remainingDays <= 5" [class.green]="p.remainingDays > 5">{{ p.remainingDays }}d</span></td></tr>
+            }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      <!-- Demand & Forecasting -->
+      @case ('demand') {
+        <div class="tab-head"><h2>Demand &amp; Forecasting</h2><span class="section-note">Appeal intake volume, projected demand, and capacity coverage</span></div>
+        <div class="cp-grid">
+          <div class="cp-tile">
+            <div class="cp-icon blue"><z-icon name="inbox" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().history[demandForecast().history.length - 1].count }}</div><div class="cp-lab">Appeals This Week (to date)</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon teal"><z-icon name="barchart" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().projected }}</div><div class="cp-lab">Projected Next Week</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon gray"><z-icon name="users" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().teamCapacity }}</div><div class="cp-lab">Reviewer Capacity</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon" [class.red]="demandForecast().overCapacity" [class.green]="!demandForecast().overCapacity"><z-icon [name]="demandForecast().overCapacity ? 'alert' : 'check'" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().overCapacity ? 'At Risk' : 'Adequate' }}</div><div class="cp-lab">Coverage Outlook</div></div>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Weekly Appeal Volume (8 Weeks)</h3><button class="btn outline sm" (click)="exportDemand()">Export</button></div>
+          <div class="panel-pad" style="padding-top:0">
+            <z-trend [points]="demandTrendPoints()" [labels]="demandTrendLabels()" color="#5B47E0"></z-trend>
+          </div>
+        </div>
+
+        <div class="qhint mt-6">Projection is a trailing 4-week average of completed weeks (excludes the current partial week). Reviewer Capacity is the nominal appeal load {{ APPEALS_REVIEWERS.length }} reviewers can carry at once.</div>
+      }
+
+      <!-- AI / NextGen -->
+      @case ('ai') {
         <div class="ai-shell">
           <div class="ai-head"><h2>AI / NextGen Intelligence</h2><span class="ai-pill">AI-Powered</span></div>
           <div class="recs">
@@ -298,6 +471,35 @@ const TABS = ['Workforce & Queue','TAT & Deadline Compliance','Determination Ins
     .rt { font-size:13.5px; font-weight:700; margin-bottom:6px; } .rd { font-size:12.5px; color:var(--gray-500); line-height:1.5; margin-bottom:14px; } .rbtn { width:100%; justify-content:center; }
     .ai-bottom { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px; }
     .gauges { display:flex; justify-content:space-around; padding:10px 0; } .g { text-align:center; } .gl { font-size:12px; color:var(--gray-500); font-weight:600; margin-top:10px; }
+
+    /* ---- Scheduling & Adherence / Demand & Forecasting (same shape as CM's cm-dashboard.ts) ---- */
+    .seg-toggle { display: inline-flex; border:1px solid var(--gray-300); border-radius:8px; overflow:hidden; }
+    .seg-toggle button { border:none; background:#fff; padding:7px 14px; font-size:12px; font-weight:600; color:var(--gray-500); cursor:pointer; }
+    .seg-toggle button.on { background:#5B47E0; color:#fff; }
+    .cp-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:14px; }
+    .cp-tile { display:flex; gap:12px; align-items:flex-start; background:#fff; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; transition: box-shadow .12s, transform .12s; }
+    .cp-tile:hover { box-shadow: 0 4px 12px rgba(16,24,40,.10); transform: translateY(-1px); }
+    .cp-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
+    .cp-icon.teal { background:#E1F5EE; color:#1D9E75; }
+    .cp-icon.amber { background:#FEF3E2; color:#C07A0A; }
+    .cp-icon.red { background:#FEF0F0; color:#D94040; }
+    .cp-icon.green { background:#E1F5EE; color:#1D9E75; }
+    .cp-icon.blue { background:#EAF2FC; color:#1A6BC4; }
+    .cp-icon.gray { background:var(--gray-100); color:var(--gray-500); }
+    .cp-body { flex:1; min-width:0; }
+    .cp-val { font-size:22px; font-weight:700; color:var(--ink); line-height:1.15; }
+    .cp-lab { font-size:11px; font-weight:600; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
+    .cp-body .pbar { margin-top:8px; }
+    .cp-donut-row { display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; align-items:start; }
+    @media (max-width: 900px) { .cp-donut-row { grid-template-columns:1fr; } }
+    .sched-table th, .sched-table td { text-align:center; }
+    .sched-table th:first-child, .sched-table td:first-child, .sched-table th:nth-child(2), .sched-table td:nth-child(2) { text-align:left; }
+    .shift-chip { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; white-space:nowrap; }
+    .shift-chip[data-type="Day"] { background:#EAF2FC; color:#1A6BC4; }
+    .shift-chip[data-type="Evening"] { background:#EEEAFC; color:#5B47E0; }
+    .shift-chip[data-type="Off"] { background:var(--gray-100); color:var(--gray-400); }
+    .shift-chip[data-type="PTO"] { background:#FEF3E2; color:#C07A0A; }
+    .qhint { font-size:12px; color:var(--gray-500); background:var(--gray-50, #f9fafb); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
   `],
 })
 export class AppealsDashboard {
@@ -306,8 +508,9 @@ export class AppealsDashboard {
   private data = inject(DashboardData);
   private exporter = inject(Exporter);
   private lookback = inject(Lookback);
-  readonly tabs = TABS;
-  readonly sel = signal(0);
+  readonly tabs = TAB_DEFS;
+  readonly sel = signal('workforce');
+  readonly APPEALS_REVIEWERS = APPEALS_REVIEWERS;
 
   private readonly PERIOD_VALUES: Record<string, string[]> = {
     today: ['3', '1', '1', '0', '0', '60%', '5.9d', '2'],
@@ -379,6 +582,123 @@ export class AppealsDashboard {
     this.exporter.open({ title: 'Reviewer Workload', name: 'appeals-reviewers_2026-07-17',
       columns: ['Reviewer', 'Role', 'Open', 'Near SLA', 'Overdue', 'Overturn Rate %', 'Utilization %'],
       rows: this.reviewers.map((r) => [r.name, r.role, r.open, r.nearSla, r.overdue, r.overturnRate, r.utilization]) });
+  }
+
+  // ---- Scheduling & Adherence — same generalized weekOffset-parametrized shift/adherence model
+  // as CM (see data/appeals-schedule.ts), sized to this 3-person roster. No team filter here (CM's
+  // "slice and dice" ask) — Appeals has no team concept, just 3 named reviewers, too small a roster
+  // for a team dropdown to mean anything. ----
+  readonly weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  readonly schedulePeriod = signal<SchedulePeriod>('weekly');
+  readonly schedulePeriodLabel = computed(() => {
+    const p = this.schedulePeriod();
+    return p === 'daily' ? 'Today' : p === 'weekly' ? 'This Week' : p === 'rolling4' ? 'Rolling 4 Weeks' : 'Monthly (~5 Weeks)';
+  });
+  readonly weekSchedules = computed(() => APPEALS_WEEK_SCHEDULES);
+  todayDayOf(w: ReviewerWeekSchedule): ReviewerShiftDay { return w.days.find((d) => d.date === APPEALS_TODAY_ISO) ?? w.days[0]; }
+  readonly weekBlocks = computed((): ReviewerWeekBlock[] => {
+    const p = this.schedulePeriod();
+    if (p === 'rolling4') return APPEALS_ROLLING_4_WEEKS;
+    if (p === 'monthly') return APPEALS_MONTHLY_WEEKS;
+    return [{ weekOffset: 0, weekStart: APPEALS_TODAY_ISO, schedules: APPEALS_WEEK_SCHEDULES, adherence: APPEALS_ADHERENCE }];
+  });
+  readonly weekRollup = computed(() => APPEALS_REVIEWERS.map((rv) => ({
+    reviewer: rv.name, role: rv.role,
+    weeks: this.weekBlocks().map((b) => {
+      const sched = b.schedules.find((s) => s.reviewer === rv.name);
+      const shifts = sched ? sched.days.filter((d) => d.type === 'Day' || d.type === 'Evening').length : 0;
+      const pto = sched ? sched.days.filter((d) => d.type === 'PTO').length : 0;
+      return { weekStart: b.weekStart, shifts, pto };
+    }),
+  })));
+  private adherenceForPeriod(): ReviewerAdherenceDay[] {
+    if (this.schedulePeriod() === 'daily') return APPEALS_ADHERENCE.filter((a) => a.date === APPEALS_TODAY_ISO);
+    return this.weekBlocks().flatMap((b) => b.adherence);
+  }
+  readonly teamAdherenceRate = computed(() => {
+    const recs = this.adherenceForPeriod();
+    const total = recs.length || 1;
+    return Math.round((recs.filter((a) => a.status === 'On Time').length / total) * 100);
+  });
+  readonly teamAdherenceRateLabel = computed(() => `${this.teamAdherenceRate()}%`);
+  readonly adherenceExceptions = computed(() => this.adherenceForPeriod().filter((a) => a.status !== 'On Time'));
+  readonly adherenceBreakdown = computed(() => {
+    const recs = this.adherenceForPeriod();
+    const statuses: AdherenceStatus[] = ['On Time', 'Late Start', 'Early Leave', 'Overtime', 'Absence'];
+    return statuses.map((status) => ({ status, count: recs.filter((a) => a.status === status).length }));
+  });
+  readonly adherenceStatusFilter = signal<AdherenceStatus | 'all'>('all');
+  readonly filteredAdherence = computed(() => {
+    const f = this.adherenceStatusFilter();
+    return f === 'all' ? this.adherenceExceptions() : this.adherenceForPeriod().filter((a) => a.status === f);
+  });
+  private readonly ADHERENCE_COLORS: Record<AdherenceStatus, string> = { 'On Time': '#1D9E75', 'Late Start': '#C07A0A', 'Early Leave': '#f97316', 'Overtime': '#1A6BC4', 'Absence': '#D94040' };
+  readonly adherenceDonutSegments = computed((): Segment[] => this.adherenceBreakdown().map((b) => ({ label: b.status, value: b.count, color: this.ADHERENCE_COLORS[b.status] })));
+  onAdherenceSegClick(s: Segment) { this.adherenceStatusFilter.set(s.label as AdherenceStatus); }
+  readonly ptoDaysForPeriod = computed(() => {
+    const schedules = this.schedulePeriod() === 'daily' ? APPEALS_WEEK_SCHEDULES : this.weekBlocks().flatMap((b) => b.schedules);
+    return schedules.reduce((sum, s) => sum + s.days.filter((d) => d.type === 'PTO' && (this.schedulePeriod() !== 'daily' || d.date === APPEALS_TODAY_ISO)).length, 0);
+  });
+  readonly upcomingPto = computed(() => {
+    const out: { reviewer: string; date: string; day: string }[] = [];
+    APPEALS_UPCOMING_WEEKS.forEach((block) => block.schedules.forEach((s) => {
+      s.days.forEach((d) => { if (d.type === 'PTO' && d.date >= APPEALS_TODAY_ISO) out.push({ reviewer: s.reviewer, date: d.date, day: d.day }); });
+    }));
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+  });
+  readonly reviewerSummaryRows = computed(() => {
+    const byReviewer = new Map<string, ReviewerAdherenceDay[]>();
+    this.adherenceForPeriod().forEach((a) => { if (!byReviewer.has(a.reviewer)) byReviewer.set(a.reviewer, []); byReviewer.get(a.reviewer)!.push(a); });
+    const balances = new Map(APPEALS_PTO_BALANCES.map((p) => [p.reviewer, p]));
+    return APPEALS_REVIEWERS.map((rv) => {
+      const mine = byReviewer.get(rv.name) ?? [];
+      const rate = mine.length ? Math.round((mine.filter((r) => r.status === 'On Time').length / mine.length) * 100) : 100;
+      const bal = balances.get(rv.name);
+      return { reviewer: rv.name, role: rv.role, adherenceRate: rate, accruedDays: bal?.accruedDays ?? 0, usedDays: bal?.usedDays ?? 0, remainingDays: bal?.remainingDays ?? 0 };
+    });
+  });
+  exportSchedule() {
+    if (this.schedulePeriod() === 'weekly' || this.schedulePeriod() === 'daily') {
+      const rows = this.weekSchedules().map((w) => [w.reviewer, w.role, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
+      this.exporter.open({ title: `${this.schedulePeriodLabel()}'s Schedule`, name: 'appeals-schedule_2026-07-17', columns: ['Reviewer', 'Role', ...this.weekDayLabels], rows });
+      return;
+    }
+    const rows = this.weekRollup().map((r) => [r.reviewer, r.role, ...r.weeks.map((w) => `${w.shifts} shifts${w.pto ? ` · ${w.pto} PTO` : ''}`)]);
+    this.exporter.open({ title: `${this.schedulePeriodLabel()} Schedule Summary`, name: 'appeals-schedule-summary_2026-07-17',
+      columns: ['Reviewer', 'Role', ...this.weekBlocks().map((b) => `Week of ${b.weekStart}`)], rows });
+  }
+  exportPtoBalances() {
+    this.exporter.open({ title: 'Adherence & PTO by Reviewer', name: 'appeals-adherence-pto_2026-07-17',
+      columns: ['Reviewer', 'Role', 'Adherence Rate %', 'PTO Accrued (YTD)', 'PTO Used', 'PTO Remaining'],
+      rows: this.reviewerSummaryRows().map((p) => [p.reviewer, p.role, p.adherenceRate, p.accruedDays, p.usedDays, p.remainingDays]) });
+  }
+
+  // ---- Demand & Forecasting — this roster's 8 hand-authored appeals are a curated worklist
+  // snapshot, not a full history, so weekly volume here is a small deterministic series (same
+  // "no RNG" convention as everywhere else) rather than bucketing those 8 records by date. ----
+  private readonly demandHistoryRaw = Array.from({ length: 9 }, (_, i) => 2 + ((i * 5 + 3) % 4));
+  readonly demandForecast = computed(() => {
+    const history = this.demandHistoryRaw.map((count, i) => {
+      const start = appealsAddDays(APPEALS_WEEK_START, -(this.demandHistoryRaw.length - 1 - i) * 7);
+      return { label: `${start.getMonth() + 1}/${start.getDate()}`, start: appealsIsoDate(start), count };
+    });
+    const complete = history.slice(0, -1);
+    const recentBasis = complete.slice(-4).map((w) => w.count);
+    const projected = recentBasis.length ? Math.round(recentBasis.reduce((s, v) => s + v, 0) / recentBasis.length) : 0;
+    const teamCapacity = APPEALS_REVIEWERS.length * 6; // nominal ~6 open appeals per reviewer at once
+    return { history, projected, teamCapacity, overCapacity: projected > teamCapacity };
+  });
+  readonly demandTrendPoints = computed(() => this.demandForecast().history.map((h) => h.count));
+  readonly demandTrendLabels = computed(() => this.demandForecast().history.map((h) => h.label));
+  exportDemand() {
+    const f = this.demandForecast();
+    this.exporter.open({ title: 'Demand & Forecasting', name: 'appeals-demand-forecast_2026-07-17',
+      columns: ['Week Of', 'Appeals'], rows: f.history.map((h) => [h.start, h.count]),
+      sections: [
+        { label: 'Weekly Volume', name: 'appeals-demand-weekly_2026-07-17', columns: ['Week Of', 'Appeals'], rows: f.history.map((h) => [h.start, h.count]) },
+        { label: 'Forecast Summary', name: 'appeals-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
+          rows: [['Projected Next Week', f.projected], ['Reviewer Capacity', f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
+      ] });
   }
 
   readonly reviewers: Reviewer[] = [
