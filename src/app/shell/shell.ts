@@ -22,6 +22,8 @@ import { CmDashboard } from '../modules/cm-dashboard';
 import { AppealsDashboard } from '../modules/appeals-dashboard';
 
 import { WorkforceTab } from '../tabs/workforce-tab';
+import { SchedulingTab } from '../tabs/scheduling-tab';
+import { DemandTab } from '../tabs/demand-tab';
 import { TatTab } from '../tabs/tat-tab';
 import { ClinicalTab } from '../tabs/clinical-tab';
 import { RiskTab } from '../tabs/risk-tab';
@@ -34,20 +36,26 @@ import { AiTab } from '../tabs/ai-tab';
 import { ReferralsTab } from '../tabs/referrals-tab';
 
 // AI / NextGen Intelligence is temporarily hidden — not deleted, just not listed/switched to.
-// To bring it back: add 'AI / NextGen Intelligence' before 'CM Referrals' here, and restore its
-// @case (9) in shell.html (bumping CM Referrals back to @case (10)) and in exportCsv() below.
-const TABS = [
-  'Workforce & Queue Management',
-  'TAT Compliance',
-  'Clinical Decision Insights',
-  'Risk & Escalation Panel',
-  'Concurrent Review Monitoring',
-  'Intake & Documentation Quality',
-  'Provider & Network Insights',
-  'Cost & Utilization Insights',
-  'Audit & Compliance',
-  'CM Referrals',
-] as const;
+// To bring it back: add an 'ai' entry to TAB_DEFS here, and restore its @case('ai') in shell.html.
+//
+// Tabs are keyed by a stable string id, not by array position — shell.html's inner
+// @switch(selected()) matches on TAB.key, so reordering this list never requires renumbering any
+// @case block (same convention as CM/Appeals' dashboards). selected() itself holds a key, not an index.
+interface TabDef { key: string; label: string; }
+const TAB_DEFS: TabDef[] = [
+  { key: 'workforce', label: 'Workforce & Queue Management' },
+  { key: 'schedule', label: 'Scheduling & Adherence' },
+  { key: 'tat', label: 'TAT Compliance' },
+  { key: 'clinical', label: 'Clinical Decision Insights' },
+  { key: 'risk', label: 'Risk & Escalation Panel' },
+  { key: 'concurrent', label: 'Concurrent Review Monitoring' },
+  { key: 'intake', label: 'Intake & Documentation Quality' },
+  { key: 'provider', label: 'Provider & Network Insights' },
+  { key: 'cost', label: 'Cost & Utilization Insights' },
+  { key: 'audit', label: 'Audit & Compliance' },
+  { key: 'demand', label: 'Demand & Forecasting' },
+  { key: 'referrals', label: 'CM Referrals' },
+];
 
 const RAIL = [
   { icon: 'barchart', label: 'Dashboard', active: true, badge: 0 },
@@ -78,7 +86,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   standalone: true,
   imports: [
     Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard,
-    WorkforceTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
+    WorkforceTab, SchedulingTab, DemandTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab,
   ],
   templateUrl: './shell.html',
@@ -90,12 +98,12 @@ export class Shell {
   private metrics = inject(Metrics);
   private exporter = inject(Exporter);
   readonly nav = inject(Nav);
-  readonly tabs = TABS;
+  readonly tabs = TAB_DEFS;
   readonly rail = RAIL;
   readonly modules = MODULES;
   readonly headings = HEADINGS;
   readonly visibleTabs = computed(() => MODULES.filter((m) => this.nav.visibleModules().includes(m.id)));
-  readonly selected = signal(0);
+  readonly selected = signal('workforce');
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
   readonly kpiCollapsed = signal(false); // collapsible for screen real estate
 
@@ -122,7 +130,7 @@ export class Shell {
     return this.data.liveKpis(this.lookback.windowDays());
   });
 
-  select(i: number) { this.selected.set(i); }
+  select(key: string) { this.selected.set(key); }
   drill(key: string) { this.metrics.open(key); }
 
   openHistory() {
@@ -176,27 +184,31 @@ export class Shell {
     const days = this.period() === '30d' ? undefined : this.lookback.windowDays();
     let name = 'export', columns: string[] = [], rows: (string | number)[][] = [];
     switch (this.selected()) {
-      case 0: name = 'workforce-nurses'; columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
+      case 'workforce': name = 'workforce-nurses'; columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
         rows = d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]); break;
-      case 1: name = 'tat-compliance'; columns = ['Metric', 'Value'];
+      case 'schedule': case 'demand':
+        this.ix.toast('Use each panel\'s own Export button on this tab for its details.', 'info');
+        return;
+      case 'tat': name = 'tat-compliance'; columns = ['Metric', 'Value'];
         rows = [...liveTatBuckets(lob, days).map((b) => [b.label, b.count] as (string | number)[]), ...liveTatStats(lob, days).map((s) => [s.label, s.value] as (string | number)[])]; break;
-      case 2: name = 'clinical-decisions'; columns = ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'];
+      case 'clinical': name = 'clinical-decisions'; columns = ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'];
         rows = liveDecisionRows(lob, days).map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]); break;
-      case 3: name = 'risk-escalation'; columns = ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'];
+      case 'risk': name = 'risk-escalation'; columns = ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'];
         rows = d.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]); break;
-      case 4: name = 'concurrent-review'; columns = ['Member', 'Facility', 'LOS', 'Total Certified Days', 'Certified Through', 'Days Remaining', 'Uncertified Days', 'Next Review Due', 'Requested/Approved', 'Status', 'Reviewer', 'Expected Discharge', 'Next Action'];
+      case 'concurrent': name = 'concurrent-review'; columns = ['Member', 'Facility', 'LOS', 'Total Certified Days', 'Certified Through', 'Days Remaining', 'Uncertified Days', 'Next Review Due', 'Requested/Approved', 'Status', 'Reviewer', 'Expected Discharge', 'Next Action'];
         rows = liveConcurrentRows(lob, days).map((r) => [r.member, r.facility, r.los, r.totalCertifiedDays, r.certifiedThrough, r.daysRemaining, r.uncertifiedDays, r.nextReview, `${r.daysRequested} / ${r.totalCertifiedDays}`, r.status, r.reviewer, r.expectedDischarge, r.nextAction]); break;
-      case 5: name = 'intake-missing-fields'; columns = ['Field', 'Missing Count', '% of Submissions'];
+      case 'intake': name = 'intake-missing-fields'; columns = ['Field', 'Missing Count', '% of Submissions'];
         rows = liveMissingFields(lob, days).map((f) => [f.field, f.count, f.pct]); break;
-      case 6: name = 'providers'; columns = ['Provider/Facility', 'Specialty', 'Network Status', 'Total Requests', 'OON Requests', 'Approval Rate %', 'Denial Rate %', 'Incomplete Rate %', 'Avg Response (days)', 'Expedited Rate %', 'Primary Insight'];
+      case 'provider': name = 'providers'; columns = ['Provider/Facility', 'Specialty', 'Network Status', 'Total Requests', 'OON Requests', 'Approval Rate %', 'Denial Rate %', 'Incomplete Rate %', 'Avg Response (days)', 'Expedited Rate %', 'Primary Insight'];
         rows = liveProviderInsights(lob, days).map((p) => [p.provider, p.specialty, p.networkStatus, p.totalRequests, p.oonRequests, p.approvalRate, p.denialRate, p.incompleteRate, p.avgResponseDays, p.expeditedRate, p.primaryInsight]); break;
-      case 7: name = 'cost-utilization'; columns = ['Member', 'Service', 'Provider/Facility', 'Network Status', 'Est. Requested Cost', 'Est. Approved Cost', 'LOS', 'Certified Days', 'Uncertified Days', 'Cost Exposure', 'Assigned To', 'Primary Insight'];
+      case 'cost': name = 'cost-utilization'; columns = ['Member', 'Service', 'Provider/Facility', 'Network Status', 'Est. Requested Cost', 'Est. Approved Cost', 'LOS', 'Certified Days', 'Uncertified Days', 'Cost Exposure', 'Assigned To', 'Primary Insight'];
         rows = liveCostInsights(lob, days).map((r) => [r.member, r.service, r.provider, r.networkStatus, r.requestedCost, r.approvedCost, r.los ?? '', r.certifiedDays ?? '', r.uncertifiedDays ?? '', r.costExposure, r.assignedTo, r.primaryInsight]); break;
-      case 8: name = 'audit-flags'; columns = ['ID', 'Type', 'Description', 'Date', 'Severity'];
+      case 'audit': name = 'audit-flags'; columns = ['ID', 'Type', 'Description', 'Date', 'Severity'];
         rows = d.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]); break;
-      case 9: name = 'cm-referrals'; columns = ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'Status'];
+      case 'referrals': name = 'cm-referrals'; columns = ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'Status'];
         rows = REFERRALS.map((r) => [r.authId, r.member, r.reason, r.fromStage, r.received, r.status]); break;
     }
-    this.exporter.open({ title: this.tabs[this.selected()], name: `${name}_2026-07-17`, columns, rows });
+    const title = this.tabs.find((t) => t.key === this.selected())?.label ?? 'Export';
+    this.exporter.open({ title, name: `${name}_2026-07-17`, columns, rows });
   }
 }

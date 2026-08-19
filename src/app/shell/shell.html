@@ -101,8 +101,8 @@
         <!-- Tab bar -->
         <div class="tabbar-row">
           <nav class="tabbar" #tabbar>
-            @for (t of tabs; track t; let i = $index) {
-              <button class="tab" [class.active]="selected() === i" (click)="select(i)">{{ t }}</button>
+            @for (t of tabs; track t.key) {
+              <button class="tab" [class.active]="selected() === t.key" (click)="select(t.key)">{{ t.label }}</button>
             }
           </nav>
           <div class="tab-scroll">
@@ -114,17 +114,19 @@
         <!-- Tab content -->
         <section class="content">
           @switch (selected()) {
-            @case (0) { <app-workforce-tab /> }
-            @case (1) { <app-tat-tab /> }
-            @case (2) { <app-clinical-tab /> }
-            @case (3) { <app-risk-tab /> }
-            @case (4) { <app-concurrent-tab /> }
-            @case (5) { <app-intake-tab /> }
-            @case (6) { <app-provider-tab /> }
-            @case (7) { <app-cost-tab /> }
-            @case (8) { <app-audit-tab /> }
-            <!-- AI / NextGen Intelligence temporarily hidden — see the note above TABS in app.ts -->
-            @case (9) { <app-referrals-tab /> }
+            @case ('workforce') { <app-workforce-tab /> }
+            @case ('schedule') { <app-scheduling-tab /> }
+            @case ('tat') { <app-tat-tab /> }
+            @case ('clinical') { <app-clinical-tab /> }
+            @case ('risk') { <app-risk-tab /> }
+            @case ('concurrent') { <app-concurrent-tab /> }
+            @case ('intake') { <app-intake-tab /> }
+            @case ('provider') { <app-provider-tab /> }
+            @case ('cost') { <app-cost-tab /> }
+            @case ('audit') { <app-audit-tab /> }
+            @case ('demand') { <app-demand-tab /> }
+            <!-- AI / NextGen Intelligence temporarily hidden — see the note above TAB_DEFS in shell.ts -->
+            @case ('referrals') { <app-referrals-tab /> }
           }
         </section>
       }
