@@ -14,7 +14,7 @@ import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf,
 import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent, INTAKE_COORDINATORS } from '../data/cm-intake';
-import { AdherenceStatus, SchedulePeriod, CmWeekSchedule, CmShiftDay } from '../data/cm-schedule';
+import { AdherenceStatus, SchedulePeriod, CmWeekSchedule, CmShiftDay, CmAdherenceDay } from '../data/cm-schedule';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Pto } from '../shared/pto';
@@ -668,26 +668,26 @@ const TAB_DEFS: TabDef[] = [
         </div>
 
         <div class="cp-grid">
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openAllAdherence()">
             <div class="cp-icon green"><z-icon name="check" [size]="18"></z-icon></div>
             <div class="cp-body">
               <div class="cp-val">{{ teamAdherenceRate() }}%</div><div class="cp-lab">Adherence Rate</div>
               <div class="pbar"><span [style.width.%]="teamAdherenceRate()"></span></div>
             </div>
           </div>
-          <div class="cp-tile clk" (click)="adherenceStatusFilter.set('all')">
+          <div class="cp-tile clk" (click)="openExceptions()">
             <div class="cp-icon amber"><z-icon name="alert" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ adherenceExceptions().length }}</div><div class="cp-lab">Exceptions</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openScheduledCms()">
             <div class="cp-icon blue"><z-icon name="users" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ scheduledCmCount() }}</div><div class="cp-lab">Care Managers Scheduled</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openPtoDays()">
             <div class="cp-icon teal"><z-icon name="calendar" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ ptoDaysForPeriod() }}</div><div class="cp-lab">PTO Days ({{ schedulePeriodLabel() }})</div></div>
           </div>
-          <div class="cp-tile clk" (click)="schedulePeriod.set('rolling4')">
+          <div class="cp-tile clk" (click)="openUpcomingPto()">
             <div class="cp-icon amber"><z-icon name="calendar" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ upcomingPto().length }}</div><div class="cp-lab">Upcoming PTO (Next 3 Weeks)</div></div>
           </div>
@@ -742,13 +742,16 @@ const TAB_DEFS: TabDef[] = [
           </div>
           <div class="panel">
             <div class="panel-pad tbl-head">
-              <h3 class="pt">{{ adherenceStatusFilter() === 'all' ? 'Exceptions' : adherenceStatusFilter() }} ({{ filteredAdherence().length }})</h3>
-              @if (adherenceStatusFilter() !== 'all') { <button class="btn outline sm" (click)="adherenceStatusFilter.set('all')">Show Exceptions</button> }
+              <h3 class="pt">{{ adherenceStatusFilter() === 'all' ? 'Exceptions' : adherenceStatusFilter() }} ({{ searchedAdherence().length }})</h3>
+              <div class="flex gap-8 center">
+                <input class="search sm" type="text" placeholder="Search care manager…" [ngModel]="adherenceSearch()" (ngModelChange)="adherenceSearch.set($event)" />
+                @if (adherenceStatusFilter() !== 'all') { <button class="btn outline sm" (click)="adherenceStatusFilter.set('all')">Show Exceptions</button> }
+              </div>
             </div>
             <table class="z-table">
               <thead><tr><th>Care Manager</th><th>Day</th><th>Scheduled</th><th>Actual</th><th>Status</th><th>Variance</th></tr></thead>
               <tbody>
-              @for (a of filteredAdherence(); track a.cm + a.date) {
+              @for (a of searchedAdherence(); track a.cm + a.date) {
                 <tr><td class="strong">{{ a.cm }}</td><td>{{ a.day }}</td><td>{{ a.scheduledStart }}–{{ a.scheduledEnd }}</td>
                   <td>{{ a.actualStart ?? '—' }}{{ a.actualEnd ? '–' + a.actualEnd : '' }}</td>
                   <td><span class="badge" [class.red]="a.status==='Absence'" [class.amber]="a.status==='Late Start' || a.status==='Early Leave'" [class.blue]="a.status==='Overtime'" [class.green]="a.status==='On Time'">{{ a.status }}</span></td>
@@ -788,19 +791,19 @@ const TAB_DEFS: TabDef[] = [
           </label>
         </div>
         <div class="cp-grid">
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openThisWeekReferrals()">
             <div class="cp-icon blue"><z-icon name="inbox" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().history[demandForecast().history.length - 1].count }}</div><div class="cp-lab">Referrals This Week (to date)</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openForecastBasis()">
             <div class="cp-icon teal"><z-icon name="barchart" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().projected }}</div><div class="cp-lab">Projected Next Week</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openCapacityDetail()">
             <div class="cp-icon gray"><z-icon name="users" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().teamCapacity }}</div><div class="cp-lab">{{ demandTeamFilter() === 'all' ? 'Team Intake Capacity' : 'Caseload Headroom' }}</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openCoverageOutlook()">
             <div class="cp-icon" [class.red]="demandForecast().overCapacity" [class.green]="!demandForecast().overCapacity"><z-icon [name]="demandForecast().overCapacity ? 'alert' : 'check'" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().overCapacity ? 'At Risk' : 'Adequate' }}</div><div class="cp-lab">Coverage Outlook</div></div>
           </div>
@@ -881,6 +884,7 @@ const TAB_DEFS: TabDef[] = [
     .srt { cursor:pointer; user-select:none; } .srt:hover { color:var(--ink-soft); }
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:200px; outline:none; }
     .search:focus { border-color:var(--teal-600); }
+    .search.sm { width:160px; padding:5px 10px; }
     .empty { text-align:center; color:var(--gray-500); padding:22px; }
     .score { font-weight:600; font-size:12px; padding:2px 9px; border-radius:6px; }
     .score[data-l="Critical"]{ background:var(--red-bg); color:var(--red-fg); } .score[data-l="High"]{ background:#ffedd5; color:#c2410c; }
@@ -1512,6 +1516,71 @@ export class CmDashboard {
   readonly ptoDaysForPeriod = computed(() => this.cmData.ptoDaysForPeriod(this.schedulePeriod(), this.scheduleTeam()));
   readonly upcomingPto = computed(() => this.cmData.upcomingPto(this.scheduleTeam()));
   readonly ptoBalances = computed(() => this.cmData.ptoBalances(this.scheduleTeam()));
+  readonly adherenceSearch = signal('');
+  readonly searchedAdherence = computed(() => {
+    const q = this.adherenceSearch().trim().toLowerCase();
+    const rows = this.filteredAdherence();
+    return q ? rows.filter((a) => a.cm.toLowerCase().includes(q) || a.day.toLowerCase().includes(q) || a.status.toLowerCase().includes(q)) : rows;
+  });
+  /** Per-CM scheduled-shift and PTO-day counts for the selected period — the drill-down behind
+   *  the "Care Managers Scheduled" tile. */
+  readonly cmShiftCounts = computed(() => {
+    const team = this.scheduleTeam();
+    const todayIso = this.cmData.todayIso();
+    const schedules = this.schedulePeriod() === 'daily' ? this.weekSchedules() : this.weekBlocks().flatMap((b) => b.schedules);
+    const map = new Map<string, { shifts: number; pto: number }>();
+    schedules.forEach((s) => {
+      if (team && this.cmTeamOf(s.cm) !== team) return;
+      const rec = map.get(s.cm) ?? { shifts: 0, pto: 0 };
+      s.days.forEach((d) => {
+        if (this.schedulePeriod() === 'daily' && d.date !== todayIso) return;
+        if (d.type === 'Day' || d.type === 'Evening') rec.shifts++;
+        if (d.type === 'PTO') rec.pto++;
+      });
+      map.set(s.cm, rec);
+    });
+    return map;
+  });
+  private readonly ADHERENCE_ROW_COLUMNS = ['Care Manager', 'Day', 'Scheduled', 'Actual', 'Status', 'Variance'];
+  private adherenceRow(a: CmAdherenceDay): (string | number)[] {
+    return [a.cm, a.day, `${a.scheduledStart}–${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}–${a.actualEnd}` : '—', a.status, a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm'];
+  }
+  private openScheduleExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `cm-schedule-${exportSlug}_2026-07-17` });
+  }
+  openAllAdherence() {
+    const rows = this.cmData.adherenceRecords(this.schedulePeriod(), this.scheduleTeam()).map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`Adherence — ${this.schedulePeriodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, 'all-adherence');
+  }
+  openExceptions() {
+    const rows = this.adherenceExceptions().map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`Exceptions — ${this.schedulePeriodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, 'exceptions');
+  }
+  openScheduledCms() {
+    const counts = this.cmShiftCounts();
+    const rows = this.cmSummaryRows().map((p) => {
+      const c = counts.get(p.cm) ?? { shifts: 0, pto: 0 };
+      return [p.cm, p.discipline, c.shifts, c.pto, `${p.adherenceRate}%`];
+    });
+    this.openScheduleExplorer(`Care Managers Scheduled — ${this.schedulePeriodLabel()}`, ['Care Manager', 'Discipline', 'Scheduled Shifts', 'PTO Days', 'Adherence Rate'], rows, 'scheduled');
+  }
+  openPtoDays() {
+    const team = this.scheduleTeam();
+    const todayIso = this.cmData.todayIso();
+    const schedules = this.schedulePeriod() === 'daily' ? this.weekSchedules() : this.weekBlocks().flatMap((b) => b.schedules);
+    const filtered = team ? schedules.filter((s) => this.cmTeamOf(s.cm) === team) : schedules;
+    const rows: (string | number)[][] = [];
+    filtered.forEach((s) => s.days.forEach((d) => {
+      if (d.type !== 'PTO') return;
+      if (this.schedulePeriod() === 'daily' && d.date !== todayIso) return;
+      rows.push([s.cm, s.discipline, d.day, d.date]);
+    }));
+    this.openScheduleExplorer(`PTO Days — ${this.schedulePeriodLabel()}`, ['Care Manager', 'Discipline', 'Day', 'Date'], rows, 'pto-days');
+  }
+  openUpcomingPto() {
+    const rows = this.upcomingPto().map((p) => [p.cm, p.date, p.day]);
+    this.openScheduleExplorer('Upcoming PTO (Next 3 Weeks)', ['Care Manager', 'Date', 'Day'], rows, 'upcoming-pto');
+  }
   readonly cmSummaryRows = computed(() => {
     const stats = this.cmData.adherenceStats(this.schedulePeriod(), this.scheduleTeam());
     const balances = new Map(this.ptoBalances().map((p) => [p.cm, p]));
@@ -1522,7 +1591,11 @@ export class CmDashboard {
   });
   private readonly ADHERENCE_COLORS: Record<AdherenceStatus, string> = { 'On Time': '#10b981', 'Late Start': '#f59e0b', 'Early Leave': '#f97316', 'Overtime': '#3b82f6', 'Absence': '#ef4444' };
   readonly adherenceDonutSegments = computed((): Segment[] => this.adherenceBreakdown().map((b) => ({ label: b.status, value: b.count, color: this.ADHERENCE_COLORS[b.status] })));
-  onAdherenceSegClick(s: Segment) { this.adherenceStatusFilter.set(s.label as AdherenceStatus); }
+  onAdherenceSegClick(s: Segment) {
+    this.adherenceStatusFilter.set(s.label as AdherenceStatus);
+    const rows = this.cmData.adherenceRecords(this.schedulePeriod(), this.scheduleTeam()).filter((a) => a.status === s.label).map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`${s.label} — ${this.schedulePeriodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, `status-${slug(s.label)}`);
+  }
   exportSchedule() {
     if (this.schedulePeriod() === 'weekly' || this.schedulePeriod() === 'daily') {
       const rows = this.weekScheduleRows().map((w) => [w.cm, w.discipline, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
@@ -1560,6 +1633,38 @@ export class CmDashboard {
         { label: 'Forecast Summary', name: 'cm-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
           rows: [['Projected Next Week', f.projected], [capacityLabel, f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
+  }
+  private demandTeam(): string | undefined { return this.demandTeamFilter() === 'all' ? undefined : this.demandTeamFilter(); }
+  openThisWeekReferrals() {
+    const thisWeek = this.demandForecast().history[this.demandForecast().history.length - 1];
+    const refs = this.cmData.referralsForWeek(thisWeek.start, this.demandTeam());
+    this.openReferralsExplorer(`Referrals This Week${this.demandTeam() ? ' — ' + this.demandTeam() : ''}`, refs, 'this-week', `${refs.length} referral(s) received since ${thisWeek.start}`);
+  }
+  openForecastBasis() {
+    const basis = this.demandForecast().history.slice(0, -1).slice(-4);
+    this.openScheduleExplorer('Forecast Basis — Trailing 4 Complete Weeks', ['Week Of', 'Referrals'], basis.map((w) => [w.start, w.count]), 'forecast-basis',
+      `Trailing 4-week average of ${basis.map((w) => w.count).join(', ')} = ${this.demandForecast().projected} projected`);
+  }
+  openCapacityDetail() {
+    const team = this.demandTeam();
+    if (!team) {
+      const rows = this.cmData.intakeCoordinatorStats().map((s) => [s.name, s.active, `${s.utilization}%`]);
+      this.openScheduleExplorer('Team Intake Capacity — Intake Coordinators', ['Intake Coordinator', 'Active Referrals', 'Utilization'], rows, 'capacity-ic');
+      return;
+    }
+    const rows = this.cmData.managerStats().filter((m) => m.team === team).map((m) => [m.name, m.discipline, m.active, `${m.utilization}%`]);
+    this.openScheduleExplorer(`Caseload Headroom — ${team}`, ['Care Manager', 'Discipline', 'Active Cases', 'Utilization'], rows, 'capacity-team');
+  }
+  openCoverageOutlook() {
+    const f = this.demandForecast();
+    const capacityLabel = this.demandTeam() ? 'Caseload Headroom' : 'Team Intake Capacity';
+    const rows: (string | number)[][] = [
+      ['Projected Next Week', f.projected],
+      [capacityLabel, f.teamCapacity],
+      ['Margin', f.teamCapacity - f.projected],
+      ['Outlook', f.overCapacity ? 'At Risk' : 'Adequate'],
+    ];
+    this.openScheduleExplorer('Coverage Outlook', ['Metric', 'Value'], rows, 'coverage-outlook');
   }
 
   // ---- how members were assigned (queue draw vs direct) — independent of the operational queues above ----

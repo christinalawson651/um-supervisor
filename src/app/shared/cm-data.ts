@@ -524,6 +524,12 @@ export class CmData {
   // rule proficiencyMatch() uses to suggest a CM. ----
   private teamForDiscipline(discipline: string): string | undefined { return CARE_MANAGERS.find((cm) => cm.discipline === discipline)?.team; }
   private teamForReferral(r: ReferralIntakeRec): string { return this.teamForDiscipline(suggestedDisciplineFor(r.reason)) ?? 'Unassigned'; }
+  /** The actual referrals behind one week's bucket in weeklyReferralVolume() — the drill-down
+   *  for the Demand & Forecasting tab's "this week" tile. */
+  referralsForWeek(weekStart: string, team?: string): ReferralIntakeRec[] {
+    const weekEnd = isoDateCm(addDaysCm(new Date(`${weekStart}T00:00:00`), 6));
+    return this.referrals().filter((r) => r.received >= weekStart && r.received <= weekEnd && (!team || this.teamForReferral(r) === team));
+  }
   /** Referral counts by the Monday-starting week they were received, oldest first. The most
    *  recent bucket is this week-to-date (partial, since TODAY sits mid-week) — included in the
    *  trend line for visibility, but excluded from the forecast basis below. */

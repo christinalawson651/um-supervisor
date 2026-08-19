@@ -72,7 +72,7 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                 <button class="btn outline sm" [disabled]="!selected().size" (click)="escalateSelected(e)">Escalate selected</button>
               }
             }
-            @if (!isReferralList()) {
+            @if (isCaseList() && !isReferralList()) {
               <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
             }
             <button class="btn outline sm" (click)="openAssignmentHistory()">Assignment History</button>
@@ -239,8 +239,9 @@ export class CaseExplorer {
   });
   readonly isCmList = computed(() => this.ix.explorer()?.columns[0] === 'Member ID');
   readonly isReferralList = computed(() => this.ix.explorer()?.columns[0] === 'Referral ID');
-  /** Search placeholder / row-count noun — referrals and CM members aren't "authorizations". */
-  readonly itemNoun = computed(() => this.isReferralList() ? 'referral' : this.isCmList() ? 'member' : 'authorization');
+  /** Search placeholder / row-count noun — referrals and CM members aren't "authorizations", and
+   *  informational (non-case) lists like Scheduling/Adherence/Demand drill-downs aren't either. */
+  readonly itemNoun = computed(() => this.isReferralList() ? 'referral' : this.isCmList() ? 'member' : this.isCaseList() ? 'authorization' : 'record');
 
   toggleCol(i: number) { this.hiddenCols.update((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; }); }
   readonly visibleCols = computed(() => (this.ix.explorer()?.columns ?? []).map((c, i) => ({ c, i })).filter(({ i }) => !this.hiddenCols().has(i)));
