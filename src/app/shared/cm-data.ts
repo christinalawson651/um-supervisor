@@ -1,7 +1,8 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod, GoalStatus, CarePlanTemplate, CARE_PLAN_TEMPLATES } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
-import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, suggestedDisciplineFor } from '../data/cm-intake';
+import { CM_WEEK_SCHEDULES, CM_ADHERENCE, CmWeekSchedule, CmAdherenceDay, AdherenceStatus } from '../data/cm-schedule';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -29,6 +30,9 @@ const CAPACITY_PER_CM = 40;
 
 function daysUntil(iso: string): number { return Math.round((new Date(`${iso}T00:00:00`).getTime() - TODAY.getTime()) / 86400000); }
 function daysSince(iso: string): number { return -daysUntil(iso); }
+function addDaysCm(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }
+function mondayOfWeek(d: Date): Date { const day = d.getDay(); return addDaysCm(d, day === 0 ? -6 : 1 - day); }
+function isoDateCm(d: Date): string { return d.toISOString().slice(0, 10); }
 
 /** Lifecycle-stage SLA banding — infra for the Intake & Assessment SLA / Care Plan & Outcomes
  *  tabs when they get this same treatment; Workforce & Caseload uses queueBandOf instead. */
@@ -416,5 +420,79 @@ export class CmData {
     if (!candidate) return null;
     this.assignIntakeCoordinator(candidate.id, to.name);
     return { member: candidate.member, from: from.name, to: to.name };
+  }
+
+  /** Best-fit care manager for a still-Pending referral by proficiency (discipline match on its
+   *  clinical reason, see REASON_DISCIPLINE_MAP in cm-intake.ts) then by capacity (least-utilized
+   *  among matches) — a real matching rule behind AssignmentMethod's 'Direct — Smart' value,
+   *  instead of that just being a retrospective label. Falls back to the least-utilized CM overall
+   *  (matched: false) if no CM in the target discipline has room. This is a SUGGESTION only — the
+   *  one-at-a-time referral review/accept flow (see CaseExplorer.openReferralDetail) is what
+   *  actually moves a referral to Accepted; there is deliberately no bulk auto-accept here. */
+  proficiencyMatch(r: ReferralIntakeRec): { cm: string; discipline: string; matched: boolean } {
+    const wantDiscipline = suggestedDisciplineFor(r.reason);
+    const stats = this.managerStats();
+    const inDiscipline = stats.filter((m) => m.discipline === wantDiscipline);
+    const pick = (list: CmManagerStat[]) => list.reduce((a, b) => (b.utilization < a.utilization ? b : a));
+    if (inDiscipline.length) return { cm: pick(inDiscipline).name, discipline: wantDiscipline, matched: true };
+    return { cm: pick(stats).name, discipline: wantDiscipline, matched: false };
+  }
+
+  // ---- Scheduling & Adherence — a fixed weekly shift pattern per care manager, plus simulated
+  // clock-in/out against it. Both are precomputed once at module load (see cm-schedule.ts) since
+  // they're read-only reference data for this demo, not something Reassign/Balance mutate. ----
+  weekSchedules(): CmWeekSchedule[] { return CM_WEEK_SCHEDULES; }
+  adherenceRecords(): CmAdherenceDay[] { return CM_ADHERENCE; }
+  /** Per-CM on-time rate against their own scheduled shifts this week. */
+  adherenceStats(): { cm: string; discipline: string; onTime: number; total: number; rate: number }[] {
+    const byCm = new Map<string, CmAdherenceDay[]>();
+    CM_ADHERENCE.forEach((a) => { if (!byCm.has(a.cm)) byCm.set(a.cm, []); byCm.get(a.cm)!.push(a); });
+    return CARE_MANAGERS.map((cm) => {
+      const recs = byCm.get(cm.name) ?? [];
+      const onTime = recs.filter((r) => r.status === 'On Time').length;
+      return { cm: cm.name, discipline: cm.discipline, onTime, total: recs.length, rate: recs.length ? Math.round((onTime / recs.length) * 100) : 100 };
+    });
+  }
+  teamAdherenceRate(): number {
+    const total = CM_ADHERENCE.length || 1;
+    const onTime = CM_ADHERENCE.filter((a) => a.status === 'On Time').length;
+    return Math.round((onTime / total) * 100);
+  }
+  /** Every scheduled shift this week that didn't go exactly as planned — the actionable worklist
+   *  behind the team adherence rate. */
+  adherenceExceptions(): CmAdherenceDay[] { return CM_ADHERENCE.filter((a) => a.status !== 'On Time'); }
+  adherenceStatusBreakdown(): { status: AdherenceStatus; count: number }[] {
+    const statuses: AdherenceStatus[] = ['On Time', 'Late Start', 'Early Leave', 'Overtime', 'Absence'];
+    return statuses.map((status) => ({ status, count: CM_ADHERENCE.filter((a) => a.status === status).length }));
+  }
+
+  // ---- Demand analysis / forecasting — weekly referral volume bucketed straight from each
+  // referral's own `received` date (real data, not fabricated), plus a simple trailing-average
+  // projection for next week and a comparison against the team's nominal intake capacity. ----
+  /** Referral counts by the Monday-starting week they were received, oldest first. The most
+   *  recent bucket is this week-to-date (partial, since TODAY sits mid-week) — included in the
+   *  trend line for visibility, but excluded from the forecast basis below. */
+  weeklyReferralVolume(weeksBack = 8): { label: string; start: string; count: number }[] {
+    const thisMonday = mondayOfWeek(TODAY);
+    const buckets = Array.from({ length: weeksBack }, (_, i) => {
+      const start = addDaysCm(thisMonday, -(weeksBack - 1 - i) * 7);
+      return { start, end: addDaysCm(start, 6), count: 0 };
+    });
+    this.referrals().forEach((r) => {
+      const d = new Date(`${r.received}T00:00:00`);
+      const b = buckets.find((bk) => d >= bk.start && d <= bk.end);
+      if (b) b.count++;
+    });
+    return buckets.map((b) => ({ label: `${b.start.getMonth() + 1}/${b.start.getDate()}`, start: isoDateCm(b.start), count: b.count }));
+  }
+  /** Trailing 4-complete-week average as the next-week projection — simple on purpose (this is a
+   *  staffing-planning heuristic for a supervisor, not a statistical forecasting model). */
+  demandForecast(): { history: { label: string; start: string; count: number }[]; projected: number; teamCapacity: number; overCapacity: boolean } {
+    const weeks = this.weeklyReferralVolume(9);
+    const complete = weeks.slice(0, -1);
+    const recentBasis = complete.slice(-4).map((w) => w.count);
+    const projected = recentBasis.length ? Math.round(recentBasis.reduce((s, v) => s + v, 0) / recentBasis.length) : 0;
+    const teamCapacity = INTAKE_COORDINATORS.length * this.IC_CAPACITY;
+    return { history: weeks, projected, teamCapacity, overCapacity: projected > teamCapacity };
   }
 }

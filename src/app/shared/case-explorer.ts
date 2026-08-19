@@ -471,6 +471,10 @@ export class CaseExplorer {
     if (!rec) return;
     const iMember = e.memberColumn ?? 1;
     const fields = e.columns.map((label, i) => ({ label, value: String(row[i]) })).filter((f) => f.label !== 'Referral ID');
+    if (rec.status === 'Pending') {
+      const match = this.cmData.proficiencyMatch(rec);
+      fields.push({ label: 'Suggested Care Manager', value: match.matched ? `${match.cm} (${match.discipline} — proficiency match)` : `${match.cm} (no ${match.discipline} capacity — least-utilized fallback)` });
+    }
     this.ix.openDrawer({
       title: rec.id,
       subtitle: `${rec.member} · ${rec.source}`,
@@ -487,7 +491,13 @@ export class CaseExplorer {
    *  Assigning a referral IS the triage decision (CmData.reassignReferral), so it always follows
    *  an explicit look at that one referral first. */
   private acceptOneReferral(rec: ReferralIntakeRec) {
-    const nurses = this.cmData.managerStats().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
+    // Proficiency match (see CmData.proficiencyMatch) is listed first as the soft default —
+    // same "most-likely pick goes first" treatment referralAssigneeStats() gives coordinators —
+    // but the supervisor can still pick anyone else from the full list.
+    const match = this.cmData.proficiencyMatch(rec);
+    const nurses = this.cmData.managerStats()
+      .map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }))
+      .sort((a, b) => (a.name === match.cm ? -1 : b.name === match.cm ? 1 : 0));
     this.rx.open({
       title: `Accept & assign ${rec.id}`,
       cases: [{ authId: rec.id, member: rec.member, type: rec.source, queue: 'Pending Intake', priority: 'Routine', owner: rec.careManager ?? 'Unassigned' }],

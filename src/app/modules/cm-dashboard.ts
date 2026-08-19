@@ -2,7 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
-import { Donut, Segment } from '../shared/charts';
+import { Donut, Segment, Trend } from '../shared/charts';
 import { Members } from '../shared/members';
 import { Interaction, ConfirmBreakdownRow } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
@@ -14,7 +14,8 @@ import { LobFilter } from '../shared/lob-filter';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow } from '../shared/cm-data';
 import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
-import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent } from '../data/cm-intake';
+import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent, INTAKE_COORDINATORS } from '../data/cm-intake';
+import { AdherenceStatus } from '../data/cm-schedule';
 import { Reassign, ReassignCase } from '../shared/reassign';
 import { Escalate } from '../shared/escalate';
 import { Pto } from '../shared/pto';
@@ -68,13 +69,13 @@ const IC_BALANCE_STRATEGIES = [
 ];
 // AI / NextGen is temporarily hidden — not deleted, just not listed/switched to (same pattern as
 // UM's hidden AI tab in shell.ts). To bring it back, add 'AI / NextGen' at the end here — its
-// @case (9) block below is untouched and already sits at the end of the switch.
-const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance'];
+// @case (11) block below is untouched and already sits at the end of the switch.
+const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outcomes','Risk & Escalation','Program Management','Documentation','Referrals & Sources','Financial / Cost','Audit & Compliance','Scheduling & Adherence','Demand & Forecasting'];
 
 @Component({
   selector: 'app-cm-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring, Donut, FormsModule, Icon, WidgetActions, WidgetCustomize],
+  imports: [KpiStrip, Ring, Donut, Trend, FormsModule, Icon, WidgetActions, WidgetCustomize],
   template: `
     <div class="kpi-toggle-row">
       <button class="kpi-toggle" (click)="kpiCollapsed.set(!kpiCollapsed())">
@@ -521,23 +522,25 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
         </div>
         }
 
-        @if (!visCarePlan.isHidden('goalProgress')) {
-        <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Goal Progress</h3><z-widget-actions (exportClick)="exportGoalProgress()" (removeClick)="visCarePlan.remove('goalProgress')"></z-widget-actions></div>
-          <div class="panel-pad" style="padding-top:0">
-            <z-donut [segments]="goalDonutSegments()" [centerValue]="totalGoalsLabel()" centerLabel="Goals" [clickable]="true" (segClick)="onGoalSegClick($event)"></z-donut>
+        <div class="cp-donut-row mt-6">
+          @if (!visCarePlan.isHidden('goalProgress')) {
+          <div class="panel">
+            <div class="panel-pad tbl-head"><h3 class="pt">Goal Progress</h3><z-widget-actions (exportClick)="exportGoalProgress()" (removeClick)="visCarePlan.remove('goalProgress')"></z-widget-actions></div>
+            <div class="panel-pad" style="padding-top:0">
+              <z-donut [segments]="goalDonutSegments()" [centerValue]="totalGoalsLabel()" centerLabel="Goals" [clickable]="true" (segClick)="onGoalSegClick($event)"></z-donut>
+            </div>
           </div>
-        </div>
-        }
+          }
 
-        @if (!visCarePlan.isHidden('templates')) {
-        <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Care Plan Template</h3><z-widget-actions (exportClick)="exportTemplates()" (removeClick)="visCarePlan.remove('templates')"></z-widget-actions></div>
-          <div class="panel-pad" style="padding-top:0">
-            <z-donut [segments]="templateDonutSegments()" [centerValue]="totalPlansLabel()" centerLabel="Plans" [clickable]="true" (segClick)="onTemplateSegClick($event)"></z-donut>
+          @if (!visCarePlan.isHidden('templates')) {
+          <div class="panel">
+            <div class="panel-pad tbl-head"><h3 class="pt">Care Plan Template</h3><z-widget-actions (exportClick)="exportTemplates()" (removeClick)="visCarePlan.remove('templates')"></z-widget-actions></div>
+            <div class="panel-pad" style="padding-top:0">
+              <z-donut [segments]="templateDonutSegments()" [centerValue]="totalPlansLabel()" centerLabel="Plans" [clickable]="true" (segClick)="onTemplateSegClick($event)"></z-donut>
+            </div>
           </div>
+          }
         </div>
-        }
       }
 
       <!-- 3: Risk & Escalation -->
@@ -658,8 +661,105 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
           }</tbody></table></div>
       }
 
-      <!-- 9: AI / NextGen -->
+      <!-- 9: Scheduling & Adherence -->
       @case (9) {
+        <div class="tab-head"><h2>Scheduling &amp; Adherence</h2><span class="section-note">This week's shift schedule and clock-in/out adherence</span></div>
+        <div class="cp-grid">
+          <div class="cp-tile">
+            <div class="cp-icon green"><z-icon name="check" [size]="18"></z-icon></div>
+            <div class="cp-body">
+              <div class="cp-val">{{ teamAdherenceRate() }}%</div><div class="cp-lab">Team Adherence Rate</div>
+              <div class="pbar"><span [style.width.%]="teamAdherenceRate()"></span></div>
+            </div>
+          </div>
+          <div class="cp-tile clk" (click)="adherenceStatusFilter.set('all')">
+            <div class="cp-icon amber"><z-icon name="alert" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ adherenceExceptions().length }}</div><div class="cp-lab">Exceptions This Week</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon blue"><z-icon name="users" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ weekSchedules().length }}</div><div class="cp-lab">Care Managers Scheduled</div></div>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">This Week's Schedule</h3><button class="btn outline sm" (click)="exportSchedule()">Export</button></div>
+          <table class="z-table sched-table">
+            <thead><tr><th>Care Manager</th><th>Discipline</th>@for (d of weekDayLabels; track d) { <th>{{ d }}</th> }</tr></thead>
+            <tbody>
+            @for (w of weekSchedules(); track w.cm) {
+              <tr><td class="strong">{{ w.cm }}</td><td>{{ w.discipline }}</td>
+                @for (d of w.days; track d.date) {
+                  <td><span class="shift-chip" [attr.data-type]="d.type">{{ d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : d.start + '–' + d.end }}</span></td>
+                }
+              </tr>
+            }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="cp-donut-row mt-6">
+          <div class="panel">
+            <div class="panel-pad tbl-head"><h3 class="pt">Adherence Breakdown</h3><z-widget-actions (exportClick)="exportAdherence()"></z-widget-actions></div>
+            <div class="panel-pad" style="padding-top:0">
+              <z-donut [segments]="adherenceDonutSegments()" [centerValue]="teamAdherenceRateLabel()" centerLabel="On Time" [clickable]="true" (segClick)="onAdherenceSegClick($event)"></z-donut>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-pad tbl-head">
+              <h3 class="pt">{{ adherenceStatusFilter() === 'all' ? 'Exceptions' : adherenceStatusFilter() }} ({{ filteredAdherence().length }})</h3>
+              @if (adherenceStatusFilter() !== 'all') { <button class="btn outline sm" (click)="adherenceStatusFilter.set('all')">Show Exceptions</button> }
+            </div>
+            <table class="z-table">
+              <thead><tr><th>Care Manager</th><th>Day</th><th>Scheduled</th><th>Actual</th><th>Status</th><th>Variance</th></tr></thead>
+              <tbody>
+              @for (a of filteredAdherence(); track a.cm + a.date) {
+                <tr><td class="strong">{{ a.cm }}</td><td>{{ a.day }}</td><td>{{ a.scheduledStart }}–{{ a.scheduledEnd }}</td>
+                  <td>{{ a.actualStart ?? '—' }}{{ a.actualEnd ? '–' + a.actualEnd : '' }}</td>
+                  <td><span class="badge" [class.red]="a.status==='Absence'" [class.amber]="a.status==='Late Start' || a.status==='Early Leave'" [class.blue]="a.status==='Overtime'" [class.green]="a.status==='On Time'">{{ a.status }}</span></td>
+                  <td>{{ a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm' }}</td></tr>
+              } @empty { <tr><td colspan="6" class="empty">No records for this filter.</td></tr> }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+
+      <!-- 10: Demand & Forecasting -->
+      @case (10) {
+        <div class="tab-head"><h2>Demand &amp; Forecasting</h2><span class="section-note">Referral intake volume, projected demand, and capacity coverage</span></div>
+        <div class="cp-grid">
+          <div class="cp-tile">
+            <div class="cp-icon blue"><z-icon name="inbox" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().history[demandForecast().history.length - 1].count }}</div><div class="cp-lab">Referrals This Week (to date)</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon teal"><z-icon name="barchart" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().projected }}</div><div class="cp-lab">Projected Next Week</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon gray"><z-icon name="users" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().teamCapacity }}</div><div class="cp-lab">Team Intake Capacity</div></div>
+          </div>
+          <div class="cp-tile">
+            <div class="cp-icon" [class.red]="demandForecast().overCapacity" [class.green]="!demandForecast().overCapacity"><z-icon [name]="demandForecast().overCapacity ? 'alert' : 'check'" [size]="18"></z-icon></div>
+            <div class="cp-body"><div class="cp-val">{{ demandForecast().overCapacity ? 'At Risk' : 'Adequate' }}</div><div class="cp-lab">Coverage Outlook</div></div>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Weekly Referral Volume (8 Weeks)</h3><button class="btn outline sm" (click)="exportDemand()">Export</button></div>
+          <div class="panel-pad" style="padding-top:0">
+            <z-trend [points]="demandTrendPoints()" [labels]="demandTrendLabels()" color="#0d9488"></z-trend>
+          </div>
+        </div>
+
+        <div class="qhint mt-6">Projection is a trailing 4-week average of completed weeks (excludes the current partial week). Team Intake Capacity is the nominal referral load {{ intakeCoordinators.length }} Intake Coordinators can carry at once.</div>
+      }
+
+      <!-- 11: AI / NextGen (hidden — see TABS comment above; renumbered from 9 to make room for
+           Scheduling & Adherence (9) and Demand & Forecasting (10)) -->
+      @case (11) {
         <div class="ai-shell">
           <div class="ai-head"><h2>AI / NextGen Intelligence</h2>
             <div class="flex gap-8 center">
@@ -761,6 +861,17 @@ const TABS = ['Workforce & Caseload','Intake & Assessment SLA','Care Plan & Outc
     .cp-trend .up { color:var(--green-fg); font-weight:700; } .cp-trend .down { color:var(--green-fg); font-weight:700; }
     .cp-body .pbar { margin-top:8px; }
     .pbar.blue > span { background:#3b82f6; }
+    .cp-donut-row { display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; align-items:start; }
+    @media (max-width: 900px) { .cp-donut-row { grid-template-columns:1fr; } }
+
+    /* ---- Scheduling & Adherence ---- */
+    .sched-table th, .sched-table td { text-align:center; }
+    .sched-table th:first-child, .sched-table td:first-child, .sched-table th:nth-child(2), .sched-table td:nth-child(2) { text-align:left; }
+    .shift-chip { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; white-space:nowrap; }
+    .shift-chip[data-type="Day"] { background:#eff6ff; color:#2563eb; }
+    .shift-chip[data-type="Evening"] { background:#f3e8ff; color:#7e22ce; }
+    .shift-chip[data-type="Off"] { background:var(--gray-100); color:var(--gray-400); }
+    .shift-chip[data-type="PTO"] { background:var(--amber-bg); color:var(--amber-fg); }
 
     .rtiles { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
     .rtile { background:#fff; border:1px solid var(--border); border-left:4px solid var(--gray-300); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px; }
@@ -1296,6 +1407,50 @@ export class CmDashboard {
         ['Reopened', this.reopenedPlans().reopened.length],
         ['Reopened %', this.reopenedPlans().rate],
         ['SMART Language Usage %', this.smartRate().rate],
+      ] });
+  }
+
+  // ---- Scheduling & Adherence — a fixed weekly shift pattern per care manager plus simulated
+  // clock-in/out against it (see cm-schedule.ts). Not LOB-scoped: shifts are a staffing concept,
+  // not tied to a member's line of business. ----
+  readonly weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  readonly intakeCoordinators = INTAKE_COORDINATORS;
+  readonly weekSchedules = computed(() => this.cmData.weekSchedules());
+  readonly teamAdherenceRate = computed(() => this.cmData.teamAdherenceRate());
+  readonly teamAdherenceRateLabel = computed(() => `${this.teamAdherenceRate()}%`);
+  readonly adherenceExceptions = computed(() => this.cmData.adherenceExceptions());
+  readonly adherenceBreakdown = computed(() => this.cmData.adherenceStatusBreakdown());
+  readonly adherenceStatusFilter = signal<AdherenceStatus | 'all'>('all');
+  readonly filteredAdherence = computed(() => {
+    const f = this.adherenceStatusFilter();
+    return f === 'all' ? this.adherenceExceptions() : this.cmData.adherenceRecords().filter((a) => a.status === f);
+  });
+  private readonly ADHERENCE_COLORS: Record<AdherenceStatus, string> = { 'On Time': '#10b981', 'Late Start': '#f59e0b', 'Early Leave': '#f97316', 'Overtime': '#3b82f6', 'Absence': '#ef4444' };
+  readonly adherenceDonutSegments = computed((): Segment[] => this.adherenceBreakdown().map((b) => ({ label: b.status, value: b.count, color: this.ADHERENCE_COLORS[b.status] })));
+  onAdherenceSegClick(s: Segment) { this.adherenceStatusFilter.set(s.label as AdherenceStatus); }
+  exportSchedule() {
+    const rows = this.weekSchedules().map((w) => [w.cm, w.discipline, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
+    this.exporter.open({ title: "This Week's Schedule", name: 'cm-schedule_2026-07-17', columns: ['Care Manager', 'Discipline', ...this.weekDayLabels], rows });
+  }
+  exportAdherence() {
+    this.exporter.open({ title: 'Adherence Exceptions', name: 'cm-adherence_2026-07-17',
+      columns: ['Care Manager', 'Day', 'Scheduled', 'Actual', 'Status', 'Variance (min)'],
+      rows: this.adherenceExceptions().map((a) => [a.cm, a.day, `${a.scheduledStart}-${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}-${a.actualEnd}` : '—', a.status, a.varianceMin]) });
+  }
+
+  // ---- Demand & Forecasting — weekly referral volume from real `received` dates, plus a simple
+  // trailing-average projection and a comparison against the team's nominal intake capacity. ----
+  readonly demandForecast = computed(() => this.cmData.demandForecast());
+  readonly demandTrendPoints = computed(() => this.demandForecast().history.map((h) => h.count));
+  readonly demandTrendLabels = computed(() => this.demandForecast().history.map((h) => h.label));
+  exportDemand() {
+    const f = this.demandForecast();
+    this.exporter.open({ title: 'Demand & Forecasting', name: 'cm-demand-forecast_2026-07-17',
+      columns: ['Week Of', 'Referrals'], rows: f.history.map((h) => [h.start, h.count]),
+      sections: [
+        { label: 'Weekly Volume', name: 'cm-demand-weekly_2026-07-17', columns: ['Week Of', 'Referrals'], rows: f.history.map((h) => [h.start, h.count]) },
+        { label: 'Forecast Summary', name: 'cm-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
+          rows: [['Projected Next Week', f.projected], ['Team Intake Capacity', f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
   }
 

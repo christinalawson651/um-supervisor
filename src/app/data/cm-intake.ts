@@ -40,6 +40,21 @@ export type ReferralPendReason = 'Pending Intake' | 'Missing Information' | 'Mis
 export type ReferralReason = 'Post-Discharge Follow-Up' | 'High-Risk Care Coordination' | 'Disease Management' | 'Behavioral Health Integration' | 'SDOH / Community Referral' | 'Complex Case Management';
 export const REFERRAL_REASONS: ReferralReason[] = ['Post-Discharge Follow-Up', 'High-Risk Care Coordination', 'Disease Management', 'Behavioral Health Integration', 'SDOH / Community Referral', 'Complex Case Management'];
 
+// Proficiency-based routing rule — which CM discipline (see CareManagerMeta.discipline in
+// cm-case-pool.ts) is best suited to a referral's clinical reason. This is what gives
+// AssignmentMethod's 'Direct — Smart' value (cm-case-pool.ts) a real matching rule behind it,
+// rather than just being a retrospective label on mock data. Plain string literals, not an import
+// of CARE_MANAGERS, to keep this file's no-cycle-with-cm-case-pool convention intact.
+export const REASON_DISCIPLINE_MAP: Record<ReferralReason, string> = {
+  'Post-Discharge Follow-Up': 'Transitional Care',
+  'High-Risk Care Coordination': 'Complex Care',
+  'Disease Management': 'Medication Mgmt',
+  'Behavioral Health Integration': 'Behavioral Health',
+  'SDOH / Community Referral': 'Complex Care',
+  'Complex Case Management': 'Complex Care',
+};
+export function suggestedDisciplineFor(reason: ReferralReason): string { return REASON_DISCIPLINE_MAP[reason]; }
+
 // Intake Coordinators handle referral COMPLETENESS (OCR corrections, missing-field follow-up,
 // basic non-clinical checks) before a Care Manager makes the clinical accept/decline call — a
 // distinct, non-clinical pool from CARE_MANAGERS (cm-case-pool.ts). Kept local to this file (no
