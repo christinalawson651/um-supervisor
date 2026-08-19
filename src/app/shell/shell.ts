@@ -45,6 +45,7 @@ interface TabDef { key: string; label: string; }
 const TAB_DEFS: TabDef[] = [
   { key: 'workforce', label: 'Workforce & Queue Management' },
   { key: 'schedule', label: 'Scheduling & Adherence' },
+  { key: 'demand', label: 'Demand & Forecasting' },
   { key: 'tat', label: 'TAT Compliance' },
   { key: 'clinical', label: 'Clinical Decision Insights' },
   { key: 'risk', label: 'Risk & Escalation Panel' },
@@ -53,7 +54,6 @@ const TAB_DEFS: TabDef[] = [
   { key: 'provider', label: 'Provider & Network Insights' },
   { key: 'cost', label: 'Cost & Utilization Insights' },
   { key: 'audit', label: 'Audit & Compliance' },
-  { key: 'demand', label: 'Demand & Forecasting' },
   { key: 'referrals', label: 'CM Referrals' },
 ];
 

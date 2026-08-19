@@ -6,7 +6,6 @@ import { Donut, Segment, Trend } from '../shared/charts';
 import { Members } from '../shared/members';
 import { Interaction, ConfirmBreakdownRow } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
-import { REFERRALS, Referral } from '../data/referrals';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
@@ -40,9 +39,6 @@ const CM_INTAKE_WIDGETS = [
   { id: 'referralsByStatus', title: 'Referrals by Status' }, { id: 'pendReasons', title: 'Pending — Blocked By' },
   { id: 'referralTat', title: 'Referral TAT' }, { id: 'byReferralReason', title: 'By Referral Reason' },
   { id: 'consent', title: 'Consent' }, { id: 'assessments', title: 'Assessments' }, { id: 'outreach', title: 'Outreach' },
-];
-const CM_REFERRALS_WIDGETS = [
-  { id: 'intakeQueue', title: 'Referral Intake Queue' }, { id: 'sources', title: 'Referral Sources (MTD)' },
 ];
 const CM_CAREPLAN_WIDGETS = [
   { id: 'summary', title: 'Care Plan Summary' }, { id: 'goalProgress', title: 'Goal Progress' },
@@ -78,15 +74,14 @@ interface TabDef { key: string; label: string; }
 const TAB_DEFS: TabDef[] = [
   { key: 'workforce', label: 'Workforce & Caseload' },
   { key: 'schedule', label: 'Scheduling & Adherence' },
-  { key: 'intake', label: 'Intake & Assessment SLA' },
+  { key: 'demand', label: 'Demand & Forecasting' },
+  { key: 'intake', label: 'Intake & Referral' },
   { key: 'careplan', label: 'Care Plan & Outcomes' },
   { key: 'risk', label: 'Risk & Escalation' },
   { key: 'program', label: 'Program Management' },
   { key: 'documentation', label: 'Documentation' },
-  { key: 'referrals', label: 'Referrals & Sources' },
   { key: 'financial', label: 'Financial / Cost' },
   { key: 'audit', label: 'Audit & Compliance' },
-  { key: 'demand', label: 'Demand & Forecasting' },
 ];
 
 @Component({
@@ -266,7 +261,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Intake & Assessment SLA -->
       @case ('intake') {
         <div class="tab-head">
-          <div><h2>Intake &amp; Assessment SLA</h2><span class="section-note">Members by lifecycle stage, banded by SLA status</span></div>
+          <div><h2>Intake &amp; Referral</h2><span class="section-note">Referral intake, and members by lifecycle stage banded by SLA status</span></div>
           <div class="flex gap-8">
             <button class="btn outline sm" (click)="exportStages()">Export</button>
             <button class="btn outline sm" (click)="visIntake.customizing() ? visIntake.cancel() : visIntake.open()">Customize</button>
@@ -617,33 +612,6 @@ const TAB_DEFS: TabDef[] = [
             <tr class="clk" (click)="members.openByName(a.member)"><td><a class="ml">{{ a.member }}</a></td><td>{{ a.tool }}</td><td>{{ a.due }}</td>
               <td class="danger">{{ a.overdue }}</td><td>{{ a.cm }}</td></tr>
           }</tbody></table></div>
-      }
-
-      <!-- Referrals & Sources -->
-      @case ('referrals') {
-        <div class="tab-head">
-          <div><h2>Referrals &amp; Sources</h2><span class="section-note">Incoming referrals — including UM → CM</span></div>
-          <button class="btn outline sm" (click)="visReferrals.customizing() ? visReferrals.cancel() : visReferrals.open()">Customize</button>
-        </div>
-
-        <z-widget-customize [vis]="visReferrals"></z-widget-customize>
-
-        @if (!visReferrals.isHidden('intakeQueue')) {
-        <div class="panel"><div class="panel-pad tbl-head"><h3 class="pt">Referral Intake Queue</h3><z-widget-actions (exportClick)="exportIntakeQueue()" (removeClick)="visReferrals.remove('intakeQueue')"></z-widget-actions></div>
-          <table class="z-table"><thead><tr><th>Source Auth</th><th>Member</th><th>Reason</th><th>Referred By</th><th>Intake SLA</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>@for (r of referrals(); track r.authId) {
-            <tr><td class="strong">{{ r.authId }}</td><td><a class="ml" (click)="members.openByName(r.member)">{{ r.member }}</a></td><td>{{ r.reason }}</td><td>{{ r.fromStage }}</td>
-              <td><span class="badge" [class.red]="r.slaTone==='red'" [class.amber]="r.slaTone==='amber'" [class.green]="r.slaTone==='green'">{{ r.sla }}</span></td>
-              <td><span class="badge blue">{{ r.status }}</span></td>
-              <td>@if (r.status === 'Pending intake') { <button class="btn outline teal sm" (click)="accept(r)">Accept &amp; assign</button> } @else { <span class="muted-label">—</span> }</td></tr>
-          }</tbody></table></div>
-        }
-        @if (!visReferrals.isHidden('sources')) {
-        <div class="panel panel-pad mt-6"><div class="tbl-head"><h3 class="pt">Referral Sources (MTD)</h3><z-widget-actions (exportClick)="exportSourcesMtd()" (removeClick)="visReferrals.remove('sources')"></z-widget-actions></div>
-          <div class="bars">@for (s of sources; track s.label) {
-            <div class="bar-row"><span class="bl">{{ s.label }}</span><span class="bt"><span class="bf" [style.width.%]="s.pct" [style.background]="s.color"></span></span><span class="bv">{{ s.value }}</span></div>
-          }</div></div>
-        }
       }
 
       <!-- Financial / Cost -->
@@ -1066,7 +1034,6 @@ export class CmDashboard {
   hide(id: string) { this.vis.remove(id); }
 
   readonly visIntake = new WidgetVisibility('zyter-cm-intake-widgets-v1', CM_INTAKE_WIDGETS);
-  readonly visReferrals = new WidgetVisibility('zyter-cm-referrals-widgets-v1', CM_REFERRALS_WIDGETS);
   readonly visAi = new WidgetVisibility('zyter-cm-ai-widgets-v1', CM_AI_WIDGETS);
   readonly visCarePlan = new WidgetVisibility('zyter-cm-careplan-widgets-v1', CM_CAREPLAN_WIDGETS);
 
@@ -1147,7 +1114,6 @@ export class CmDashboard {
     { name: 'Denise Holloway', dx: 'COPD, severe', risk: 6.4, level: 'High', acuity: 'Medium', cost: '$118k', sla: 'Outreach overdue', slaTone: 'red', cm: 'Maria Torres, RN' },
     { name: 'Ronald Pierce', dx: 'Type 2 diabetes', risk: 5.1, level: 'Moderate', acuity: 'Medium', cost: '$74k', sla: 'On track', slaTone: 'green', cm: 'Angela Ruiz, RN' },
   ];
-  readonly referrals = signal<Referral[]>([...REFERRALS]);
   readonly programs = [
     { label: 'CHF DM', value: 42, pct: 100, color: '#0d9488' },
     { label: 'Diabetes', value: 38, pct: 90, color: '#3b82f6' },
@@ -1164,13 +1130,6 @@ export class CmDashboard {
     { member: 'Marcus Webb', tool: 'KDQOL-36', due: '2026-07-14', overdue: '7d', cm: 'Sara Nguyen, RN' },
     { member: 'Denise Holloway', tool: 'SDOH Screening', due: '2026-07-16', overdue: '5d', cm: 'Maria Torres, RN' },
     { member: 'Ronald Pierce', tool: 'HRA', due: '2026-07-18', overdue: '3d', cm: 'Angela Ruiz, RN' },
-  ];
-  readonly sources = [
-    { label: 'UM Referral', value: 47, pct: 100, color: '#0d9488' },
-    { label: 'Health Plan', value: 32, pct: 68, color: '#3b82f6' },
-    { label: 'PCP / Provider', value: 24, pct: 51, color: '#8b5cf6' },
-    { label: 'ER / Hospital', value: 18, pct: 38, color: '#f59e0b' },
-    { label: 'Self / Family', value: 7, pct: 15, color: '#9ca3af' },
   ];
   readonly cmFlags = [
     { id: 'CM-118', type: 'Care Plan Timeliness', desc: 'Care plan not created within 14 days of enrollment — MBR000284', date: '2026-07-15', sev: 'Medium' },
@@ -1886,19 +1845,6 @@ export class CmDashboard {
   escalate(m: CmMemberRow) {
     this.ix.choose({ title: `Escalate ${m.name}`, body: `Escalate this ${m.level}-risk member for review.`, label: 'Escalate to', options: ['Medical Director', 'Social Work Lead', 'Pharmacy (PharmD)', 'CM Supervisor'], confirmLabel: 'Escalate', tone: 'amber',
       onChoose: (who) => { this.ix.toast(`${m.name} escalated to ${who}.`, 'warn'); this.data.addHistory('arrowup', 'CM member escalated', `${m.name} → ${who}`); } });
-  }
-  accept(r: Referral) {
-    this.ix.choose({ title: `Accept referral ${r.authId}`, body: `Accept ${r.member} into care management and assign.`, label: 'Assign to', options: CARE_MANAGERS.map((c) => c.name), confirmLabel: 'Accept & assign', tone: 'teal',
-      onChoose: (to) => { this.referrals.update((rows) => rows.map((x) => x.authId === r.authId ? { ...x, status: 'Assessment scheduled', assignedTo: to } : x)); this.ix.toast(`${r.member} accepted into CM — assigned to ${to}.`); this.data.addHistory('inbox', 'CM referral accepted', `${r.member} → ${to}`); } });
-  }
-  exportIntakeQueue() {
-    this.exporter.open({ title: 'Referral Intake Queue', name: 'cm-referral-intake-queue_2026-07-17',
-      columns: ['Auth', 'Member', 'Reason', 'Referred By', 'Intake SLA', 'Status'],
-      rows: this.referrals().map((r) => [r.authId, r.member, r.reason, r.fromStage, r.sla, r.status]) });
-  }
-  exportSourcesMtd() {
-    this.exporter.open({ title: 'Referral Sources (MTD)', name: 'cm-referral-sources-mtd_2026-07-17',
-      columns: ['Source', 'Count'], rows: this.sources.map((s) => [s.label, s.value]) });
   }
   exportRecommendations() {
     this.exporter.open({ title: 'AI Recommendations', name: 'cm-ai-recommendations_2026-07-17',

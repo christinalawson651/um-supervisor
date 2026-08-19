@@ -30,6 +30,7 @@ interface TabDef { key: string; label: string; }
 const TAB_DEFS: TabDef[] = [
   { key: 'workforce', label: 'Workforce & Queue' },
   { key: 'schedule', label: 'Scheduling & Adherence' },
+  { key: 'demand', label: 'Demand & Forecasting' },
   { key: 'tat', label: 'TAT & Deadline Compliance' },
   { key: 'determination', label: 'Determination Insights' },
   { key: 'risk', label: 'Risk & Escalation' },
@@ -38,7 +39,6 @@ const TAB_DEFS: TabDef[] = [
   { key: 'provider', label: 'Provider Patterns' },
   { key: 'overturn', label: 'Overturn Cost Impact' },
   { key: 'audit', label: 'Audit & Compliance' },
-  { key: 'demand', label: 'Demand & Forecasting' },
   { key: 'ai', label: 'AI / NextGen' },
 ];
 
