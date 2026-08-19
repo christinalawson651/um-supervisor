@@ -3,8 +3,10 @@ import { signal } from '@angular/core';
 import { Icon } from '../shared/icon';
 import { Trend } from '../shared/charts';
 import { Exporter } from '../shared/exporter';
+import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL } from '../data/case-pool';
+import { COLUMNS, toRow } from '../shared/metrics';
 import { TODAY } from '../data/case-fields';
 import { UM_NURSE_ROSTER } from '../data/um-schedule';
 
@@ -34,19 +36,19 @@ function mondayOf(d: Date): Date { const day = d.getDay(); return addDays(d, day
       </label>
     </div>
     <div class="cp-grid">
-      <div class="cp-tile">
+      <div class="cp-tile clk" (click)="openThisWeekCases()">
         <div class="cp-icon blue"><z-icon name="inbox" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ forecast().history[forecast().history.length - 1].count }}</div><div class="cp-lab">Submissions This Week (to date)</div></div>
       </div>
-      <div class="cp-tile">
+      <div class="cp-tile clk" (click)="openForecastBasis()">
         <div class="cp-icon teal"><z-icon name="barchart" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ forecast().projected }}</div><div class="cp-lab">Projected Next Week</div></div>
       </div>
-      <div class="cp-tile">
+      <div class="cp-tile clk" (click)="openCapacityDetail()">
         <div class="cp-icon gray"><z-icon name="users" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ forecast().teamCapacity }}</div><div class="cp-lab">{{ teamFilter() === 'all' ? 'Total Nurse Capacity' : 'Caseload Headroom' }}</div></div>
       </div>
-      <div class="cp-tile">
+      <div class="cp-tile clk" (click)="openCoverageOutlook()">
         <div class="cp-icon" [class.red]="forecast().overCapacity" [class.green]="!forecast().overCapacity"><z-icon [name]="forecast().overCapacity ? 'alert' : 'check'" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ forecast().overCapacity ? 'At Risk' : 'Adequate' }}</div><div class="cp-lab">Coverage Outlook</div></div>
       </div>
@@ -87,6 +89,7 @@ function mondayOf(d: Date): Date { const day = d.getDay(); return addDays(d, day
 })
 export class DemandTab {
   private exporter = inject(Exporter);
+  private ix = inject(Interaction);
   private data = inject(DashboardData);
   readonly UM_NURSE_ROSTER = UM_NURSE_ROSTER;
   readonly teamNames = [...new Set(UM_NURSE_ROSTER.map((n) => n.team))];
@@ -134,5 +137,41 @@ export class DemandTab {
         { label: 'Forecast Summary', name: 'um-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
           rows: [['Projected Next Week', f.projected], [capacityLabel, f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
+  }
+  private openInfoExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `um-demand-${exportSlug}_2026-07-17` });
+  }
+  /** Real CASE_POOL rows, same COLUMNS/toRow shape as every other UM case drill-down (Reassign/
+   *  Escalate/Balance included, since columns[0] === 'Auth ID' is recognized as a real case list). */
+  openThisWeekCases() {
+    const team = this.teamFilter() === 'all' ? undefined : this.teamFilter();
+    const thisWeek = this.forecast().history[this.forecast().history.length - 1];
+    const cases = CASE_POOL.filter((c) => c.submitted >= thisWeek.start && (!team || this.nurseTeamOf(c.nurse) === team));
+    this.ix.openExplorer({
+      title: `Submissions This Week${team ? ' — ' + team : ''}`, context: `${cases.length} authorization(s) submitted since ${thisWeek.start}`,
+      columns: COLUMNS, rows: cases.map(toRow), exportName: `um-demand-this-week_2026-07-17`, memberColumn: 1,
+    });
+  }
+  openForecastBasis() {
+    const basis = this.forecast().history.slice(0, -1).slice(-4);
+    this.openInfoExplorer('Forecast Basis — Trailing 4 Complete Weeks', ['Week Of', 'Submissions'], basis.map((w) => [w.start, w.count]), 'forecast-basis',
+      `Trailing 4-week average of ${basis.map((w) => w.count).join(', ')} = ${this.forecast().projected} projected`);
+  }
+  openCapacityDetail() {
+    const team = this.teamFilter() === 'all' ? undefined : this.teamFilter();
+    const nurses = team ? this.data.nurses().filter((n) => n.team === team) : this.data.nurses();
+    const rows = nurses.map((n) => [n.name, n.team, n.active, `${n.utilization}%`]);
+    this.openInfoExplorer(team ? `Caseload Headroom — ${team}` : 'Total Nurse Capacity', ['Nurse', 'Team', 'Active', 'Utilization'], rows, 'capacity');
+  }
+  openCoverageOutlook() {
+    const f = this.forecast();
+    const capacityLabel = this.teamFilter() === 'all' ? 'Total Nurse Capacity' : 'Caseload Headroom';
+    const rows: (string | number)[][] = [
+      ['Projected Next Week', f.projected],
+      [capacityLabel, f.teamCapacity],
+      ['Margin', f.teamCapacity - f.projected],
+      ['Outlook', f.overCapacity ? 'At Risk' : 'Adequate'],
+    ];
+    this.openInfoExplorer('Coverage Outlook', ['Metric', 'Value'], rows, 'coverage-outlook');
   }
 }

@@ -1,7 +1,9 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Icon } from '../shared/icon';
 import { Donut, Segment } from '../shared/charts';
 import { Exporter } from '../shared/exporter';
+import { Interaction } from '../shared/interaction';
 import {
   UM_NURSE_ROSTER, SchedulePeriod, AdherenceStatus, NurseWeekSchedule, NurseShiftDay, NurseWeekBlock, NurseAdherenceDay,
   UM_WEEK_SCHEDULES, UM_ADHERENCE, UM_ROLLING_4_WEEKS, UM_MONTHLY_WEEKS, UM_UPCOMING_WEEKS,
@@ -14,7 +16,7 @@ import {
 @Component({
   selector: 'app-scheduling-tab',
   standalone: true,
-  imports: [Icon, Donut],
+  imports: [Icon, Donut, FormsModule],
   template: `
     <div class="tab-head">
       <h2>Scheduling &amp; Adherence</h2>
@@ -36,23 +38,23 @@ import {
     </div>
 
     <div class="cp-grid">
-      <div class="cp-tile">
+      <div class="cp-tile clk" (click)="openAllAdherence()">
         <div class="cp-icon green"><z-icon name="check" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ adherenceRate() }}%</div><div class="cp-lab">Adherence Rate</div><div class="pbar"><span [style.width.%]="adherenceRate()"></span></div></div>
       </div>
-      <div class="cp-tile clk" (click)="statusFilter.set('all')">
+      <div class="cp-tile clk" (click)="openExceptions()">
         <div class="cp-icon amber"><z-icon name="alert" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ exceptions().length }}</div><div class="cp-lab">Exceptions</div></div>
       </div>
-      <div class="cp-tile">
+      <div class="cp-tile clk" (click)="openScheduledNurses()">
         <div class="cp-icon blue"><z-icon name="users" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ scheduledCount() }}</div><div class="cp-lab">Nurses Scheduled</div></div>
       </div>
-      <div class="cp-tile">
+      <div class="cp-tile clk" (click)="openPtoDays()">
         <div class="cp-icon teal"><z-icon name="calendar" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ ptoDaysForPeriod() }}</div><div class="cp-lab">PTO Days ({{ periodLabel() }})</div></div>
       </div>
-      <div class="cp-tile clk" (click)="period.set('rolling4')">
+      <div class="cp-tile clk" (click)="openUpcomingPto()">
         <div class="cp-icon amber"><z-icon name="calendar" [size]="18"></z-icon></div>
         <div class="cp-body"><div class="cp-val">{{ upcomingPto().length }}</div><div class="cp-lab">Upcoming PTO (Next 3 Weeks)</div></div>
       </div>
@@ -107,13 +109,16 @@ import {
       </div>
       <div class="panel">
         <div class="panel-pad tbl-head">
-          <h3 class="pt">{{ statusFilter() === 'all' ? 'Exceptions' : statusFilter() }} ({{ filteredAdherence().length }})</h3>
-          @if (statusFilter() !== 'all') { <button class="btn outline sm" (click)="statusFilter.set('all')">Show Exceptions</button> }
+          <h3 class="pt">{{ statusFilter() === 'all' ? 'Exceptions' : statusFilter() }} ({{ searchedAdherence().length }})</h3>
+          <div class="flex gap-8 center">
+            <input class="search sm" type="text" placeholder="Search nurse…" [ngModel]="adherenceSearch()" (ngModelChange)="adherenceSearch.set($event)" />
+            @if (statusFilter() !== 'all') { <button class="btn outline sm" (click)="statusFilter.set('all')">Show Exceptions</button> }
+          </div>
         </div>
         <table class="z-table">
           <thead><tr><th>Nurse</th><th>Day</th><th>Scheduled</th><th>Actual</th><th>Status</th><th>Variance</th></tr></thead>
           <tbody>
-          @for (a of filteredAdherence(); track a.nurse + a.date) {
+          @for (a of searchedAdherence(); track a.nurse + a.date) {
             <tr><td class="strong">{{ a.nurse }}</td><td>{{ a.day }}</td><td>{{ a.scheduledStart }}–{{ a.scheduledEnd }}</td>
               <td>{{ a.actualStart ?? '—' }}{{ a.actualEnd ? '–' + a.actualEnd : '' }}</td>
               <td><span class="badge" [class.red]="a.status==='Absence'" [class.amber]="a.status==='Late Start' || a.status==='Early Leave'" [class.blue]="a.status==='Overtime'" [class.green]="a.status==='On Time'">{{ a.status }}</span></td>
@@ -149,6 +154,9 @@ import {
     .seg-toggle button.on { background:var(--teal-700); color:#fff; }
     .clk { cursor:pointer; }
     .tbl-head { display:flex; align-items:center; justify-content:space-between; }
+    .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:190px; outline:none; }
+    .search:focus { border-color:var(--teal-600); }
+    .search.sm { width:160px; padding:5px 10px; }
     .pt { font-size:14px; font-weight:600; color:var(--ink); margin:0 0 4px; }
     .empty { text-align:center; color:var(--gray-500); padding:22px; }
     .cp-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:14px; }
@@ -178,6 +186,7 @@ import {
 })
 export class SchedulingTab {
   private exporter = inject(Exporter);
+  private ix = inject(Interaction);
 
   readonly weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   readonly teamNames = [...new Set(UM_NURSE_ROSTER.map((n) => n.team))];
@@ -237,7 +246,68 @@ export class SchedulingTab {
   });
   private readonly ADHERENCE_COLORS: Record<AdherenceStatus, string> = { 'On Time': '#10b981', 'Late Start': '#f59e0b', 'Early Leave': '#f97316', 'Overtime': '#3b82f6', 'Absence': '#ef4444' };
   readonly adherenceDonutSegments = computed((): Segment[] => this.breakdown().map((b) => ({ label: b.status, value: b.count, color: this.ADHERENCE_COLORS[b.status] })));
-  onSegClick(s: Segment) { this.statusFilter.set(s.label as AdherenceStatus); }
+  readonly adherenceSearch = signal('');
+  readonly searchedAdherence = computed(() => {
+    const q = this.adherenceSearch().trim().toLowerCase();
+    const rows = this.filteredAdherence();
+    return q ? rows.filter((a) => a.nurse.toLowerCase().includes(q) || a.day.toLowerCase().includes(q) || a.status.toLowerCase().includes(q)) : rows;
+  });
+  private readonly ADHERENCE_ROW_COLUMNS = ['Nurse', 'Day', 'Scheduled', 'Actual', 'Status', 'Variance'];
+  private adherenceRow(a: NurseAdherenceDay): (string | number)[] {
+    return [a.nurse, a.day, `${a.scheduledStart}–${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}–${a.actualEnd}` : '—', a.status, a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm'];
+  }
+  private openScheduleExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `um-schedule-${exportSlug}_2026-07-17` });
+  }
+  openAllAdherence() {
+    const rows = this.adherenceForPeriod().map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`Adherence — ${this.periodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, 'all-adherence');
+  }
+  openExceptions() {
+    const rows = this.exceptions().map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`Exceptions — ${this.periodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, 'exceptions');
+  }
+  openScheduledNurses() {
+    const team = this.team();
+    const counts = new Map<string, { shifts: number; pto: number }>();
+    const schedules = this.period() === 'daily' ? UM_WEEK_SCHEDULES : this.weekBlocks().flatMap((b) => b.schedules);
+    schedules.forEach((s) => {
+      if (team && s.team !== team) return;
+      const rec = counts.get(s.nurse) ?? { shifts: 0, pto: 0 };
+      s.days.forEach((d) => {
+        if (this.period() === 'daily' && d.date !== UM_TODAY_ISO) return;
+        if (d.type === 'Day' || d.type === 'Evening') rec.shifts++;
+        if (d.type === 'PTO') rec.pto++;
+      });
+      counts.set(s.nurse, rec);
+    });
+    const rows = this.nurseSummaryRows().map((p) => {
+      const c = counts.get(p.nurse) ?? { shifts: 0, pto: 0 };
+      return [p.nurse, p.team, c.shifts, c.pto, `${p.adherenceRate}%`];
+    });
+    this.openScheduleExplorer(`Nurses Scheduled — ${this.periodLabel()}`, ['Nurse', 'Team', 'Scheduled Shifts', 'PTO Days', 'Adherence Rate'], rows, 'scheduled');
+  }
+  openPtoDays() {
+    const team = this.team();
+    const schedules = this.period() === 'daily' ? UM_WEEK_SCHEDULES : this.weekBlocks().flatMap((b) => b.schedules);
+    const filtered = team ? schedules.filter((s) => s.team === team) : schedules;
+    const rows: (string | number)[][] = [];
+    filtered.forEach((s) => s.days.forEach((d) => {
+      if (d.type !== 'PTO') return;
+      if (this.period() === 'daily' && d.date !== UM_TODAY_ISO) return;
+      rows.push([s.nurse, s.team, d.day, d.date]);
+    }));
+    this.openScheduleExplorer(`PTO Days — ${this.periodLabel()}`, ['Nurse', 'Team', 'Day', 'Date'], rows, 'pto-days');
+  }
+  openUpcomingPto() {
+    const rows = this.upcomingPto().map((p) => [p.nurse, p.date, p.day]);
+    this.openScheduleExplorer('Upcoming PTO (Next 3 Weeks)', ['Nurse', 'Date', 'Day'], rows, 'upcoming-pto');
+  }
+  onSegClick(s: Segment) {
+    this.statusFilter.set(s.label as AdherenceStatus);
+    const rows = this.adherenceForPeriod().filter((a) => a.status === s.label).map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`${s.label} — ${this.periodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, `status-${s.label.toLowerCase().replace(/\s+/g, '-')}`);
+  }
   readonly ptoDaysForPeriod = computed(() => {
     const team = this.team();
     const schedules = (this.period() === 'daily' ? UM_WEEK_SCHEDULES : this.weekBlocks().flatMap((b) => b.schedules))

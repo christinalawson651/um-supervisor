@@ -243,23 +243,23 @@ const TAB_DEFS: TabDef[] = [
         </div>
 
         <div class="cp-grid">
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openAllAdherence()">
             <div class="cp-icon green"><z-icon name="check" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ teamAdherenceRate() }}%</div><div class="cp-lab">Adherence Rate</div><div class="pbar"><span [style.width.%]="teamAdherenceRate()"></span></div></div>
           </div>
-          <div class="cp-tile clk" (click)="adherenceStatusFilter.set('all')">
+          <div class="cp-tile clk" (click)="openExceptions()">
             <div class="cp-icon amber"><z-icon name="alert" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ adherenceExceptions().length }}</div><div class="cp-lab">Exceptions</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openScheduledReviewers()">
             <div class="cp-icon blue"><z-icon name="user" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ APPEALS_REVIEWERS.length }}</div><div class="cp-lab">Reviewers Scheduled</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openPtoDays()">
             <div class="cp-icon teal"><z-icon name="calendar" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ ptoDaysForPeriod() }}</div><div class="cp-lab">PTO Days ({{ schedulePeriodLabel() }})</div></div>
           </div>
-          <div class="cp-tile clk" (click)="schedulePeriod.set('rolling4')">
+          <div class="cp-tile clk" (click)="openUpcomingPto()">
             <div class="cp-icon amber"><z-icon name="calendar" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ upcomingPto().length }}</div><div class="cp-lab">Upcoming PTO (Next 3 Weeks)</div></div>
           </div>
@@ -314,13 +314,16 @@ const TAB_DEFS: TabDef[] = [
           </div>
           <div class="panel">
             <div class="panel-pad tbl-head">
-              <h3 class="pt">{{ adherenceStatusFilter() === 'all' ? 'Exceptions' : adherenceStatusFilter() }} ({{ filteredAdherence().length }})</h3>
-              @if (adherenceStatusFilter() !== 'all') { <button class="btn outline sm" (click)="adherenceStatusFilter.set('all')">Show Exceptions</button> }
+              <h3 class="pt">{{ adherenceStatusFilter() === 'all' ? 'Exceptions' : adherenceStatusFilter() }} ({{ searchedAdherence().length }})</h3>
+              <div class="flex gap-8 center">
+                <input class="search sm" type="text" placeholder="Search reviewer…" [ngModel]="adherenceSearch()" (ngModelChange)="adherenceSearch.set($event)" />
+                @if (adherenceStatusFilter() !== 'all') { <button class="btn outline sm" (click)="adherenceStatusFilter.set('all')">Show Exceptions</button> }
+              </div>
             </div>
             <table class="z-table">
               <thead><tr><th>Reviewer</th><th>Day</th><th>Scheduled</th><th>Actual</th><th>Status</th><th>Variance</th></tr></thead>
               <tbody>
-              @for (a of filteredAdherence(); track a.reviewer + a.date) {
+              @for (a of searchedAdherence(); track a.reviewer + a.date) {
                 <tr><td class="strong">{{ a.reviewer }}</td><td>{{ a.day }}</td><td>{{ a.scheduledStart }}–{{ a.scheduledEnd }}</td>
                   <td>{{ a.actualStart ?? '—' }}{{ a.actualEnd ? '–' + a.actualEnd : '' }}</td>
                   <td><span class="badge" [class.red]="a.status==='Absence'" [class.amber]="a.status==='Late Start' || a.status==='Early Leave'" [class.blue]="a.status==='Overtime'" [class.green]="a.status==='On Time'">{{ a.status }}</span></td>
@@ -351,19 +354,19 @@ const TAB_DEFS: TabDef[] = [
       @case ('demand') {
         <div class="tab-head"><h2>Demand &amp; Forecasting</h2><span class="section-note">Appeal intake volume, projected demand, and capacity coverage</span></div>
         <div class="cp-grid">
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openWeeklyVolume()">
             <div class="cp-icon blue"><z-icon name="inbox" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().history[demandForecast().history.length - 1].count }}</div><div class="cp-lab">Appeals This Week (to date)</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openForecastBasis()">
             <div class="cp-icon teal"><z-icon name="barchart" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().projected }}</div><div class="cp-lab">Projected Next Week</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openReviewerCapacity()">
             <div class="cp-icon gray"><z-icon name="users" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().teamCapacity }}</div><div class="cp-lab">Reviewer Capacity</div></div>
           </div>
-          <div class="cp-tile">
+          <div class="cp-tile clk" (click)="openCoverageOutlook()">
             <div class="cp-icon" [class.red]="demandForecast().overCapacity" [class.green]="!demandForecast().overCapacity"><z-icon [name]="demandForecast().overCapacity ? 'alert' : 'check'" [size]="18"></z-icon></div>
             <div class="cp-body"><div class="cp-val">{{ demandForecast().overCapacity ? 'At Risk' : 'Adequate' }}</div><div class="cp-lab">Coverage Outlook</div></div>
           </div>
@@ -418,6 +421,7 @@ const TAB_DEFS: TabDef[] = [
     .srt { cursor:pointer; user-select:none; } .srt:hover { color:var(--ink-soft); }
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:190px; outline:none; }
     .search:focus { border-color:var(--teal-600); }
+    .search.sm { width:160px; padding:5px 10px; }
     .wl-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
     .wl-tools .pills { margin-bottom:0; }
     .pills { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
@@ -634,7 +638,64 @@ export class AppealsDashboard {
   });
   private readonly ADHERENCE_COLORS: Record<AdherenceStatus, string> = { 'On Time': '#1D9E75', 'Late Start': '#C07A0A', 'Early Leave': '#f97316', 'Overtime': '#1A6BC4', 'Absence': '#D94040' };
   readonly adherenceDonutSegments = computed((): Segment[] => this.adherenceBreakdown().map((b) => ({ label: b.status, value: b.count, color: this.ADHERENCE_COLORS[b.status] })));
-  onAdherenceSegClick(s: Segment) { this.adherenceStatusFilter.set(s.label as AdherenceStatus); }
+  readonly adherenceSearch = signal('');
+  readonly searchedAdherence = computed(() => {
+    const q = this.adherenceSearch().trim().toLowerCase();
+    const rows = this.filteredAdherence();
+    return q ? rows.filter((a) => a.reviewer.toLowerCase().includes(q) || a.day.toLowerCase().includes(q) || a.status.toLowerCase().includes(q)) : rows;
+  });
+  private readonly ADHERENCE_ROW_COLUMNS = ['Reviewer', 'Day', 'Scheduled', 'Actual', 'Status', 'Variance'];
+  private adherenceRow(a: ReviewerAdherenceDay): (string | number)[] {
+    return [a.reviewer, a.day, `${a.scheduledStart}–${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}–${a.actualEnd}` : '—', a.status, a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm'];
+  }
+  private openScheduleExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `appeals-schedule-${exportSlug}_2026-07-17` });
+  }
+  openAllAdherence() {
+    const rows = this.adherenceForPeriod().map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`Adherence — ${this.schedulePeriodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, 'all-adherence');
+  }
+  openExceptions() {
+    const rows = this.adherenceExceptions().map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`Exceptions — ${this.schedulePeriodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, 'exceptions');
+  }
+  openScheduledReviewers() {
+    const counts = new Map<string, { shifts: number; pto: number }>();
+    const schedules = this.schedulePeriod() === 'daily' ? this.weekSchedules() : this.weekBlocks().flatMap((b) => b.schedules);
+    schedules.forEach((s) => {
+      const rec = counts.get(s.reviewer) ?? { shifts: 0, pto: 0 };
+      s.days.forEach((d) => {
+        if (this.schedulePeriod() === 'daily' && d.date !== APPEALS_TODAY_ISO) return;
+        if (d.type === 'Day' || d.type === 'Evening') rec.shifts++;
+        if (d.type === 'PTO') rec.pto++;
+      });
+      counts.set(s.reviewer, rec);
+    });
+    const rows = this.reviewerSummaryRows().map((p) => {
+      const c = counts.get(p.reviewer) ?? { shifts: 0, pto: 0 };
+      return [p.reviewer, p.role, c.shifts, c.pto, `${p.adherenceRate}%`];
+    });
+    this.openScheduleExplorer(`Reviewers Scheduled — ${this.schedulePeriodLabel()}`, ['Reviewer', 'Role', 'Scheduled Shifts', 'PTO Days', 'Adherence Rate'], rows, 'scheduled');
+  }
+  openPtoDays() {
+    const schedules = this.schedulePeriod() === 'daily' ? this.weekSchedules() : this.weekBlocks().flatMap((b) => b.schedules);
+    const rows: (string | number)[][] = [];
+    schedules.forEach((s) => s.days.forEach((d) => {
+      if (d.type !== 'PTO') return;
+      if (this.schedulePeriod() === 'daily' && d.date !== APPEALS_TODAY_ISO) return;
+      rows.push([s.reviewer, s.role, d.day, d.date]);
+    }));
+    this.openScheduleExplorer(`PTO Days — ${this.schedulePeriodLabel()}`, ['Reviewer', 'Role', 'Day', 'Date'], rows, 'pto-days');
+  }
+  openUpcomingPto() {
+    const rows = this.upcomingPto().map((p) => [p.reviewer, p.date, p.day]);
+    this.openScheduleExplorer('Upcoming PTO (Next 3 Weeks)', ['Reviewer', 'Date', 'Day'], rows, 'upcoming-pto');
+  }
+  onAdherenceSegClick(s: Segment) {
+    this.adherenceStatusFilter.set(s.label as AdherenceStatus);
+    const rows = this.adherenceForPeriod().filter((a) => a.status === s.label).map((a) => this.adherenceRow(a));
+    this.openScheduleExplorer(`${s.label} — ${this.schedulePeriodLabel()}`, this.ADHERENCE_ROW_COLUMNS, rows, `status-${s.label.toLowerCase().replace(/\s+/g, '-')}`);
+  }
   readonly ptoDaysForPeriod = computed(() => {
     const schedules = this.schedulePeriod() === 'daily' ? APPEALS_WEEK_SCHEDULES : this.weekBlocks().flatMap((b) => b.schedules);
     return schedules.reduce((sum, s) => sum + s.days.filter((d) => d.type === 'PTO' && (this.schedulePeriod() !== 'daily' || d.date === APPEALS_TODAY_ISO)).length, 0);
@@ -699,6 +760,32 @@ export class AppealsDashboard {
         { label: 'Forecast Summary', name: 'appeals-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
           rows: [['Projected Next Week', f.projected], ['Reviewer Capacity', f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
+  }
+  /** These 8 hand-authored appeals are a curated worklist snapshot, not a real per-item history —
+   *  so unlike CM's "this week" drill (real referrals), these tiles drill into the aggregate
+   *  weekly counts themselves rather than fabricating specific appeal rows that don't exist. */
+  openWeeklyVolume() {
+    const rows = this.demandForecast().history.map((h) => [h.start, h.count]);
+    this.openScheduleExplorer('Weekly Appeal Volume (8 Weeks)', ['Week Of', 'Appeals'], rows, 'weekly-volume');
+  }
+  openForecastBasis() {
+    const basis = this.demandForecast().history.slice(0, -1).slice(-4);
+    this.openScheduleExplorer('Forecast Basis — Trailing 4 Complete Weeks', ['Week Of', 'Appeals'], basis.map((w) => [w.start, w.count]), 'forecast-basis',
+      `Trailing 4-week average of ${basis.map((w) => w.count).join(', ')} = ${this.demandForecast().projected} projected`);
+  }
+  openReviewerCapacity() {
+    const rows = this.reviewers.map((r) => [r.name, r.role, r.open, r.nearSla, r.overdue, `${r.utilization}%`]);
+    this.openScheduleExplorer('Reviewer Capacity', ['Reviewer', 'Role', 'Open Appeals', 'Near SLA', 'Overdue', 'Utilization'], rows, 'reviewer-capacity');
+  }
+  openCoverageOutlook() {
+    const f = this.demandForecast();
+    const rows: (string | number)[][] = [
+      ['Projected Next Week', f.projected],
+      ['Reviewer Capacity', f.teamCapacity],
+      ['Margin', f.teamCapacity - f.projected],
+      ['Outlook', f.overCapacity ? 'At Risk' : 'Adequate'],
+    ];
+    this.openScheduleExplorer('Coverage Outlook', ['Metric', 'Value'], rows, 'coverage-outlook');
   }
 
   readonly reviewers: Reviewer[] = [
