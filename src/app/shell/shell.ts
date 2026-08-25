@@ -34,6 +34,7 @@ import { CostTab } from '../tabs/cost-tab';
 import { AuditTab } from '../tabs/audit-tab';
 import { AiTab } from '../tabs/ai-tab';
 import { ReferralsTab } from '../tabs/referrals-tab';
+import { FollowThroughBoard } from '../shared/follow-through-board';
 
 // AI / NextGen Intelligence is temporarily hidden — not deleted, just not listed/switched to.
 // To bring it back: add an 'ai' entry to TAB_DEFS here, and restore its @case('ai') in shell.html.
@@ -55,6 +56,7 @@ const TAB_DEFS: TabDef[] = [
   { key: 'cost', label: 'Cost & Utilization Insights' },
   { key: 'audit', label: 'Audit & Compliance' },
   { key: 'referrals', label: 'CM Referrals' },
+  { key: 'followthrough', label: 'Follow-Through Board' },
 ];
 
 const RAIL = [
@@ -87,7 +89,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   imports: [
     Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard,
     WorkforceTab, SchedulingTab, DemandTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
-    IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab,
+    IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab, FollowThroughBoard,
   ],
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
@@ -186,7 +188,7 @@ export class Shell {
     switch (this.selected()) {
       case 'workforce': name = 'workforce-nurses'; columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed MTD', 'Avg TAT', 'Utilization %'];
         rows = d.nurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization]); break;
-      case 'schedule': case 'demand':
+      case 'schedule': case 'demand': case 'followthrough':
         this.ix.toast('Use each panel\'s own Export button on this tab for its details.', 'info');
         return;
       case 'tat': name = 'tat-compliance'; columns = ['Metric', 'Value'];

@@ -10,7 +10,8 @@ import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
-import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow } from '../shared/cm-data';
+import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow, CmProgramStat } from '../shared/cm-data';
+import { CareProgramName, ProgramDeenrollReason } from '../data/cm-programs';
 import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent, INTAKE_COORDINATORS } from '../data/cm-intake';
@@ -22,6 +23,7 @@ import { Icon } from '../shared/icon';
 import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
+import { FollowThroughBoard } from '../shared/follow-through-board';
 
 interface CmMemberRow { name: string; risk: number; level: 'Low'|'Moderate'|'High'|'Critical'; acuity: 'Low'|'Medium'|'High'; cost: string; sla: string; slaTone: string; cm: string; dx: string; }
 
@@ -82,12 +84,13 @@ const TAB_DEFS: TabDef[] = [
   { key: 'documentation', label: 'Documentation' },
   { key: 'financial', label: 'Financial / Cost' },
   { key: 'audit', label: 'Audit & Compliance' },
+  { key: 'followthrough', label: 'Follow-Through Board' },
 ];
 
 @Component({
   selector: 'app-cm-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring, Donut, Trend, FormsModule, Icon, WidgetActions, WidgetCustomize],
+  imports: [KpiStrip, Ring, Donut, Trend, FormsModule, Icon, WidgetActions, WidgetCustomize, FollowThroughBoard],
   template: `
     <div class="kpi-toggle-row">
       <button class="kpi-toggle" (click)="kpiCollapsed.set(!kpiCollapsed())">
@@ -585,16 +588,62 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Program Management -->
       @case ('program') {
-        <div class="tab-head"><h2>Program Management</h2><span class="section-note">Enrollment &amp; program outcomes</span></div>
-        <div class="panel panel-pad"><h3 class="pt">Program Enrollment</h3>
-          <div class="bars">@for (p of programs; track p.label) {
-            <div class="bar-row"><span class="bl">{{ p.label }}</span><span class="bt"><span class="bf" [style.width.%]="p.pct" [style.background]="p.color"></span></span><span class="bv">{{ p.value }}</span></div>
-          }</div></div>
-        <div class="panel mt-6"><div class="panel-pad"><h3 class="pt">Program Outcomes</h3></div>
-          <table class="z-table"><thead><tr><th>Program</th><th>Enrolled</th><th>Goal Attainment</th><th>Readmit Reduction</th><th>Status</th></tr></thead>
-          <tbody>@for (o of programOutcomes; track o.program) {
-            <tr><td class="strong">{{ o.program }}</td><td class="num">{{ o.enrolled }}</td><td>{{ o.attainment }}</td><td class="num">{{ o.readmit }}</td>
-              <td><span class="badge green">{{ o.status }}</span></td></tr>
+        <div class="tab-head">
+          <div><h2>Program Management</h2><span class="section-note">Configurable care-management programs — a member can be enrolled in several at once, or none. Enrollment/deenrollment is independent of the case or care plan closing.</span></div>
+          <button class="btn outline sm" (click)="exportProgramSummary()">Export</button>
+        </div>
+
+        <div class="cp-grid">
+          @for (p of programStats(); track p.program) {
+          <div class="cp-tile clk" (click)="openProgramActive(p.program)">
+            <div class="cp-icon" [style.background]="programColor(p.program) + '1a'" [style.color]="programColor(p.program)">
+              <z-icon [name]="programIcon(p.program)" [size]="18"></z-icon>
+            </div>
+            <div class="cp-body">
+              <div class="cp-val">{{ p.active }}</div><div class="cp-lab">{{ p.program }}</div>
+              <div class="cp-trend">
+                <span class="up">▲ {{ p.newEnrolled }} new</span>
+                @if (p.deenrolled) { <span class="warn"> · ▼ {{ p.deenrolled }} left</span> }
+                <span> ({{ lookbackLabel() }})</span>
+              </div>
+              <div class="pbar" [class.amber]="p.deenrollmentRate >= 15" [class.red]="p.deenrollmentRate >= 30"><span [style.width.%]="100 - p.deenrollmentRate"></span></div>
+              <div class="cp-sub-line">{{ p.avgActiveTenure }}d avg. active tenure</div>
+            </div>
+          </div>
+          }
+        </div>
+
+        <div class="cp-donut-row mt-6">
+          <div class="panel">
+            <div class="panel-pad tbl-head"><h3 class="pt">Deenrollment Reasons ({{ lookbackLabel() }})</h3><button class="btn outline sm" (click)="exportDeenrollReasons()">Export</button></div>
+            <div class="panel-pad" style="padding-top:0">
+              @if (totalDeenrolled() > 0) {
+              <z-donut [segments]="deenrollDonutSegments()" [centerValue]="totalDeenrolledLabel()" centerLabel="Left" [clickable]="true" (segClick)="onDeenrollSegClick($event)"></z-donut>
+              } @else { <div class="empty">No deenrollments in the last {{ lookbackLabel() }}.</div> }
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-pad tbl-head"><h3 class="pt">Concurrent Program Enrollment</h3><button class="btn outline sm" (click)="exportOverlap()">Export</button></div>
+            <div class="panel-pad" style="padding-top:0">
+              <z-donut [segments]="overlapDonutSegments()" [centerValue]="totalMembersLabel()" centerLabel="Members" [clickable]="true" (segClick)="onOverlapSegClick($event)"></z-donut>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel mt-6"><div class="panel-pad tbl-head"><h3 class="pt">Program Detail</h3></div>
+          <table class="z-table"><thead><tr>
+            <th>Program</th><th>Active</th><th>New ({{ lookbackLabel() }})</th><th>Deenrolled ({{ lookbackLabel() }})</th>
+            <th>Deenrollment Rate</th><th>Avg. Active Tenure</th><th>Avg. Completed Duration</th></tr></thead>
+          <tbody>@for (p of programStats(); track p.program) {
+            <tr>
+              <td class="strong">{{ p.program }}</td>
+              <td class="num clk" (click)="openProgramActive(p.program)">{{ p.active }}</td>
+              <td class="num clk" (click)="openProgramNew(p.program)">{{ p.newEnrolled }}</td>
+              <td class="num clk" (click)="openProgramDeenrolled(p.program)">{{ p.deenrolled }}</td>
+              <td><span class="badge" [class.red]="p.deenrollmentRate >= 30" [class.amber]="p.deenrollmentRate >= 15 && p.deenrollmentRate < 30" [class.green]="p.deenrollmentRate < 15">{{ p.deenrollmentRate }}%</span></td>
+              <td class="num">{{ p.avgActiveTenure }}d</td>
+              <td class="num">{{ p.avgCompletedDuration }}d</td>
+            </tr>
           }</tbody></table></div>
       }
 
@@ -645,6 +694,9 @@ const TAB_DEFS: TabDef[] = [
               <td><span class="badge" [class.red]="f.sev==='High'" [class.amber]="f.sev==='Medium'" [class.green]="f.sev==='Low'">{{ f.sev }}</span></td></tr>
           }</tbody></table></div>
       }
+
+      <!-- Follow-Through Board -->
+      @case ('followthrough') { <app-follow-through-board /> }
 
       <!-- Scheduling & Adherence -->
       @case ('schedule') {
@@ -925,6 +977,8 @@ const TAB_DEFS: TabDef[] = [
     .cp-lab { font-size:11px; font-weight:600; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
     .cp-trend { font-size:11px; color:var(--gray-500); margin-top:7px; }
     .cp-trend .up { color:var(--green-fg); font-weight:700; } .cp-trend .down { color:var(--green-fg); font-weight:700; }
+    .cp-trend .warn { color:var(--amber-fg); font-weight:700; }
+    .cp-sub-line { font-size:11px; color:var(--gray-500); margin-top:4px; }
     .cp-body .pbar { margin-top:8px; }
     .pbar.blue > span { background:#3b82f6; }
     .cp-donut-row { display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; align-items:start; }
@@ -1117,18 +1171,6 @@ export class CmDashboard {
     { name: 'Yolanda Reyes', dx: 'High-risk pregnancy', risk: 6.9, level: 'High', acuity: 'Medium', cost: '$142k', sla: 'On track', slaTone: 'green', cm: 'Maria Torres, RN' },
     { name: 'Denise Holloway', dx: 'COPD, severe', risk: 6.4, level: 'High', acuity: 'Medium', cost: '$118k', sla: 'Outreach overdue', slaTone: 'red', cm: 'Maria Torres, RN' },
     { name: 'Ronald Pierce', dx: 'Type 2 diabetes', risk: 5.1, level: 'Moderate', acuity: 'Medium', cost: '$74k', sla: 'On track', slaTone: 'green', cm: 'Angela Ruiz, RN' },
-  ];
-  readonly programs = [
-    { label: 'CHF DM', value: 42, pct: 100, color: '#0d9488' },
-    { label: 'Diabetes', value: 38, pct: 90, color: '#3b82f6' },
-    { label: 'Complex Care', value: 28, pct: 67, color: '#8b5cf6' },
-    { label: 'BH Integration', value: 20, pct: 48, color: '#f59e0b' },
-  ];
-  readonly programOutcomes = [
-    { program: 'CHF Disease Mgmt', enrolled: 42, attainment: '78%', readmit: '-22%', status: 'On track' },
-    { program: 'Diabetes Mgmt', enrolled: 38, attainment: '81%', readmit: '-15%', status: 'On track' },
-    { program: 'Complex Care', enrolled: 28, attainment: '69%', readmit: '-31%', status: 'On track' },
-    { program: 'BH Integration', enrolled: 20, attainment: '72%', readmit: '-18%', status: 'On track' },
   ];
   readonly overdueAssess = [
     { member: 'Marcus Webb', tool: 'KDQOL-36', due: '2026-07-14', overdue: '7d', cm: 'Sara Nguyen, RN' },
@@ -1465,6 +1507,72 @@ export class CmDashboard {
         ['Reopened %', this.reopenedPlans().rate],
         ['SMART Language Usage %', this.smartRate().rate],
       ] });
+  }
+
+  // ---- Program Management — configurable programs (CHF, COPD, CKD, Behavioral Health / SUD,
+  // High-Risk Maternity, SDOH / Community Resource Support, Weight & Nutrition Management, Smoking
+  // Cessation) that can be layered onto any case regardless of care plan/template. Standing counts
+  // (Active) aren't lookback-scoped, same convention as Care Plan & Outcomes' Active Care Plans —
+  // but new-enrollment/deenrollment/reasons ARE, since those are "what happened in the last N
+  // days" questions. ----
+  readonly programStats = computed((): CmProgramStat[] => this.cmData.programStats(this.lookback.windowDays(), this.scopedCases()));
+  readonly programDeenrollReasons = computed(() => this.cmData.programDeenrollReasons(this.lookback.windowDays(), this.scopedCases()).filter((r) => r.count > 0));
+  readonly programOverlap = computed(() => this.cmData.programOverlap(this.scopedCases()));
+  readonly totalDeenrolled = computed(() => this.programDeenrollReasons().reduce((s, r) => s + r.count, 0));
+  readonly totalDeenrolledLabel = computed(() => String(this.totalDeenrolled()));
+  readonly totalMembersLabel = computed(() => String(this.scopedCases().length));
+
+  private readonly PROGRAM_COLORS: Record<CareProgramName, string> = {
+    'CHF': '#0d9488', 'COPD': '#3b82f6', 'CKD': '#8b5cf6', 'Behavioral Health / SUD': '#f59e0b',
+    'High-Risk Maternity': '#ec4899', 'SDOH / Community Resource Support': '#10b981',
+    'Weight & Nutrition Management': '#f97316', 'Smoking Cessation': '#64748b',
+  };
+  private readonly PROGRAM_ICONS: Record<CareProgramName, string> = {
+    'CHF': 'bolt', 'COPD': 'wifi', 'CKD': 'filter', 'Behavioral Health / SUD': 'sparkles',
+    'High-Risk Maternity': 'users', 'SDOH / Community Resource Support': 'mappin',
+    'Weight & Nutrition Management': 'balance', 'Smoking Cessation': 'xcircle',
+  };
+  private readonly REASON_COLORS: Record<ProgramDeenrollReason, string> = {
+    'Goals Met': '#10b981', 'Member Declined': '#f59e0b', 'Lost to Follow-Up': '#ef4444',
+    'Transferred to Another Program': '#3b82f6', 'Ineligible — Coverage Change': '#94a3b8',
+  };
+  private readonly OVERLAP_COLORS: Record<string, string> = {
+    'Not Enrolled': '#94a3b8', '1 Program': '#0d9488', '2 Programs': '#3b82f6', '3+ Programs': '#8b5cf6',
+  };
+  programColor(p: CareProgramName): string { return this.PROGRAM_COLORS[p]; }
+  programIcon(p: CareProgramName): string { return this.PROGRAM_ICONS[p]; }
+  readonly deenrollDonutSegments = computed((): Segment[] => this.programDeenrollReasons().map((r) => ({ label: r.reason, value: r.count, color: this.REASON_COLORS[r.reason] })));
+  readonly overlapDonutSegments = computed((): Segment[] => this.programOverlap().map((o) => ({ label: o.bucket, value: o.count, color: this.OVERLAP_COLORS[o.bucket] })));
+  onDeenrollSegClick(s: Segment) { this.openProgramDeenrolledReason(s.label as ProgramDeenrollReason); }
+  onOverlapSegClick(s: Segment) { this.openProgramOverlap(s.label); }
+
+  private openProgramCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
+    this.ix.openExplorer({
+      title, context: context ?? `${cases.length} member(s)`,
+      columns: CM_COLUMNS, rows: cases.map(cmToRow),
+      exportName: `cm-program-${exportSlug}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  openProgramActive(p: CareProgramName) { this.openProgramCases(`${p} — Active`, this.cmData.casesInProgram(p, this.scopedCases()), `${slug(p)}-active`); }
+  openProgramNew(p: CareProgramName) { this.openProgramCases(`${p} — New Enrollments`, this.cmData.casesNewlyEnrolled(p, this.lookback.windowDays(), this.scopedCases()), `${slug(p)}-new`, `enrolled within ${this.lookbackLabel()}`); }
+  openProgramDeenrolled(p: CareProgramName) { this.openProgramCases(`${p} — Deenrolled`, this.cmData.casesDeenrolled(p, this.lookback.windowDays(), this.scopedCases()), `${slug(p)}-deenrolled`, `deenrolled within ${this.lookbackLabel()}`); }
+  openProgramDeenrolledReason(reason: ProgramDeenrollReason) {
+    this.openProgramCases(`Deenrolled — ${reason}`, this.cmData.casesDeenrolledForReason(reason, this.lookback.windowDays(), this.scopedCases()), `deenroll-${slug(reason)}`, `within ${this.lookbackLabel()}`);
+  }
+  openProgramOverlap(bucket: string) { this.openProgramCases(bucket, this.cmData.casesWithOverlap(bucket, this.scopedCases()), `overlap-${slug(bucket)}`); }
+
+  exportProgramSummary() {
+    this.exporter.open({ title: 'Program Management', name: 'cm-program-summary_2026-07-17',
+      columns: ['Program', 'Active', `New (${this.lookbackLabel()})`, `Deenrolled (${this.lookbackLabel()})`, 'Deenrollment Rate %', 'Avg. Active Tenure (days)', 'Avg. Completed Duration (days)'],
+      rows: this.programStats().map((p) => [p.program, p.active, p.newEnrolled, p.deenrolled, p.deenrollmentRate, p.avgActiveTenure, p.avgCompletedDuration]) });
+  }
+  exportDeenrollReasons() {
+    this.exporter.open({ title: 'Deenrollment Reasons', name: 'cm-program-deenroll-reasons_2026-07-17',
+      columns: ['Reason', 'Count'], rows: this.programDeenrollReasons().map((r) => [r.reason, r.count]) });
+  }
+  exportOverlap() {
+    this.exporter.open({ title: 'Concurrent Program Enrollment', name: 'cm-program-overlap_2026-07-17',
+      columns: ['Bucket', 'Members'], rows: this.programOverlap().map((o) => [o.bucket, o.count]) });
   }
 
   // ---- Scheduling & Adherence — a fixed weekly shift pattern per care manager plus simulated

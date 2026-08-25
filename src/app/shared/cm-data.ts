@@ -3,6 +3,7 @@ import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, Assignmen
 import { TODAY } from '../data/case-fields';
 import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, suggestedDisciplineFor } from '../data/cm-intake';
 import { CM_WEEK_SCHEDULES, CM_ADHERENCE, CmWeekSchedule, CmAdherenceDay, AdherenceStatus, CmWeekBlock, CM_ROLLING_4_WEEKS, CM_MONTHLY_WEEKS, CM_UPCOMING_WEEKS, CmPtoBalance, CM_PTO_BALANCES, SchedulePeriod } from '../data/cm-schedule';
+import { CareProgramName, CARE_PROGRAMS, ProgramDeenrollReason, PROGRAM_DEENROLL_REASONS, CmProgramEnrollment, CM_PROGRAM_ENROLLMENTS } from '../data/cm-programs';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -17,6 +18,16 @@ export interface CmStageCard {
   buckets: { onTrack: number; dueSoon: number; overdue: number }; // percentages
 }
 export type SlaBand = 'onTrack' | 'dueSoon' | 'overdue';
+
+export interface CmProgramStat {
+  program: CareProgramName;
+  active: number;
+  newEnrolled: number;          // enrolled within the lookback window
+  deenrolled: number;           // deenrolled within the lookback window
+  deenrollmentRate: number;     // deenrolled(window) ÷ (active + deenrolled(window)), %
+  avgActiveTenure: number;      // days, mean over currently-Active enrollees
+  avgCompletedDuration: number; // days, mean over ever-Deenrolled enrollees (all-time, for sample size)
+}
 
 export interface CmQueueCard {
   name: string; count: number;
@@ -270,6 +281,97 @@ export class CmData {
   /** Plans NOT yet documented in SMART language — the actionable coaching gap. */
   casesNotSmartCompliant(scope?: CmCaseRec[]): CmCaseRec[] {
     return (scope ?? this.cases()).filter((c) => !c.smartLanguageCompliant);
+  }
+
+  // ---- Program Enrollment — configurable programs (CHF, COPD, CKD, Behavioral Health / SUD,
+  // High-Risk Maternity, SDOH / Community Resource Support, Weight & Nutrition Management,
+  // Smoking Cessation) layered onto any case, independent of care plan/template. A member can carry
+  // zero, one, or several concurrently, each with its own enrollment/deenrollment lifecycle — so
+  // "unenrolled" here means left a specific program, not that the case or care plan closed. ----
+
+  private enrollmentsFor(scope?: CmCaseRec[]): CmProgramEnrollment[] {
+    const ids = new Set((scope ?? this.cases()).map((c) => c.memberId));
+    return CM_PROGRAM_ENROLLMENTS.filter((e) => ids.has(e.memberId));
+  }
+
+  programStats(windowDays: number, scope?: CmCaseRec[]): CmProgramStat[] {
+    const es = this.enrollmentsFor(scope);
+    return CARE_PROGRAMS.map((program) => {
+      const mine = es.filter((e) => e.program === program);
+      const active = mine.filter((e) => e.status === 'Active');
+      const newEnrolled = mine.filter((e) => daysSince(e.enrolledDate) <= windowDays).length;
+      const deenrolledInWindow = mine.filter((e) => e.status === 'Deenrolled' && e.endDate && daysSince(e.endDate) <= windowDays);
+      const everDeenrolled = mine.filter((e) => e.status === 'Deenrolled' && e.endDate);
+      const base = active.length + deenrolledInWindow.length;
+      const avgActiveTenure = active.length ? Math.round(active.reduce((s, e) => s + daysSince(e.enrolledDate), 0) / active.length) : 0;
+      const avgCompletedDuration = everDeenrolled.length
+        ? Math.round(everDeenrolled.reduce((s, e) => s + (daysSince(e.enrolledDate) - daysSince(e.endDate!)), 0) / everDeenrolled.length) : 0;
+      return {
+        program, active: active.length, newEnrolled, deenrolled: deenrolledInWindow.length,
+        deenrollmentRate: base ? Math.round((deenrolledInWindow.length / base) * 100) : 0,
+        avgActiveTenure, avgCompletedDuration,
+      };
+    });
+  }
+  /** Active enrollees in a program — the drill-down behind a program card's Active count. */
+  casesInProgram(program: CareProgramName, scope?: CmCaseRec[]): CmCaseRec[] {
+    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.program === program && e.status === 'Active').map((e) => e.memberId));
+    return (scope ?? this.cases()).filter((c) => ids.has(c.memberId));
+  }
+  /** Members newly enrolled in a program within the lookback window. */
+  casesNewlyEnrolled(program: CareProgramName, windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
+    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.program === program && daysSince(e.enrolledDate) <= windowDays).map((e) => e.memberId));
+    return (scope ?? this.cases()).filter((c) => ids.has(c.memberId));
+  }
+  /** Members deenrolled from a program within the lookback window. */
+  casesDeenrolled(program: CareProgramName, windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
+    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.program === program && e.status === 'Deenrolled' && e.endDate && daysSince(e.endDate) <= windowDays).map((e) => e.memberId));
+    return (scope ?? this.cases()).filter((c) => ids.has(c.memberId));
+  }
+
+  /** Reasons behind deenrollments, across all programs, within the lookback window. */
+  programDeenrollReasons(windowDays: number, scope?: CmCaseRec[]): { reason: ProgramDeenrollReason; count: number }[] {
+    const es = this.enrollmentsFor(scope).filter((e) => e.status === 'Deenrolled' && e.endDate && daysSince(e.endDate) <= windowDays);
+    return PROGRAM_DEENROLL_REASONS.map((reason) => ({ reason, count: es.filter((e) => e.deenrollReason === reason).length }));
+  }
+  /** Members deenrolled for a specific reason, across all programs, within the lookback window. */
+  casesDeenrolledForReason(reason: ProgramDeenrollReason, windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
+    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.status === 'Deenrolled' && e.deenrollReason === reason && e.endDate && daysSince(e.endDate) <= windowDays).map((e) => e.memberId));
+    return (scope ?? this.cases()).filter((c) => ids.has(c.memberId));
+  }
+
+  private overlapCounts(scope?: CmCaseRec[]): Map<string, number> {
+    const cs = scope ?? this.cases();
+    const perMember = new Map<string, number>();
+    cs.forEach((c) => perMember.set(c.memberId, 0));
+    this.enrollmentsFor(scope).filter((e) => e.status === 'Active').forEach((e) => perMember.set(e.memberId, (perMember.get(e.memberId) ?? 0) + 1));
+    return perMember;
+  }
+  /** How many concurrent active programs each member carries right now — 0 / 1 / 2 / 3+. */
+  programOverlap(scope?: CmCaseRec[]): { bucket: string; count: number }[] {
+    const perMember = this.overlapCounts(scope);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0;
+    perMember.forEach((n) => { if (n === 0) b0++; else if (n === 1) b1++; else if (n === 2) b2++; else b3++; });
+    return [
+      { bucket: 'Not Enrolled', count: b0 }, { bucket: '1 Program', count: b1 },
+      { bucket: '2 Programs', count: b2 }, { bucket: '3+ Programs', count: b3 },
+    ];
+  }
+  /** Members in the given concurrent-program-count bucket — the drill-down behind programOverlap(). */
+  casesWithOverlap(bucket: string, scope?: CmCaseRec[]): CmCaseRec[] {
+    const cs = scope ?? this.cases();
+    const perMember = this.overlapCounts(scope);
+    return cs.filter((c) => {
+      const n = perMember.get(c.memberId) ?? 0;
+      if (bucket === 'Not Enrolled') return n === 0;
+      if (bucket === '1 Program') return n === 1;
+      if (bucket === '2 Programs') return n === 2;
+      return n >= 3;
+    });
+  }
+  /** Which programs a given member is currently active in — for the member drawer/case detail. */
+  activeProgramsFor(memberId: string): CareProgramName[] {
+    return CM_PROGRAM_ENROLLMENTS.filter((e) => e.memberId === memberId && e.status === 'Active').map((e) => e.program);
   }
 
   reassignCase(memberId: string, toCm: string) {
