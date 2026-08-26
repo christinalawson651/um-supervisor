@@ -3,14 +3,15 @@ import {
   Kpi, QueueCard, NurseRow, TatBucket, TatStat, DecisionStat, DecisionRow,
   ConcurrentRow, QualityBar, MissingField, ProviderInsightRow, ProviderFlag,
   AuditFlag, AiRecommendation, RiskCase, RiskTile, CostInsightRow, CostFlag,
-  IrrCaseRow, RegComplianceRow,
+  RegComplianceRow,
 } from './dashboard.models';
 import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
 import {
   ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf,
   providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf,
-  isDuplicateOf, duplicateResolvedOf, MD_REVIEWERS, LOBS,
+  isDuplicateOf, duplicateResolvedOf, LOBS,
 } from './case-fields';
+import { IrrReviewRecord, UM_IRR_REVIEWS, DISCREPANCY_REASONS, DiscrepancyReason, MIN_SAMPLE_PER_REVIEWER } from './um-irr';
 
 /**
  * One inpatient concurrent-review row per real 'concurrent'-tagged case in the pool (LOS/admit/
@@ -460,7 +461,9 @@ export class DashboardData {
     const breached = pendingIn.filter((c) => c.tags.includes('breached')).length;
     const atRisk = pendingIn.filter((c) => c.tags.includes('atRisk')).length;
     const nurseRows = this.nurses();
-    const util = pctOf(nurseRows.reduce((s, n) => s + n.utilization, 0), nurseRows.length);
+    // Utilization values on each nurse row are already percentages (0-100), so this is a plain
+    // average — NOT pctOf(), which would multiply by 100 a second time (81.14 -> 8114).
+    const util = Math.round(nurseRows.reduce((s, n) => s + n.utilization, 0) / (nurseRows.length || 1));
     return [
       { icon: 'folder',  value: `${pendingIn.length}`,        label: 'Pending Authorizations', tone: 'green' },
       { icon: 'check',   value: `${pctOf(onTrack, decidedIn.length)}%`, label: 'TAT Compliance',    tone: 'green' },
@@ -695,32 +698,37 @@ export function liveComplianceBars(lob?: string, withinDays?: number): QualityBa
   ];
 }
 
-// ---- Inter-Rater Reliability — no real secondary-reviewer concept exists in this data model, so
-// which decided cases were IRR-sampled and whether the auditor agreed are both deterministic,
-// modeled estimates per authId (same pattern as approvalFactorOf for Cost Insights), not derived
-// from real audit records. Sampling is weighted toward denials/partials — the real-world audit
-// focus, since those carry the most appeal/compliance risk — and agreement is modeled slightly
-// lower for that same higher-risk group, which is why denials show a somewhat lower IRR rate. ----
-function irrSampledOf(c: CaseRec): boolean {
-  // Auto-approved decisions have no human reviewer (c.nurse === '—') — IRR is agreement BETWEEN
-  // raters, so there's no one to compare the auditor against.
-  if (c.tags.includes('auto') || c.nurse === '—') return false;
-  const n = Number(c.authId.slice(-2));
-  return c.decision === 'Denied' || c.decision === 'Partial' ? n % 5 < 2 : n % 10 === 0;
+// ---- Inter-Rater Reliability — real IRR review records (see um-irr.ts) scoped by the shared
+// LOB/Lookback filters, same "inScope" treatment as every other live() function in this file. The
+// review record itself (sample selection, independent redetermination, discrepancy reason,
+// corrective-action tier) is built once in um-irr.ts; everything here is just filtering/rollup. ----
+function irrInScope(r: IrrReviewRecord, lob?: string, withinDays?: number): boolean {
+  return (!lob || lob === 'all' || lobOf(r.authId) === lob) && (withinDays === undefined || daysAgo(r.reviewDate) <= withinDays);
 }
-function irrAgreeOf(c: CaseRec): boolean {
-  const n = Number(c.authId.slice(-2)) % 100;
-  return c.decision === 'Denied' || c.decision === 'Partial' ? n >= 5 : n >= 1;
+export function liveIrrReviews(lob?: string, withinDays?: number): IrrReviewRecord[] {
+  return UM_IRR_REVIEWS.filter((r) => irrInScope(r, lob, withinDays));
 }
-
-export function liveIrrSample(lob?: string, withinDays?: number): IrrCaseRow[] {
-  return CASE_POOL
-    .filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays) && irrSampledOf(c))
-    .map((c) => ({
-      authId: c.authId, member: c.member, procedure: c.procedure, decision: c.decision,
-      reviewer: c.nurse, auditor: MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length],
-      agree: irrAgreeOf(c),
-    }));
+export interface IrrReviewerStat { reviewer: string; sampled: number; agree: number; pct: number; adequate: boolean; }
+/** Per-reviewer agreement — `adequate` flags whether the sample is large enough (>= MIN_SAMPLE_PER_REVIEWER)
+ *  to report pass/fail on at all, rather than silently excluding thin samples from the count. */
+export function liveIrrByReviewer(lob?: string, withinDays?: number): IrrReviewerStat[] {
+  const rs = liveIrrReviews(lob, withinDays);
+  return [...new Set(rs.map((r) => r.reviewer))]
+    .map((reviewer) => {
+      const mine = rs.filter((r) => r.reviewer === reviewer);
+      const agree = mine.filter((r) => r.agree).length;
+      return { reviewer, sampled: mine.length, agree, pct: pctOf(agree, mine.length), adequate: mine.length >= MIN_SAMPLE_PER_REVIEWER };
+    })
+    .sort((a, b) => a.pct - b.pct);
+}
+/** Why disagreements happened — the actual improvement-driving output of an IRR program. */
+export function liveIrrDiscrepancyReasons(lob?: string, withinDays?: number): { reason: DiscrepancyReason; count: number }[] {
+  const disagreements = liveIrrReviews(lob, withinDays).filter((r) => !r.agree);
+  return DISCREPANCY_REASONS.map((reason) => ({ reason, count: disagreements.filter((r) => r.discrepancyReason === reason).length }));
+}
+/** Every disagreement that triggered a corrective action, open or closed — the evidence-of-follow-through artifact. */
+export function liveIrrCorrectiveActions(lob?: string, withinDays?: number): IrrReviewRecord[] {
+  return liveIrrReviews(lob, withinDays).filter((r) => r.correctiveAction !== 'None');
 }
 
 // ---- Regulatory TAT compliance by program (LOB) — each program has its own statutory decision

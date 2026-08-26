@@ -3,7 +3,7 @@ import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, Assignmen
 import { TODAY } from '../data/case-fields';
 import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, suggestedDisciplineFor } from '../data/cm-intake';
 import { CM_WEEK_SCHEDULES, CM_ADHERENCE, CmWeekSchedule, CmAdherenceDay, AdherenceStatus, CmWeekBlock, CM_ROLLING_4_WEEKS, CM_MONTHLY_WEEKS, CM_UPCOMING_WEEKS, CmPtoBalance, CM_PTO_BALANCES, SchedulePeriod } from '../data/cm-schedule';
-import { CareProgramName, CARE_PROGRAMS, ProgramDeenrollReason, PROGRAM_DEENROLL_REASONS, CmProgramEnrollment, CM_PROGRAM_ENROLLMENTS } from '../data/cm-programs';
+import { CareProgramName, CARE_PROGRAMS, ProgramDisenrollReason, PROGRAM_DISENROLL_REASONS, CmProgramEnrollment, CM_PROGRAM_ENROLLMENTS } from '../data/cm-programs';
 
 export interface CmManagerStat {
   name: string; discipline: string; team: string;
@@ -23,10 +23,10 @@ export interface CmProgramStat {
   program: CareProgramName;
   active: number;
   newEnrolled: number;          // enrolled within the lookback window
-  deenrolled: number;           // deenrolled within the lookback window
-  deenrollmentRate: number;     // deenrolled(window) ÷ (active + deenrolled(window)), %
+  disenrolled: number;           // disenrolled within the lookback window
+  disenrollmentRate: number;     // disenrolled(window) ÷ (active + disenrolled(window)), %
   avgActiveTenure: number;      // days, mean over currently-Active enrollees
-  avgCompletedDuration: number; // days, mean over ever-Deenrolled enrollees (all-time, for sample size)
+  avgCompletedDuration: number; // days, mean over ever-Disenrolled enrollees (all-time, for sample size)
 }
 
 export interface CmQueueCard {
@@ -286,7 +286,7 @@ export class CmData {
   // ---- Program Enrollment — configurable programs (CHF, COPD, CKD, Behavioral Health / SUD,
   // High-Risk Maternity, SDOH / Community Resource Support, Weight & Nutrition Management,
   // Smoking Cessation) layered onto any case, independent of care plan/template. A member can carry
-  // zero, one, or several concurrently, each with its own enrollment/deenrollment lifecycle — so
+  // zero, one, or several concurrently, each with its own enrollment/disenrollment lifecycle — so
   // "unenrolled" here means left a specific program, not that the case or care plan closed. ----
 
   private enrollmentsFor(scope?: CmCaseRec[]): CmProgramEnrollment[] {
@@ -300,15 +300,15 @@ export class CmData {
       const mine = es.filter((e) => e.program === program);
       const active = mine.filter((e) => e.status === 'Active');
       const newEnrolled = mine.filter((e) => daysSince(e.enrolledDate) <= windowDays).length;
-      const deenrolledInWindow = mine.filter((e) => e.status === 'Deenrolled' && e.endDate && daysSince(e.endDate) <= windowDays);
-      const everDeenrolled = mine.filter((e) => e.status === 'Deenrolled' && e.endDate);
-      const base = active.length + deenrolledInWindow.length;
+      const disenrolledInWindow = mine.filter((e) => e.status === 'Disenrolled' && e.endDate && daysSince(e.endDate) <= windowDays);
+      const everDisenrolled = mine.filter((e) => e.status === 'Disenrolled' && e.endDate);
+      const base = active.length + disenrolledInWindow.length;
       const avgActiveTenure = active.length ? Math.round(active.reduce((s, e) => s + daysSince(e.enrolledDate), 0) / active.length) : 0;
-      const avgCompletedDuration = everDeenrolled.length
-        ? Math.round(everDeenrolled.reduce((s, e) => s + (daysSince(e.enrolledDate) - daysSince(e.endDate!)), 0) / everDeenrolled.length) : 0;
+      const avgCompletedDuration = everDisenrolled.length
+        ? Math.round(everDisenrolled.reduce((s, e) => s + (daysSince(e.enrolledDate) - daysSince(e.endDate!)), 0) / everDisenrolled.length) : 0;
       return {
-        program, active: active.length, newEnrolled, deenrolled: deenrolledInWindow.length,
-        deenrollmentRate: base ? Math.round((deenrolledInWindow.length / base) * 100) : 0,
+        program, active: active.length, newEnrolled, disenrolled: disenrolledInWindow.length,
+        disenrollmentRate: base ? Math.round((disenrolledInWindow.length / base) * 100) : 0,
         avgActiveTenure, avgCompletedDuration,
       };
     });
@@ -323,20 +323,20 @@ export class CmData {
     const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.program === program && daysSince(e.enrolledDate) <= windowDays).map((e) => e.memberId));
     return (scope ?? this.cases()).filter((c) => ids.has(c.memberId));
   }
-  /** Members deenrolled from a program within the lookback window. */
-  casesDeenrolled(program: CareProgramName, windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
-    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.program === program && e.status === 'Deenrolled' && e.endDate && daysSince(e.endDate) <= windowDays).map((e) => e.memberId));
+  /** Members disenrolled from a program within the lookback window. */
+  casesDisenrolled(program: CareProgramName, windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
+    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.program === program && e.status === 'Disenrolled' && e.endDate && daysSince(e.endDate) <= windowDays).map((e) => e.memberId));
     return (scope ?? this.cases()).filter((c) => ids.has(c.memberId));
   }
 
-  /** Reasons behind deenrollments, across all programs, within the lookback window. */
-  programDeenrollReasons(windowDays: number, scope?: CmCaseRec[]): { reason: ProgramDeenrollReason; count: number }[] {
-    const es = this.enrollmentsFor(scope).filter((e) => e.status === 'Deenrolled' && e.endDate && daysSince(e.endDate) <= windowDays);
-    return PROGRAM_DEENROLL_REASONS.map((reason) => ({ reason, count: es.filter((e) => e.deenrollReason === reason).length }));
+  /** Reasons behind disenrollments, across all programs, within the lookback window. */
+  programDisenrollReasons(windowDays: number, scope?: CmCaseRec[]): { reason: ProgramDisenrollReason; count: number }[] {
+    const es = this.enrollmentsFor(scope).filter((e) => e.status === 'Disenrolled' && e.endDate && daysSince(e.endDate) <= windowDays);
+    return PROGRAM_DISENROLL_REASONS.map((reason) => ({ reason, count: es.filter((e) => e.disenrollReason === reason).length }));
   }
-  /** Members deenrolled for a specific reason, across all programs, within the lookback window. */
-  casesDeenrolledForReason(reason: ProgramDeenrollReason, windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
-    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.status === 'Deenrolled' && e.deenrollReason === reason && e.endDate && daysSince(e.endDate) <= windowDays).map((e) => e.memberId));
+  /** Members disenrolled for a specific reason, across all programs, within the lookback window. */
+  casesDisenrolledForReason(reason: ProgramDisenrollReason, windowDays: number, scope?: CmCaseRec[]): CmCaseRec[] {
+    const ids = new Set(this.enrollmentsFor(scope).filter((e) => e.status === 'Disenrolled' && e.disenrollReason === reason && e.endDate && daysSince(e.endDate) <= windowDays).map((e) => e.memberId));
     return (scope ?? this.cases()).filter((c) => ids.has(c.memberId));
   }
 

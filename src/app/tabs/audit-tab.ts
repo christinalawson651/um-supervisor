@@ -1,5 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
-import { DashboardData, liveComplianceBars, liveIrrSample, liveRegCompliance, regBreachesFor, inScope } from '../data/dashboard-data';
+import { DashboardData, liveComplianceBars, liveIrrReviews, liveIrrByReviewer, liveIrrDiscrepancyReasons, liveIrrCorrectiveActions, liveRegCompliance, regBreachesFor, inScope } from '../data/dashboard-data';
+import { IrrReviewRecord, DiscrepancyReason, IRR_TARGET_PCT, MIN_SAMPLE_PER_REVIEWER } from '../data/um-irr';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
@@ -16,12 +17,17 @@ const AUDIT_WIDGETS = [
   { id: 'quality', title: 'Internal Quality' },
   { id: 'irr', title: 'Inter-Rater Reliability' },
   { id: 'irrByReviewer', title: 'IRR Agreement by Reviewer' },
+  { id: 'irrReasons', title: 'IRR Discrepancy Reasons' },
+  { id: 'irrActions', title: 'IRR Corrective Actions' },
   { id: 'regTat', title: 'Regulatory TAT Compliance by Program' },
   { id: 'audit-flags', title: 'Audit Flags' },
 ];
 
 const REG_TARGET_PCT = 90;
-const IRR_TARGET_PCT = 90;
+const IRR_COLUMNS = ['Auth', 'Reviewer', 'Original Decision', 'Review Date', 'Auditor', 'IRR Review Date', 'IRR Determination', 'Agree', 'Discrepancy Reason', 'Corrective Action', 'Status', 'Action Date'];
+function irrRow(r: IrrReviewRecord): (string | number)[] {
+  return [r.authId, r.reviewer, r.originalDecision, r.reviewDate, r.auditor, r.irrReviewDate, r.irrDetermination, r.agree ? 'Yes' : 'No', r.discrepancyReason ?? '—', r.correctiveAction, r.correctiveActionStatus ?? '—', r.correctiveActionDate ?? '—'];
+}
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 @Component({
@@ -56,9 +62,10 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     @if (!isHidden('irr')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Inter-Rater Reliability (IRR)</h3>
+        <span class="section-note sm">{{ irrTarget }}% agreement is this org's own policy target — NCQA/URAC require a defined, followed methodology, not one universal number</span>
         <z-widget-actions (exportClick)="exportIrr()" (removeClick)="hide('irr')"></z-widget-actions>
       </div>
-      <div class="tile-row kpi-row panel-pad">
+      <div class="tile-row irr-row panel-pad">
         <div class="tile" (click)="drillIrrAll()">
           <div class="tile-val">{{ irrAgreementRate() }}%</div>
           <div class="tile-lab">IRR Agreement Rate</div>
@@ -68,9 +75,18 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           <div class="tile-val">{{ reviewersBelowThreshold() }}</div>
           <div class="tile-lab">Reviewers Below {{ irrTarget }}% Threshold</div>
         </div>
+        <div class="tile" (click)="drillInsufficientSample()">
+          <div class="tile-val">{{ reviewersInsufficientSample() }}</div>
+          <div class="tile-lab">Reviewers — Insufficient Sample (&lt;{{ minSample }})</div>
+        </div>
         <div class="tile" (click)="drillDenialSample()">
           <div class="tile-val">{{ denialSampleCoverage() }}%</div>
           <div class="tile-lab">Denial/Partial Sample Coverage</div>
+        </div>
+        <div class="tile" (click)="drillOpenActions()">
+          <div class="tile-ic" [class.hot]="openCorrectiveActions() > 0"></div>
+          <div class="tile-val">{{ openCorrectiveActions() }}</div>
+          <div class="tile-lab">Open Corrective Actions</div>
         </div>
       </div>
     </div>
@@ -85,11 +101,57 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         @for (r of irrByReviewer(); track r.reviewer) {
           <div class="irow clk" (click)="drillReviewer(r.reviewer)">
             <div class="ilab">{{ r.reviewer }}</div>
-            <div class="ibar-track"><div class="ibar-fill" [class.amber]="r.pct < irrTarget" [class.teal]="r.pct >= irrTarget" [style.width.%]="r.pct"></div></div>
-            <div class="icount">{{ r.agree }}/{{ r.sampled }} · {{ r.pct }}%</div>
+            @if (r.adequate) {
+              <div class="ibar-track"><div class="ibar-fill" [class.amber]="r.pct < irrTarget" [class.teal]="r.pct >= irrTarget" [style.width.%]="r.pct"></div></div>
+              <div class="icount">{{ r.agree }}/{{ r.sampled }} · {{ r.pct }}%</div>
+            } @else {
+              <div class="ibar-track"><div class="ibar-fill gray" style="width:100%"></div></div>
+              <div class="icount muted">n={{ r.sampled }} · insufficient</div>
+            }
           </div>
         }
       </div>
+    </div>
+    }
+
+    @if (!isHidden('irrReasons')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">IRR Discrepancy Reasons</h3>
+        <span class="section-note sm">Why the sampled disagreements happened — the part that actually drives training/criteria fixes</span>
+        <z-widget-actions (exportClick)="exportIrrReasons()" (removeClick)="hide('irrReasons')"></z-widget-actions>
+      </div>
+      <div class="ilist">
+        @for (r of irrReasons(); track r.reason) {
+          <div class="irow clk" (click)="drillReason(r.reason)">
+            <div class="ilab">{{ r.reason }}</div>
+            <div class="ibar-track"><div class="ibar-fill amber" [style.width.%]="reasonPct(r.count)"></div></div>
+            <div class="icount">{{ r.count }} · {{ reasonPct(r.count) }}%</div>
+          </div>
+        } @empty { <div class="empty">No disagreements sampled in this window.</div> }
+      </div>
+    </div>
+    }
+
+    @if (!isHidden('irrActions')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">IRR Corrective Actions</h3>
+        <span class="section-note sm">Every disagreement that escalated into coaching or retraining — evidence the loop closes</span>
+        <z-widget-actions (exportClick)="exportIrrActions()" (removeClick)="hide('irrActions')"></z-widget-actions>
+      </div>
+      <table class="z-table">
+        <thead><tr><th>Reviewer</th><th>Discrepancy Reason</th><th>Corrective Action</th><th>Status</th><th>Action Date</th></tr></thead>
+        <tbody>
+          @for (a of irrActions(); track a.authId) {
+            <tr class="clickable" (click)="drillAction(a)">
+              <td class="strong">{{ a.reviewer }}</td>
+              <td>{{ a.discrepancyReason }}</td>
+              <td>{{ a.correctiveAction }}</td>
+              <td><span class="badge" [class.amber]="a.correctiveActionStatus==='Open'" [class.green]="a.correctiveActionStatus==='Closed'">{{ a.correctiveActionStatus }}</span></td>
+              <td>{{ a.correctiveActionDate }}</td>
+            </tr>
+          } @empty { <tr><td colspan="5" class="empty">No corrective actions in this window.</td></tr> }
+        </tbody>
+      </table>
     </div>
     }
 
@@ -156,6 +218,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
     .tile-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .kpi-row { grid-template-columns: repeat(3, 1fr); }
+    .irr-row { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     .tile-row.no-bottom { padding-bottom: 4px; }
     .tile {
       display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
@@ -178,7 +241,9 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .ibar-fill { height: 100%; border-radius: 4px; }
     .ibar-fill.teal { background: var(--teal-600); }
     .ibar-fill.amber { background: var(--amber); }
+    .ibar-fill.gray { background: var(--gray-300); }
     .icount { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--gray-500); }
+    .icount.muted { font-style: italic; }
 
     .clickable { cursor: pointer; }
     .empty { text-align:center; color: var(--teal-700); font-weight:600; padding: 26px; }
@@ -194,6 +259,7 @@ export class AuditTab {
   readonly barKeys = ['audit.doc', 'audit.guideline', 'audit.rationale'];
   readonly regTarget = REG_TARGET_PCT;
   readonly irrTarget = IRR_TARGET_PCT;
+  readonly minSample = MIN_SAMPLE_PER_REVIEWER;
 
   readonly vis = new WidgetVisibility('zyter-um-audit-widgets-v2', AUDIT_WIDGETS);
   isHidden(id: string) { return this.vis.isHidden(id); }
@@ -217,29 +283,37 @@ export class AuditTab {
   // ---- Inter-Rater Reliability ----
   readonly irrSample = computed(() => {
     const [lob, days] = this.scopeArgs();
-    return liveIrrSample(lob, days);
+    return liveIrrReviews(lob, days);
   });
   readonly irrAgreementRate = computed(() => {
     const s = this.irrSample();
     return s.length ? Math.round((s.filter((r) => r.agree).length / s.length) * 100) : 0;
   });
   readonly irrByReviewer = computed(() => {
-    const s = this.irrSample();
-    return [...new Set(s.map((r) => r.reviewer))]
-      .map((reviewer) => {
-        const rs = s.filter((r) => r.reviewer === reviewer);
-        const agree = rs.filter((r) => r.agree).length;
-        return { reviewer, sampled: rs.length, agree, pct: rs.length ? Math.round((agree / rs.length) * 100) : 0 };
-      })
-      .sort((a, b) => a.pct - b.pct);
+    const [lob, days] = this.scopeArgs();
+    return liveIrrByReviewer(lob, days);
   });
-  readonly reviewersBelowThreshold = computed(() => this.irrByReviewer().filter((r) => r.sampled >= 3 && r.pct < this.irrTarget).length);
+  readonly reviewersBelowThreshold = computed(() => this.irrByReviewer().filter((r) => r.adequate && r.pct < this.irrTarget).length);
+  readonly reviewersInsufficientSample = computed(() => this.irrByReviewer().filter((r) => !r.adequate).length);
+  readonly irrReasons = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    return liveIrrDiscrepancyReasons(lob, days);
+  });
+  readonly irrActions = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    return liveIrrCorrectiveActions(lob, days);
+  });
+  readonly openCorrectiveActions = computed(() => this.irrActions().filter((a) => a.correctiveActionStatus === 'Open').length);
   readonly denialSampleCoverage = computed(() => {
     const [lob, days] = this.scopeArgs();
     const allDenials = CASE_POOL.filter((c) => c.phase === 'decided' && (c.decision === 'Denied' || c.decision === 'Partial') && inScope(c, lob, days));
-    const sampled = this.irrSample().filter((r) => r.decision === 'Denied' || r.decision === 'Partial');
+    const sampled = this.irrSample().filter((r) => r.originalDecision === 'Denied' || r.originalDecision === 'Partial');
     return allDenials.length ? Math.round((sampled.length / allDenials.length) * 100) : 0;
   });
+  reasonPct(count: number): number {
+    const total = this.irrReasons().reduce((s, r) => s + r.count, 0);
+    return total ? Math.round((count / total) * 100) : 0;
+  }
 
   // ---- Regulatory TAT compliance by program ----
   readonly regCompliance = computed(() => liveRegCompliance(this.withinDays()));
@@ -256,25 +330,36 @@ export class AuditTab {
       exportName: `audit-${exportSlug}_2026-07-17`, memberColumn: 1,
     });
   }
+  /** IRR review records get their own column set (auditor, redetermination, discrepancy reason,
+   *  corrective action) — a real audit-log view, not just the generic case columns. Column 0 is
+   *  deliberately 'Auth' (not 'Auth ID') so Explorer treats this as an informational list — no
+   *  Reassign/Balance/Escalate, which don't make sense against a compliance record. */
+  private openIrr(title: string, rs: IrrReviewRecord[], exportSlug: string, context?: string) {
+    this.ix.openExplorer({
+      title, context: context ?? `${rs.length} IRR review(s)`,
+      columns: IRR_COLUMNS, rows: rs.map(irrRow),
+      exportName: `audit-${exportSlug}_2026-07-17`,
+    });
+  }
 
-  drillIrrAll() {
-    const cs = this.casesByAuthIds(new Set(this.irrSample().map((r) => r.authId)));
-    this.openCases('IRR-Sampled Decisions', cs, 'irr-sample', `${cs.length} decision(s) sampled for Inter-Rater Reliability review`);
-  }
-  drillReviewer(reviewer: string) {
-    const ids = new Set(this.irrSample().filter((r) => r.reviewer === reviewer).map((r) => r.authId));
-    this.openCases(`IRR Sample — ${reviewer}`, this.casesByAuthIds(ids), `irr-${slug(reviewer)}`);
-  }
+  drillIrrAll() { this.openIrr('IRR-Sampled Decisions', this.irrSample(), 'irr-sample', `${this.irrSample().length} decision(s) sampled for Inter-Rater Reliability review`); }
+  drillReviewer(reviewer: string) { this.openIrr(`IRR Sample — ${reviewer}`, this.irrSample().filter((r) => r.reviewer === reviewer), `irr-${slug(reviewer)}`); }
   drillReviewersBelow() {
-    const names = new Set(this.irrByReviewer().filter((r) => r.sampled >= 3 && r.pct < this.irrTarget).map((r) => r.reviewer));
-    const ids = new Set(this.irrSample().filter((r) => names.has(r.reviewer)).map((r) => r.authId));
-    this.openCases('IRR Sample — Reviewers Below Threshold', this.casesByAuthIds(ids), 'irr-below-threshold');
+    const names = new Set(this.irrByReviewer().filter((r) => r.adequate && r.pct < this.irrTarget).map((r) => r.reviewer));
+    this.openIrr('IRR Sample — Reviewers Below Threshold', this.irrSample().filter((r) => names.has(r.reviewer)), 'irr-below-threshold');
+  }
+  drillInsufficientSample() {
+    const names = new Set(this.irrByReviewer().filter((r) => !r.adequate).map((r) => r.reviewer));
+    this.openIrr('IRR Sample — Insufficient Sample Size', this.irrSample().filter((r) => names.has(r.reviewer)), 'irr-insufficient', `Fewer than ${this.minSample} sampled decisions — not enough to report pass/fail`);
   }
   drillDenialSample() {
     const [lob, days] = this.scopeArgs();
     const cs = CASE_POOL.filter((c) => c.phase === 'decided' && (c.decision === 'Denied' || c.decision === 'Partial') && inScope(c, lob, days));
     this.openCases('Denials & Partial Approvals', cs, 'denials-partials', `${cs.length} denial/partial decision(s) — IRR-sampled subset shown via the icons noted on export`);
   }
+  drillReason(reason: DiscrepancyReason) { this.openIrr(`IRR Discrepancies — ${reason}`, this.irrSample().filter((r) => r.discrepancyReason === reason), `irr-reason-${slug(reason)}`); }
+  drillOpenActions() { this.openIrr('Open Corrective Actions', this.irrActions().filter((a) => a.correctiveActionStatus === 'Open'), 'irr-actions-open'); }
+  drillAction(a: IrrReviewRecord) { this.openIrr(`Corrective Action — ${a.reviewer}`, [a], `irr-action-${slug(a.authId)}`); }
 
   drillLob(lob: string) {
     const cs = regBreachesFor(lob, this.withinDays());
@@ -299,15 +384,31 @@ export class AuditTab {
       rows: [
         ['IRR Agreement Rate', `${this.irrAgreementRate()}%`],
         ['Reviewers Below Threshold', this.reviewersBelowThreshold()],
+        ['Reviewers — Insufficient Sample', this.reviewersInsufficientSample()],
         ['Denial/Partial Sample Coverage', `${this.denialSampleCoverage()}%`],
+        ['Open Corrective Actions', this.openCorrectiveActions()],
       ],
     });
   }
   exportIrrByReviewer() {
     this.exporter.open({
       title: 'IRR Agreement by Reviewer', name: 'audit-irr-by-reviewer_2026-07-17',
-      columns: ['Reviewer', 'Agreements', 'Sampled', 'Agreement Rate %'],
-      rows: this.irrByReviewer().map((r) => [r.reviewer, r.agree, r.sampled, r.pct]),
+      columns: ['Reviewer', 'Agreements', 'Sampled', 'Agreement Rate %', 'Sample Adequate'],
+      rows: this.irrByReviewer().map((r) => [r.reviewer, r.agree, r.sampled, r.pct, r.adequate ? 'Yes' : 'No']),
+    });
+  }
+  exportIrrReasons() {
+    this.exporter.open({
+      title: 'IRR Discrepancy Reasons', name: 'audit-irr-reasons_2026-07-17',
+      columns: ['Reason', 'Count', '% of Disagreements'],
+      rows: this.irrReasons().map((r) => [r.reason, r.count, this.reasonPct(r.count)]),
+    });
+  }
+  exportIrrActions() {
+    this.exporter.open({
+      title: 'IRR Corrective Actions', name: 'audit-irr-actions_2026-07-17',
+      columns: ['Reviewer', 'Auth', 'Discrepancy Reason', 'Corrective Action', 'Status', 'Action Date'],
+      rows: this.irrActions().map((a) => [a.reviewer, a.authId, a.discrepancyReason ?? '—', a.correctiveAction, a.correctiveActionStatus ?? '—', a.correctiveActionDate ?? '—']),
     });
   }
   exportRegTat() {

@@ -11,7 +11,7 @@ import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow, CmProgramStat } from '../shared/cm-data';
-import { CareProgramName, ProgramDeenrollReason } from '../data/cm-programs';
+import { CareProgramName, ProgramDisenrollReason } from '../data/cm-programs';
 import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
 import { CaseType, CASE_TYPES, ConsentType, AssessmentType, REFERRAL_SOURCES, ReferralSource, ReferralStatus, ReferralIntakeRec, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, referralTatCountdown, consentAtRisk, tatAdherent, INTAKE_COORDINATORS } from '../data/cm-intake';
@@ -589,7 +589,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Program Management -->
       @case ('program') {
         <div class="tab-head">
-          <div><h2>Program Management</h2><span class="section-note">Configurable care-management programs — a member can be enrolled in several at once, or none. Enrollment/deenrollment is independent of the case or care plan closing.</span></div>
+          <div><h2>Program Management</h2><span class="section-note">Configurable care-management programs — a member can be enrolled in several at once, or none. Enrollment/disenrollment is independent of the case or care plan closing.</span></div>
           <button class="btn outline sm" (click)="exportProgramSummary()">Export</button>
         </div>
 
@@ -603,10 +603,10 @@ const TAB_DEFS: TabDef[] = [
               <div class="cp-val">{{ p.active }}</div><div class="cp-lab">{{ p.program }}</div>
               <div class="cp-trend">
                 <span class="up">▲ {{ p.newEnrolled }} new</span>
-                @if (p.deenrolled) { <span class="warn"> · ▼ {{ p.deenrolled }} left</span> }
+                @if (p.disenrolled) { <span class="warn"> · ▼ {{ p.disenrolled }} left</span> }
                 <span> ({{ lookbackLabel() }})</span>
               </div>
-              <div class="pbar" [class.amber]="p.deenrollmentRate >= 15" [class.red]="p.deenrollmentRate >= 30"><span [style.width.%]="100 - p.deenrollmentRate"></span></div>
+              <div class="pbar" [class.amber]="p.disenrollmentRate >= 15" [class.red]="p.disenrollmentRate >= 30"><span [style.width.%]="100 - p.disenrollmentRate"></span></div>
               <div class="cp-sub-line">{{ p.avgActiveTenure }}d avg. active tenure</div>
             </div>
           </div>
@@ -615,11 +615,11 @@ const TAB_DEFS: TabDef[] = [
 
         <div class="cp-donut-row mt-6">
           <div class="panel">
-            <div class="panel-pad tbl-head"><h3 class="pt">Deenrollment Reasons ({{ lookbackLabel() }})</h3><button class="btn outline sm" (click)="exportDeenrollReasons()">Export</button></div>
+            <div class="panel-pad tbl-head"><h3 class="pt">Disenrollment Reasons ({{ lookbackLabel() }})</h3><button class="btn outline sm" (click)="exportDisenrollReasons()">Export</button></div>
             <div class="panel-pad" style="padding-top:0">
-              @if (totalDeenrolled() > 0) {
-              <z-donut [segments]="deenrollDonutSegments()" [centerValue]="totalDeenrolledLabel()" centerLabel="Left" [clickable]="true" (segClick)="onDeenrollSegClick($event)"></z-donut>
-              } @else { <div class="empty">No deenrollments in the last {{ lookbackLabel() }}.</div> }
+              @if (totalDisenrolled() > 0) {
+              <z-donut [segments]="disenrollDonutSegments()" [centerValue]="totalDisenrolledLabel()" centerLabel="Left" [clickable]="true" (segClick)="onDisenrollSegClick($event)"></z-donut>
+              } @else { <div class="empty">No disenrollments in the last {{ lookbackLabel() }}.</div> }
             </div>
           </div>
           <div class="panel">
@@ -632,15 +632,15 @@ const TAB_DEFS: TabDef[] = [
 
         <div class="panel mt-6"><div class="panel-pad tbl-head"><h3 class="pt">Program Detail</h3></div>
           <table class="z-table"><thead><tr>
-            <th>Program</th><th>Active</th><th>New ({{ lookbackLabel() }})</th><th>Deenrolled ({{ lookbackLabel() }})</th>
-            <th>Deenrollment Rate</th><th>Avg. Active Tenure</th><th>Avg. Completed Duration</th></tr></thead>
+            <th>Program</th><th>Active</th><th>New ({{ lookbackLabel() }})</th><th>Disenrolled ({{ lookbackLabel() }})</th>
+            <th>Disenrollment Rate</th><th>Avg. Active Tenure</th><th>Avg. Completed Duration</th></tr></thead>
           <tbody>@for (p of programStats(); track p.program) {
             <tr>
               <td class="strong">{{ p.program }}</td>
               <td class="num clk" (click)="openProgramActive(p.program)">{{ p.active }}</td>
               <td class="num clk" (click)="openProgramNew(p.program)">{{ p.newEnrolled }}</td>
-              <td class="num clk" (click)="openProgramDeenrolled(p.program)">{{ p.deenrolled }}</td>
-              <td><span class="badge" [class.red]="p.deenrollmentRate >= 30" [class.amber]="p.deenrollmentRate >= 15 && p.deenrollmentRate < 30" [class.green]="p.deenrollmentRate < 15">{{ p.deenrollmentRate }}%</span></td>
+              <td class="num clk" (click)="openProgramDisenrolled(p.program)">{{ p.disenrolled }}</td>
+              <td><span class="badge" [class.red]="p.disenrollmentRate >= 30" [class.amber]="p.disenrollmentRate >= 15 && p.disenrollmentRate < 30" [class.green]="p.disenrollmentRate < 15">{{ p.disenrollmentRate }}%</span></td>
               <td class="num">{{ p.avgActiveTenure }}d</td>
               <td class="num">{{ p.avgCompletedDuration }}d</td>
             </tr>
@@ -1513,13 +1513,13 @@ export class CmDashboard {
   // High-Risk Maternity, SDOH / Community Resource Support, Weight & Nutrition Management, Smoking
   // Cessation) that can be layered onto any case regardless of care plan/template. Standing counts
   // (Active) aren't lookback-scoped, same convention as Care Plan & Outcomes' Active Care Plans —
-  // but new-enrollment/deenrollment/reasons ARE, since those are "what happened in the last N
+  // but new-enrollment/disenrollment/reasons ARE, since those are "what happened in the last N
   // days" questions. ----
   readonly programStats = computed((): CmProgramStat[] => this.cmData.programStats(this.lookback.windowDays(), this.scopedCases()));
-  readonly programDeenrollReasons = computed(() => this.cmData.programDeenrollReasons(this.lookback.windowDays(), this.scopedCases()).filter((r) => r.count > 0));
+  readonly programDisenrollReasons = computed(() => this.cmData.programDisenrollReasons(this.lookback.windowDays(), this.scopedCases()).filter((r) => r.count > 0));
   readonly programOverlap = computed(() => this.cmData.programOverlap(this.scopedCases()));
-  readonly totalDeenrolled = computed(() => this.programDeenrollReasons().reduce((s, r) => s + r.count, 0));
-  readonly totalDeenrolledLabel = computed(() => String(this.totalDeenrolled()));
+  readonly totalDisenrolled = computed(() => this.programDisenrollReasons().reduce((s, r) => s + r.count, 0));
+  readonly totalDisenrolledLabel = computed(() => String(this.totalDisenrolled()));
   readonly totalMembersLabel = computed(() => String(this.scopedCases().length));
 
   private readonly PROGRAM_COLORS: Record<CareProgramName, string> = {
@@ -1532,7 +1532,7 @@ export class CmDashboard {
     'High-Risk Maternity': 'users', 'SDOH / Community Resource Support': 'mappin',
     'Weight & Nutrition Management': 'balance', 'Smoking Cessation': 'xcircle',
   };
-  private readonly REASON_COLORS: Record<ProgramDeenrollReason, string> = {
+  private readonly REASON_COLORS: Record<ProgramDisenrollReason, string> = {
     'Goals Met': '#10b981', 'Member Declined': '#f59e0b', 'Lost to Follow-Up': '#ef4444',
     'Transferred to Another Program': '#3b82f6', 'Ineligible — Coverage Change': '#94a3b8',
   };
@@ -1541,9 +1541,9 @@ export class CmDashboard {
   };
   programColor(p: CareProgramName): string { return this.PROGRAM_COLORS[p]; }
   programIcon(p: CareProgramName): string { return this.PROGRAM_ICONS[p]; }
-  readonly deenrollDonutSegments = computed((): Segment[] => this.programDeenrollReasons().map((r) => ({ label: r.reason, value: r.count, color: this.REASON_COLORS[r.reason] })));
+  readonly disenrollDonutSegments = computed((): Segment[] => this.programDisenrollReasons().map((r) => ({ label: r.reason, value: r.count, color: this.REASON_COLORS[r.reason] })));
   readonly overlapDonutSegments = computed((): Segment[] => this.programOverlap().map((o) => ({ label: o.bucket, value: o.count, color: this.OVERLAP_COLORS[o.bucket] })));
-  onDeenrollSegClick(s: Segment) { this.openProgramDeenrolledReason(s.label as ProgramDeenrollReason); }
+  onDisenrollSegClick(s: Segment) { this.openProgramDisenrolledReason(s.label as ProgramDisenrollReason); }
   onOverlapSegClick(s: Segment) { this.openProgramOverlap(s.label); }
 
   private openProgramCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
@@ -1555,20 +1555,20 @@ export class CmDashboard {
   }
   openProgramActive(p: CareProgramName) { this.openProgramCases(`${p} — Active`, this.cmData.casesInProgram(p, this.scopedCases()), `${slug(p)}-active`); }
   openProgramNew(p: CareProgramName) { this.openProgramCases(`${p} — New Enrollments`, this.cmData.casesNewlyEnrolled(p, this.lookback.windowDays(), this.scopedCases()), `${slug(p)}-new`, `enrolled within ${this.lookbackLabel()}`); }
-  openProgramDeenrolled(p: CareProgramName) { this.openProgramCases(`${p} — Deenrolled`, this.cmData.casesDeenrolled(p, this.lookback.windowDays(), this.scopedCases()), `${slug(p)}-deenrolled`, `deenrolled within ${this.lookbackLabel()}`); }
-  openProgramDeenrolledReason(reason: ProgramDeenrollReason) {
-    this.openProgramCases(`Deenrolled — ${reason}`, this.cmData.casesDeenrolledForReason(reason, this.lookback.windowDays(), this.scopedCases()), `deenroll-${slug(reason)}`, `within ${this.lookbackLabel()}`);
+  openProgramDisenrolled(p: CareProgramName) { this.openProgramCases(`${p} — Disenrolled`, this.cmData.casesDisenrolled(p, this.lookback.windowDays(), this.scopedCases()), `${slug(p)}-disenrolled`, `disenrolled within ${this.lookbackLabel()}`); }
+  openProgramDisenrolledReason(reason: ProgramDisenrollReason) {
+    this.openProgramCases(`Disenrolled — ${reason}`, this.cmData.casesDisenrolledForReason(reason, this.lookback.windowDays(), this.scopedCases()), `disenroll-${slug(reason)}`, `within ${this.lookbackLabel()}`);
   }
   openProgramOverlap(bucket: string) { this.openProgramCases(bucket, this.cmData.casesWithOverlap(bucket, this.scopedCases()), `overlap-${slug(bucket)}`); }
 
   exportProgramSummary() {
     this.exporter.open({ title: 'Program Management', name: 'cm-program-summary_2026-07-17',
-      columns: ['Program', 'Active', `New (${this.lookbackLabel()})`, `Deenrolled (${this.lookbackLabel()})`, 'Deenrollment Rate %', 'Avg. Active Tenure (days)', 'Avg. Completed Duration (days)'],
-      rows: this.programStats().map((p) => [p.program, p.active, p.newEnrolled, p.deenrolled, p.deenrollmentRate, p.avgActiveTenure, p.avgCompletedDuration]) });
+      columns: ['Program', 'Active', `New (${this.lookbackLabel()})`, `Disenrolled (${this.lookbackLabel()})`, 'Disenrollment Rate %', 'Avg. Active Tenure (days)', 'Avg. Completed Duration (days)'],
+      rows: this.programStats().map((p) => [p.program, p.active, p.newEnrolled, p.disenrolled, p.disenrollmentRate, p.avgActiveTenure, p.avgCompletedDuration]) });
   }
-  exportDeenrollReasons() {
-    this.exporter.open({ title: 'Deenrollment Reasons', name: 'cm-program-deenroll-reasons_2026-07-17',
-      columns: ['Reason', 'Count'], rows: this.programDeenrollReasons().map((r) => [r.reason, r.count]) });
+  exportDisenrollReasons() {
+    this.exporter.open({ title: 'Disenrollment Reasons', name: 'cm-program-disenroll-reasons_2026-07-17',
+      columns: ['Reason', 'Count'], rows: this.programDisenrollReasons().map((r) => [r.reason, r.count]) });
   }
   exportOverlap() {
     this.exporter.open({ title: 'Concurrent Program Enrollment', name: 'cm-program-overlap_2026-07-17',

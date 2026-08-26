@@ -2,8 +2,8 @@
 // case's care plan (one plan per case) and a case's discipline-label `program` field on
 // CmCaseRec: a program here is a highly configurable, opt-in offering that can be layered onto
 // ANY case regardless of primary diagnosis or care plan template, a member can be enrolled in
-// zero, one, or several concurrently, and enrollment/deenrollment is its own independent
-// lifecycle — not tied to the case closing or the care plan closing. That's why deenrollment needs
+// zero, one, or several concurrently, and enrollment/disenrollment is its own independent
+// lifecycle — not tied to the case closing or the care plan closing. That's why disenrollment needs
 // its own metric rather than reusing carePlanStatus/carePlanClosedDate.
 import { TODAY } from './case-fields';
 import { CmCaseRec, CM_CASE_POOL } from './cm-case-pool';
@@ -23,10 +23,10 @@ export const CARE_PROGRAMS: CareProgramName[] = [
   'SDOH / Community Resource Support', 'Weight & Nutrition Management', 'Smoking Cessation',
 ];
 
-export type ProgramDeenrollReason =
+export type ProgramDisenrollReason =
   | 'Goals Met' | 'Member Declined' | 'Lost to Follow-Up' | 'Transferred to Another Program' | 'Ineligible — Coverage Change';
 
-export const PROGRAM_DEENROLL_REASONS: ProgramDeenrollReason[] = [
+export const PROGRAM_DISENROLL_REASONS: ProgramDisenrollReason[] = [
   'Goals Met', 'Member Declined', 'Lost to Follow-Up', 'Transferred to Another Program', 'Ineligible — Coverage Change',
 ];
 
@@ -34,15 +34,15 @@ export interface CmProgramEnrollment {
   memberId: string;
   program: CareProgramName;
   enrolledDate: string;                 // ISO
-  status: 'Active' | 'Deenrolled';
-  endDate: string | null;               // set only when status === 'Deenrolled'
-  deenrollReason: ProgramDeenrollReason | null;
+  status: 'Active' | 'Disenrolled';
+  endDate: string | null;               // set only when status === 'Disenrolled'
+  disenrollReason: ProgramDisenrollReason | null;
 }
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }
 
-function reasonFor(seed: number): ProgramDeenrollReason {
+function reasonFor(seed: number): ProgramDisenrollReason {
   if (seed < 40) return 'Goals Met';
   if (seed < 60) return 'Member Declined';
   if (seed < 80) return 'Lost to Follow-Up';
@@ -76,19 +76,19 @@ export function buildProgramEnrollments(cases: CmCaseRec[]): CmProgramEnrollment
       const enrolledDaysAgo = (i * 29 + k * 53 + 11) % 540; // up to ~18 months of enrollment history
       const enrolledDate = isoDate(addDays(TODAY, -enrolledDaysAgo));
 
-      const deenrollSeed = (i * 37 + k * 41 + 9) % 100;
-      const isDeenrolled = deenrollSeed < 28 && enrolledDaysAgo > 10;
-      let status: 'Active' | 'Deenrolled' = 'Active';
+      const disenrollSeed = (i * 37 + k * 41 + 9) % 100;
+      const isDisenrolled = disenrollSeed < 28 && enrolledDaysAgo > 10;
+      let status: 'Active' | 'Disenrolled' = 'Active';
       let endDate: string | null = null;
-      let deenrollReason: ProgramDeenrollReason | null = null;
-      if (isDeenrolled) {
-        status = 'Deenrolled';
+      let disenrollReason: ProgramDisenrollReason | null = null;
+      if (isDisenrolled) {
+        status = 'Disenrolled';
         const durationSeed = (i * 61 + k * 7 + 3) % 100;
         const durationDays = Math.max(7, Math.round(enrolledDaysAgo * (0.25 + durationSeed / 150)));
         endDate = isoDate(addDays(TODAY, -Math.max(0, enrolledDaysAgo - Math.min(durationDays, enrolledDaysAgo - 1))));
-        deenrollReason = reasonFor((i * 71 + k * 13 + 17) % 100);
+        disenrollReason = reasonFor((i * 71 + k * 13 + 17) % 100);
       }
-      out.push({ memberId: c.memberId, program, enrolledDate, status, endDate, deenrollReason });
+      out.push({ memberId: c.memberId, program, enrolledDate, status, endDate, disenrollReason });
     }
   });
   return out;

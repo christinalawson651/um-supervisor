@@ -125,18 +125,6 @@ export interface AuditFlag {
   severityLabel: string;
 }
 
-/** Inter-Rater Reliability — a sampled secondary (QA/MD) review of a decided case, checking
- *  whether the auditor would have reached the same determination as the original reviewer. */
-export interface IrrCaseRow {
-  authId: string;
-  member: string;
-  procedure: string;
-  decision: string;
-  reviewer: string;   // original nurse/reviewer
-  auditor: string;    // secondary QA/MD reviewer
-  agree: boolean;
-}
-
 /** Regulatory TAT compliance for one LOB/program against its own statutory decision window. */
 export interface RegComplianceRow {
   lob: string;
