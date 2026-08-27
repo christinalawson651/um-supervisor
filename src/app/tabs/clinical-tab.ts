@@ -4,7 +4,7 @@ import {
   liveDeterminationMix, liveDeterminationCases, DeterminationMixRow, DeterminationOutcome,
 } from '../data/dashboard-data';
 import { CASE_POOL, GUIDELINE_DETAIL } from '../data/case-pool';
-import { urgencyOf, mdReviewerOf, determinationReasonOf, criteriaStatusOf } from '../data/case-fields';
+import { urgencyOf, mdReviewerOf, determinationReasonOf, criteriaStatusOf, authStatusOf, AUTH_STATUSES, dxOf } from '../data/case-fields';
 import { Interaction } from '../shared/interaction';
 import { Metrics, COLUMNS, toRow } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
@@ -21,6 +21,8 @@ const CLINICAL_WIDGETS = [
   { id: 'decision-mix', title: 'Decision Mix' },
   { id: 'Approved', title: 'Approved' }, { id: 'Denied', title: 'Denied' }, { id: 'Partial', title: 'Partial' },
   { id: 'Auto-Approved', title: 'Auto-Approved' }, { id: 'MD Review', title: 'MD Review' }, { id: 'P2P Rate', title: 'P2P Rate' },
+  { id: 'auth-status-mix', title: 'Authorization Status Mix' },
+  { id: 'diagnosis-mix', title: 'Diagnosis Mix' },
   { id: 'reason-mix', title: 'Reason Codes by Outcome' },
   { id: 'drilldown', title: 'Decision Drilldown by Service' },
 ];
@@ -71,6 +73,43 @@ const CLINICAL_WIDGETS = [
       }
     </div>
 
+    @if (!isHidden('auth-status-mix')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head">
+        <h3 class="panel-title">Authorization Status Mix</h3>
+        <z-widget-actions (exportClick)="exportAuthStatus()" (removeClick)="hide('auth-status-mix')"></z-widget-actions>
+      </div>
+      <div class="reason-rows">
+        @for (s of authStatusMix(); track s.status) {
+          <div class="reason-row clk" (click)="drillAuthStatus(s.status)">
+            <div class="reason-lab">{{ s.status }}</div>
+            <div class="reason-bar-track"><div class="reason-bar-fill" [style.width.%]="s.pct"></div></div>
+            <div class="reason-count">{{ s.count }} · {{ s.pct }}%</div>
+          </div>
+        }
+      </div>
+    </div>
+    }
+
+    @if (!isHidden('diagnosis-mix')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head">
+        <h3 class="panel-title">Diagnosis Mix</h3>
+        <span class="section-note">Primary diagnosis behind every authorization, ranked by volume</span>
+        <z-widget-actions (exportClick)="exportDiagnosisMix()" (removeClick)="hide('diagnosis-mix')"></z-widget-actions>
+      </div>
+      <div class="reason-rows">
+        @for (d of diagnosisMix(); track d.code) {
+          <div class="reason-row clk" (click)="drillDiagnosis(d.code)">
+            <div class="reason-lab"><span class="reason-code">{{ d.code }}</span>{{ d.description }}</div>
+            <div class="reason-bar-track"><div class="reason-bar-fill" [style.width.%]="d.pct"></div></div>
+            <div class="reason-count">{{ d.count }} · {{ d.pct }}%</div>
+          </div>
+        }
+      </div>
+    </div>
+    }
+
     @if (!isHidden('reason-mix')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
@@ -116,7 +155,7 @@ const CLINICAL_WIDGETS = [
       <table class="z-table">
         <thead>
           <tr>
-            <th class="sortable" (click)="sortBy('procedure')">Diagnosis / Procedure{{ caret('procedure') }}</th>
+            <th class="sortable" (click)="sortBy('procedure')">Procedure{{ caret('procedure') }}</th>
             <th class="sortable" (click)="sortBy('serviceType')">Service Type{{ caret('serviceType') }}</th>
             <th>Guideline</th>
             <th class="sortable" (click)="sortBy('approvalRate')">Approval Rate{{ caret('approvalRate') }}</th>
@@ -275,6 +314,70 @@ export class ClinicalTab {
     const [lob, days] = this.scopeArgs();
     const cases = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, days));
     this.exporter.open({ title: 'Decision Mix', name: 'clinical-decision-mix_2026-07-17', columns: COLUMNS, rows: cases.map(toRow) });
+  }
+
+  /** Full lifecycle status mix — pending queues collapse into their broader stage, decided cases
+   *  keep their decision label, so this reads as one continuous funnel from Submitted to Determined. */
+  readonly authStatusMix = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    const cs = CASE_POOL.filter((c) => inScope(c, lob, days));
+    const total = cs.length || 1;
+    const counts = new Map<string, number>();
+    cs.forEach((c) => { const s = authStatusOf(c); counts.set(s, (counts.get(s) ?? 0) + 1); });
+    return AUTH_STATUSES.map((status) => ({ status, count: counts.get(status) ?? 0, pct: Math.round(((counts.get(status) ?? 0) / total) * 100) }))
+      .filter((s) => s.count > 0)
+      .sort((a, b) => b.count - a.count);
+  });
+  drillAuthStatus(status: string) {
+    const [lob, days] = this.scopeArgs();
+    const cases = CASE_POOL.filter((c) => inScope(c, lob, days) && authStatusOf(c) === status);
+    this.ix.openExplorer({
+      title: `Authorization Status — ${status}`,
+      context: `${cases.length} authorization(s) currently ${status}`,
+      columns: COLUMNS, rows: cases.map(toRow),
+      exportName: `auth-status-${status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  exportAuthStatus() {
+    this.exporter.open({
+      title: 'Authorization Status Mix', name: 'clinical-auth-status-mix_2026-07-17',
+      columns: ['Status', 'Count', '% of Total'],
+      rows: this.authStatusMix().map((s) => [s.status, s.count, s.pct]),
+    });
+  }
+
+  /** Primary diagnosis behind every authorization — correlated with procedure (dxOf), ranked by
+   *  volume across the same LOB/Lookback scope as the rest of this tab. */
+  readonly diagnosisMix = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    const cs = CASE_POOL.filter((c) => inScope(c, lob, days));
+    const total = cs.length || 1;
+    const byCode = new Map<string, { description: string; count: number }>();
+    cs.forEach((c) => {
+      const dx = dxOf(c);
+      const cur = byCode.get(dx.code);
+      if (cur) cur.count++; else byCode.set(dx.code, { description: dx.description, count: 1 });
+    });
+    return [...byCode.entries()].map(([code, v]) => ({ code, description: v.description, count: v.count, pct: Math.round((v.count / total) * 100) }))
+      .sort((a, b) => b.count - a.count);
+  });
+  drillDiagnosis(code: string) {
+    const [lob, days] = this.scopeArgs();
+    const cases = CASE_POOL.filter((c) => inScope(c, lob, days) && dxOf(c).code === code);
+    const description = this.diagnosisMix().find((d) => d.code === code)?.description ?? '';
+    this.ix.openExplorer({
+      title: `Diagnosis — ${code}`,
+      context: `${cases.length} authorization(s) coded ${code} (${description})`,
+      columns: COLUMNS, rows: cases.map(toRow),
+      exportName: `diagnosis-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  exportDiagnosisMix() {
+    this.exporter.open({
+      title: 'Diagnosis Mix', name: 'clinical-diagnosis-mix_2026-07-17',
+      columns: ['Diagnosis Code', 'Description', 'Count', '% of Total'],
+      rows: this.diagnosisMix().map((d) => [d.code, d.description, d.count, d.pct]),
+    });
   }
 
   /** Reason Codes by Outcome — a drill-down of the Decision Mix above: pick one of its three

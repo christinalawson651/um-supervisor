@@ -62,6 +62,35 @@ const PROCS: Proc[] = [
 ];
 export const GUIDELINE_BY_PROCEDURE: Record<string, string> = Object.fromEntries(PROCS.map((p) => [p.name, p.guideline]));
 
+// ---- Diagnosis (ICD-10-CM) — every procedure maps to 2 clinically plausible diagnosis codes;
+// which of the 2 a given case gets is picked deterministically per authId (same pattern as every
+// other derived field), not stored on CaseRec itself — see dxOf() in case-fields.ts. ----
+export interface DiagnosisCode { code: string; description: string; }
+export const DX_BY_PROCEDURE: Record<string, DiagnosisCode[]> = {
+  'Total Knee Replacement':  [{ code: 'M17.11', description: 'Unilateral primary osteoarthritis, right knee' }, { code: 'M17.12', description: 'Unilateral primary osteoarthritis, left knee' }],
+  'Lumbar Fusion':           [{ code: 'M51.36', description: 'Other intervertebral disc degeneration, lumbar region' }, { code: 'M43.16', description: 'Spondylolisthesis, lumbar region' }],
+  'Hip Replacement':         [{ code: 'M16.11', description: 'Unilateral primary osteoarthritis, right hip' }, { code: 'M16.12', description: 'Unilateral primary osteoarthritis, left hip' }],
+  'Cardiac Bypass (CABG)':   [{ code: 'I25.10', description: 'Atherosclerotic heart disease of native coronary artery, without angina pectoris' }, { code: 'I25.110', description: 'Atherosclerotic heart disease of native coronary artery with unstable angina pectoris' }],
+  'Spinal Fusion (3-level)': [{ code: 'M43.16', description: 'Spondylolisthesis, lumbar region' }, { code: 'M48.06', description: 'Spinal stenosis, lumbar region' }],
+  'Bariatric Surgery':       [{ code: 'E66.01', description: 'Morbid (severe) obesity due to excess calories' }, { code: 'E66.9', description: 'Obesity, unspecified' }],
+  'NICU Stay':               [{ code: 'P07.30', description: 'Preterm newborn, unspecified weeks of gestation' }, { code: 'P07.14', description: 'Extremely low birth weight newborn, 750-999 grams' }],
+  'MRI Brain w/ Contrast':   [{ code: 'G43.909', description: 'Migraine, unspecified, not intractable, without status migrainosus' }, { code: 'R51.9', description: 'Headache, unspecified' }],
+  'MRI Lumbar Spine':        [{ code: 'M54.50', description: 'Low back pain, unspecified' }, { code: 'M51.26', description: 'Other intervertebral disc displacement, lumbar region' }],
+  'CT Abdomen':              [{ code: 'R10.9', description: 'Unspecified abdominal pain' }, { code: 'K92.2', description: 'Gastrointestinal hemorrhage, unspecified' }],
+  'Cardiac Catheterization': [{ code: 'I25.10', description: 'Atherosclerotic heart disease of native coronary artery, without angina pectoris' }, { code: 'I20.9', description: 'Angina pectoris, unspecified' }],
+  'Colonoscopy':             [{ code: 'K63.5', description: 'Polyp of colon' }, { code: 'Z12.11', description: 'Encounter for screening for malignant neoplasm of colon' }],
+  'Physical Therapy (12v)':  [{ code: 'M25.561', description: 'Pain in right knee' }, { code: 'M54.50', description: 'Low back pain, unspecified' }],
+  'Cataract Surgery':        [{ code: 'H25.11', description: 'Age-related nuclear cataract, right eye' }, { code: 'H25.12', description: 'Age-related nuclear cataract, left eye' }],
+  'Chemotherapy Cycle':      [{ code: 'C50.911', description: 'Malignant neoplasm of unspecified site of right female breast' }, { code: 'C34.90', description: 'Malignant neoplasm of unspecified part of bronchus or lung' }],
+  'Echocardiogram':          [{ code: 'I50.9', description: 'Heart failure, unspecified' }, { code: 'I48.91', description: 'Unspecified atrial fibrillation' }],
+  'Sleep Study':             [{ code: 'G47.33', description: 'Obstructive sleep apnea (adult) (pediatric)' }, { code: 'G47.00', description: 'Insomnia, unspecified' }],
+  'Behavioral Health IOP':   [{ code: 'F33.1', description: 'Major depressive disorder, recurrent, moderate' }, { code: 'F41.1', description: 'Generalized anxiety disorder' }],
+  'Behavioral Health PHP':   [{ code: 'F31.81', description: 'Bipolar II disorder' }, { code: 'F43.10', description: 'Post-traumatic stress disorder, unspecified' }],
+};
+export const DX_CODES: DiagnosisCode[] = Object.values(DX_BY_PROCEDURE).flat()
+  .filter((d, i, arr) => arr.findIndex((x) => x.code === d.code) === i)
+  .sort((a, b) => a.code.localeCompare(b.code));
+
 // Fuller description behind each short guideline code — shown as hover detail wherever the terse
 // code (e.g. "XYZ 2024") is displayed on its own without room for the full name.
 export const GUIDELINE_DETAIL: Record<string, string> = {

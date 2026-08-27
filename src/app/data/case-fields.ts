@@ -1,6 +1,6 @@
 // Shared, derived case attributes used across every tab's tables and drill-downs
 // (single source of truth so "LOB", "Service Category", and "Urgency" mean the same thing everywhere).
-import { CaseRec } from './case-pool';
+import { CaseRec, DX_BY_PROCEDURE, DiagnosisCode } from './case-pool';
 
 export const LOBS = ['Medicaid', 'Medicare Advantage', 'Commercial PPO', 'ACA Exchange'];
 export function lobOf(authId: string): string { return LOBS[Number(authId.slice(-2)) % LOBS.length]; }
@@ -13,6 +13,14 @@ export function serviceCategoryOf(c: CaseRec): string {
   if (c.serviceType === 'Behavioral') return 'Behavioral Health';
   const h = Number(c.authId.slice(-1)) % 3;
   return h === 0 ? 'Pharmacy' : h === 1 ? 'DME / Home Health' : 'Outpatient';
+}
+
+/** Primary diagnosis behind the request — correlated with procedure (a knee replacement doesn't
+ *  get a cardiac dx), one of 2 plausible ICD-10-CM codes per procedure, picked deterministically
+ *  per authId so the same case always shows the same diagnosis. */
+export function dxOf(c: CaseRec): DiagnosisCode {
+  const options = DX_BY_PROCEDURE[c.procedure] ?? DX_BY_PROCEDURE['MRI Brain w/ Contrast'];
+  return options[Number(c.authId.slice(-1)) % options.length];
 }
 
 export type AuthType = 'IP' | 'OP' | 'RX';
@@ -28,6 +36,25 @@ export function tatStatus(c: CaseRec): 'On Track' | 'At Risk' | 'Breached' {
 
 export function urgencyOf(c: CaseRec): 'Expedited' | 'Standard' {
   return c.tags.includes('expedited') ? 'Expedited' : 'Standard';
+}
+
+/** Full authorization lifecycle status — broader than `c.status` (the raw queue name for pending
+ *  cases, or decision label for decided ones): pending queues collapse into the stage a supervisor
+ *  actually thinks in (e.g. Clinical Review + Concurrent Review are both "In Clinical Review").
+ *  Draft/Withdrawn/Expired aren't modeled in this demo (no case ever enters those states) — see the
+ *  field guide. */
+export const AUTH_STATUSES = ['Submitted', 'In Clinical Review', 'In MD Review', 'Pended — RFI', 'Pended — OON Review', 'Approved', 'Auto-Approved', 'Denied', 'Partial Approval'];
+const PENDING_STATUS_MAP: Record<string, string> = {
+  'Intake': 'Submitted',
+  'Clinical Review': 'In Clinical Review',
+  'Concurrent Review': 'In Clinical Review',
+  'MD Review': 'In MD Review',
+  'Pending P2P': 'In MD Review',
+  'RFI Pending': 'Pended — RFI',
+  'OON Review': 'Pended — OON Review',
+};
+export function authStatusOf(c: CaseRec): string {
+  return c.phase === 'decided' ? c.status : (PENDING_STATUS_MAP[c.status] ?? c.status);
 }
 
 // ---- MD Reviewer — the internal medical director who handled a decision requiring MD/peer-to-peer
@@ -150,6 +177,47 @@ export type ProviderIssue = 'None' | 'Incomplete' | 'Out of Network';
 export function providerIssueOf(c: CaseRec): ProviderIssue {
   if (c.tags.includes('oon')) return 'Out of Network';
   return Number(c.authId.slice(-2)) % 8 === 0 ? 'Incomplete' : 'None';
+}
+
+// ---- Out-of-Network resolution — every 'oon'-tagged case (the OON Review queue) resolves one of
+// three ways: a Continuity of Care allowance (member already has an established relationship with
+// this provider), a Single Case Agreement (a one-time negotiated rate for this specific case), or a
+// standard OON exception (no CoC/SCA basis, just approved as out-of-network). Both the resolution
+// and its reason are deterministic per authId — not stored fields, same pattern as every other
+// derived attribute here. ----
+export type OonResolution = 'Continuity of Care' | 'Single Case Agreement' | 'Standard Exception';
+export function oonResolutionOf(c: CaseRec): OonResolution | null {
+  if (!c.tags.includes('oon')) return null;
+  const n = Number(c.authId.slice(-1));
+  if (n % 3 === 0) return 'Continuity of Care';
+  if (n % 3 === 1) return 'Single Case Agreement';
+  return 'Standard Exception';
+}
+export const COC_REASONS = [
+  'Newly enrolled member — active course of treatment',
+  'Provider terminated from network — ongoing treatment',
+  'Pregnancy — second or third trimester',
+  'Terminal illness — end-of-life care',
+  'Post-operative care — recent surgery',
+];
+export const SCA_REASONS = [
+  'No in-network provider available for this service',
+  'Specialized care not available in-network',
+  'Provider network gap in member\'s service area',
+  'Negotiated rate lower than standard OON cost-share',
+];
+export const STANDARD_OON_REASONS = [
+  'Emergency / urgent need — no time to redirect to network',
+  'Member self-referred out-of-network',
+  'Administrative exception — plan-level override',
+];
+export function oonReasonOf(c: CaseRec): string | null {
+  const resolution = oonResolutionOf(c);
+  if (!resolution) return null;
+  const n = Number(c.authId.slice(-2));
+  if (resolution === 'Continuity of Care') return COC_REASONS[n % COC_REASONS.length];
+  if (resolution === 'Single Case Agreement') return SCA_REASONS[n % SCA_REASONS.length];
+  return STANDARD_OON_REASONS[n % STANDARD_OON_REASONS.length];
 }
 
 /** Automated intake processing outcome — only meaningful for cases still sitting in the Intake

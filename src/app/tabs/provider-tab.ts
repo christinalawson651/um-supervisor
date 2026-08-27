@@ -13,12 +13,14 @@ import { Lookback } from '../shared/lookback';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { COLUMNS, toRow } from '../shared/metrics';
-import { urgencyOf } from '../data/case-fields';
+import { urgencyOf, oonResolutionOf, oonReasonOf, OonResolution } from '../data/case-fields';
 
 const PROVIDER_WIDGETS = [
   { id: 'flags', title: 'Needs-Attention Summary' },
+  { id: 'oon-resolution', title: 'Out-of-Network Resolution' },
   { id: 'grid', title: 'Provider & Facility Grid' },
 ];
+const OON_RESOLUTIONS: OonResolution[] = ['Continuity of Care', 'Single Case Agreement', 'Standard Exception'];
 
 interface FlagTile { flag: ProviderFlag; label: string; icon: string; }
 const FLAG_TILES: FlagTile[] = [
@@ -58,6 +60,34 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
             <div class="tile-lab">{{ t.label }}</div>
           </div>
         }
+      </div>
+    </div>
+    }
+
+    @if (!isHidden('oon-resolution')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head">
+        <h3 class="panel-title">Out-of-Network Resolution</h3>
+        <span class="section-note">How OON Review requests were resolved — Continuity of Care, a Single Case Agreement, or a standard exception</span>
+        <z-widget-actions (exportClick)="exportOonResolution()" (removeClick)="hide('oon-resolution')"></z-widget-actions>
+      </div>
+      <div class="tile-row oon-tiles panel-pad">
+        @for (r of oonResolutionCounts(); track r.resolution) {
+          <div class="tile" [class.active]="oonFilter() === r.resolution" (click)="toggleOonFilter(r.resolution)">
+            <div class="tile-val">{{ r.count }}</div>
+            <div class="tile-lab">{{ r.resolution }}</div>
+          </div>
+        }
+      </div>
+      <div class="reason-rows">
+        @for (r of oonReasonBreakdown(); track r.reason) {
+          <div class="reason-row clk" (click)="drillOonReason(r.reason)">
+            <div class="reason-lab">{{ r.reason }}<span class="reason-cat" [attr.data-cat]="r.resolution">{{ r.resolution }}</span></div>
+            <div class="reason-bar-track"><div class="reason-bar-fill" [style.width.%]="r.pct"></div></div>
+            <div class="reason-count">{{ r.count }} · {{ r.pct }}%</div>
+          </div>
+        }
+        @if (!oonReasonBreakdown().length) { <div class="empty">No out-of-network requests in the current scope.</div> }
       </div>
     </div>
     }
@@ -139,6 +169,20 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .panel-title { margin-right: auto; }
 
     .tile-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
+    .oon-tiles { grid-template-columns: repeat(3, 1fr); }
+    .reason-rows { padding: 4px 20px 18px; display: flex; flex-direction: column; gap: 10px; }
+    .reason-row { display: grid; grid-template-columns: minmax(240px, 520px) 1fr 90px; align-items: center; gap: 16px;
+      cursor: pointer; padding: 6px 8px; border-radius: 6px; }
+    .reason-row:hover { background: var(--gray-100); }
+    .reason-lab { font-size: 13px; color: var(--ink-soft); }
+    .reason-cat { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px;
+      border-radius: 4px; margin-left: 8px; font-weight: 600; }
+    .reason-cat[data-cat="Continuity of Care"] { background: var(--blue-bg); color: var(--blue-fg); }
+    .reason-cat[data-cat="Single Case Agreement"] { background: var(--teal-100); color: var(--teal-900); }
+    .reason-cat[data-cat="Standard Exception"] { background: var(--amber-bg); color: var(--amber-fg); }
+    .reason-bar-track { height: 8px; background: var(--gray-100); border-radius: 4px; overflow: hidden; }
+    .reason-bar-fill { height: 100%; background: var(--teal-600); }
+    .reason-count { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--gray-500); }
     .tile {
       display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
       border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
@@ -203,6 +247,51 @@ export class ProviderTab {
     return liveProviderInsights(lob, days);
   });
   readonly needsAttentionCount = computed(() => this.rows().filter((r) => r.needsAttention).length);
+
+  /** Every OON Review case, however it resolved — Continuity of Care, a Single Case Agreement, or a
+   *  standard exception — scoped by the same shared LOB/Lookback filters as the rest of this tab. */
+  private oonCases = computed(() => {
+    const [lob, days] = this.scopeArgs();
+    return CASE_POOL.filter((c) => c.tags.includes('oon') && inScope(c, lob, days));
+  });
+  readonly oonFilter = signal<OonResolution | null>(null);
+  toggleOonFilter(r: OonResolution) { this.oonFilter.set(this.oonFilter() === r ? null : r); }
+  readonly oonResolutionCounts = computed(() => {
+    const cs = this.oonCases();
+    return OON_RESOLUTIONS.map((resolution) => ({ resolution, count: cs.filter((c) => oonResolutionOf(c) === resolution).length }));
+  });
+  readonly oonReasonBreakdown = computed(() => {
+    const all = this.oonCases();
+    const cs = this.oonFilter() ? all.filter((c) => oonResolutionOf(c) === this.oonFilter()) : all;
+    const total = cs.length || 1;
+    const byReason = new Map<string, { resolution: OonResolution; count: number }>();
+    cs.forEach((c) => {
+      const reason = oonReasonOf(c)!; const resolution = oonResolutionOf(c)!;
+      if (!byReason.has(reason)) byReason.set(reason, { resolution, count: 0 });
+      byReason.get(reason)!.count++;
+    });
+    return [...byReason.entries()].map(([reason, v]) => ({ reason, resolution: v.resolution, count: v.count, pct: Math.round((v.count / total) * 100) }))
+      .sort((a, b) => b.count - a.count);
+  });
+  drillOonReason(reason: string) {
+    const cases = this.oonCases().filter((c) => oonReasonOf(c) === reason);
+    this.ix.openExplorer({
+      title: `Out-of-Network — ${reason}`,
+      context: `${cases.length} OON authorization(s) with this reason`,
+      columns: COLUMNS, rows: cases.map(toRow),
+      exportName: `oon-reason-${reason.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  exportOonResolution() {
+    this.exporter.open({
+      title: 'Out-of-Network Resolution', name: 'provider-oon-resolution_2026-07-17',
+      columns: ['Resolution', 'Count'], rows: this.oonResolutionCounts().map((r) => [r.resolution, r.count]),
+      sections: [
+        { label: 'Resolution Summary', name: 'provider-oon-resolution_2026-07-17', columns: ['Resolution', 'Count'], rows: this.oonResolutionCounts().map((r) => [r.resolution, r.count]) },
+        { label: 'Reasons', name: 'provider-oon-reasons_2026-07-17', columns: ['Reason', 'Resolution', 'Count', '% of OON'], rows: this.oonReasonBreakdown().map((r) => [r.reason, r.resolution, r.count, r.pct]) },
+      ],
+    });
+  }
 
   readonly needsAttentionOnly = signal(true);
   readonly activeFilter = signal<ProviderFlag | null>(null);

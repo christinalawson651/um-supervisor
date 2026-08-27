@@ -20,12 +20,13 @@ import {
   liveDeterminationMix,
   DashboardData,
 } from './dashboard-data';
-import { PROVIDERS, CASE_POOL, NURSES } from './case-pool';
+import { PROVIDERS, CASE_POOL, NURSES, DX_CODES } from './case-pool';
 import {
   TODAY, urgencyOf, authTypeOf, LOBS, lobOf, daysAgo, serviceCategoryOf, SERVICE_CATEGORIES,
   intakeChannelOf, routingStatusOf, isDuplicateOf, duplicateResolvedOf, missingInfoCategoryOf,
   reviewTypeOf, providerIssueOf, intakeProcessingStatusOf, INTAKE_CHANNELS,
-  intakeCategoryOf, rfiOriginStageOf,
+  intakeCategoryOf, rfiOriginStageOf, dxOf, authStatusOf, AUTH_STATUSES,
+  oonResolutionOf, oonReasonOf, OonResolution,
 } from './case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { IRR_TARGET_PCT } from './um-irr';
@@ -385,15 +386,22 @@ export const UM_REPORTS: ReportDef[] = [
   },
   {
     id: 'um-clinical', module: 'um', group: 'Clinical & Utilization', title: 'Decision & Determination Insights',
-    description: 'Headline decision mix, approval rate/volume by procedure, and reason codes by outcome.',
+    description: 'Headline decision mix, full authorization status mix, approval rate/volume by procedure, and reason codes by outcome.',
     dimension: { label: 'Service Type', options: [ALL, 'Inpatient', 'Outpatient', 'Behavioral'] },
     dimension2: { label: 'Reason Codes — Outcome', options: ['Denied', 'Partial', 'Approved'] },
+    staticNote: 'Authorization Status Mix collapses pending queues into the lifecycle stage a supervisor thinks in (e.g. Clinical + Concurrent Review both roll into "In Clinical Review"). Draft/Withdrawn/Expired aren\'t modeled in this demo — see the field guide.',
     tables: (ctx) => {
       const rows = liveDecisionRows(ctx.lob, ctx.days).filter((r) => !ctx.dimension || ctx.dimension === ALL || r.serviceType === ctx.dimension);
       const outcome = (ctx.dimension2 || 'Denied') as 'Denied' | 'Partial' | 'Approved';
       const mix = liveDeterminationMix(outcome, ctx.lob, ctx.days);
+      const scopedCases = CASE_POOL.filter((c) => inScope(c, ctx.lob, ctx.days));
+      const statusTotal = scopedCases.length || 1;
+      const statusCounts = new Map<string, number>();
+      scopedCases.forEach((c) => { const s = authStatusOf(c); statusCounts.set(s, (statusCounts.get(s) ?? 0) + 1); });
+      const statusRows = AUTH_STATUSES.map((s) => [s, statusCounts.get(s) ?? 0, pct(statusCounts.get(s) ?? 0, statusTotal)]).filter((r) => (r[1] as number) > 0);
       return [
         { title: 'Headline Decision Stats', columns: ['Metric', 'Value'], rows: liveDecisionStats(ctx.lob, ctx.days).map((s) => [s.label, s.value]) },
+        { title: 'Authorization Status Mix', columns: ['Status', 'Count', '% of Total'], rows: statusRows },
         { title: 'Decisions by Procedure', columns: ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume', 'Below 80% Benchmark'],
           rows: rows.map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume, r.approvalRate < 80 ? 'Yes' : 'No']) },
         { title: `Reason Codes — ${outcome}`, columns: ['Code', 'Reason', 'Category', 'Count', '% of Outcome'],
@@ -542,6 +550,19 @@ export const UM_REPORTS: ReportDef[] = [
         ['unusualUtilization', 'Unusual Utilization'], ['tatDelay', 'TAT Delay'],
       ];
       const summaryRows = flagCounts.map(([flag, label]) => [label, all.filter((r) => (r.flags as string[]).includes(flag)).length]);
+
+      const oonCases = CASE_POOL.filter((c) => c.tags.includes('oon') && inScope(c, ctx.lob, ctx.days));
+      const resolutions: OonResolution[] = ['Continuity of Care', 'Single Case Agreement', 'Standard Exception'];
+      const resolutionRows = resolutions.map((r) => [r, oonCases.filter((c) => oonResolutionOf(c) === r).length]);
+      const oonTotal = oonCases.length || 1;
+      const byReason = new Map<string, { resolution: OonResolution; count: number }>();
+      oonCases.forEach((c) => {
+        const reason = oonReasonOf(c)!; const resolution = oonResolutionOf(c)!;
+        if (!byReason.has(reason)) byReason.set(reason, { resolution, count: 0 });
+        byReason.get(reason)!.count++;
+      });
+      const reasonRows = [...byReason.entries()].map(([reason, v]) => [reason, v.resolution, v.count, pct(v.count, oonTotal)]).sort((a, b) => (b[2] as number) - (a[2] as number));
+
       return [
         {
           title: 'Provider Detail',
@@ -549,6 +570,8 @@ export const UM_REPORTS: ReportDef[] = [
           rows: rows.map((r) => [r.provider, r.specialty, r.networkStatus, r.totalRequests, r.oonRequests, r.approvalRate, r.denialRate, r.incompleteRate, r.expeditedRate, r.avgResponseDays, r.vip ? 'Yes' : '—', r.goldCard ? 'Yes' : '—', r.needsAttention ? 'Yes' : 'No', r.primaryInsight]),
         },
         { title: 'Needs-Attention Summary', columns: ['Outlier Flag', 'Provider Count'], rows: summaryRows },
+        { title: 'Out-of-Network Resolution', columns: ['Resolution', 'Count'], rows: resolutionRows },
+        { title: 'Out-of-Network Reasons', columns: ['Reason', 'Resolution', 'Count', '% of OON'], rows: reasonRows },
       ];
     },
   },
@@ -596,6 +619,69 @@ export const UM_REPORTS: ReportDef[] = [
     id: 'um-irr-discrepancy-reasons', module: 'um', group: 'Audit & Compliance', title: 'IRR Discrepancy Reasons',
     description: 'Every IRR disagreement, grouped by root-cause reason.',
     tables: (ctx) => [{ title: 'IRR Discrepancy Reasons', columns: ['Reason', 'Count'], rows: liveIrrDiscrepancyReasons(ctx.lob, ctx.days).map((r) => [r.reason, r.count]) }],
+  },
+  {
+    id: 'um-auth-by-member', module: 'um', group: 'Queue & Case Operations', title: 'Authorizations by Member',
+    description: 'Every authorization on file for one member — pending and decided, every queue and phase.',
+    staticNote: 'Search-driven — nothing shows until you enter a member name below.',
+    noLobDays: true,
+    memberSearchable: true,
+    tables: (ctx) => {
+      const search = ctx.memberSearch?.trim().toLowerCase();
+      const rows = !search ? [] : CASE_POOL.filter((c) => c.member.toLowerCase().includes(search))
+        .map((c) => [...toRow(c), lobOf(c.authId), `${dxOf(c).code} — ${dxOf(c).description}`]);
+      return [{ title: 'Authorizations by Member', columns: [...COLUMNS, 'LOB', 'Diagnosis'], rows }];
+    },
+  },
+  {
+    id: 'um-dx-authorizations', module: 'um', group: 'Diagnosis & Coding', title: 'Authorizations by Diagnosis',
+    description: 'Volume, approval rate, and average cost for every diagnosis code seen across authorizations.',
+    dimension: { label: 'Service Type', options: [ALL, 'Inpatient', 'Outpatient', 'Behavioral'] },
+    tables: (ctx) => {
+      const cs = CASE_POOL.filter((c) => inScope(c, ctx.lob, ctx.days) && (!ctx.dimension || ctx.dimension === ALL || c.serviceType === ctx.dimension));
+      const byCode = new Map<string, { description: string; cases: typeof cs }>();
+      cs.forEach((c) => {
+        const dx = dxOf(c);
+        if (!byCode.has(dx.code)) byCode.set(dx.code, { description: dx.description, cases: [] });
+        byCode.get(dx.code)!.cases.push(c);
+      });
+      const rows = [...byCode.entries()].map(([code, v]) => {
+        const decided = v.cases.filter((c) => c.phase === 'decided');
+        const approved = decided.filter((c) => c.decision === 'Approved').length;
+        const avgCost = v.cases.reduce((s, c) => s + c.cost, 0) / v.cases.length;
+        return [code, v.description, v.cases.length, decided.length ? pct(approved, decided.length) : 0, `$${Math.round(avgCost).toLocaleString()}`];
+      }).sort((a, b) => (b[2] as number) - (a[2] as number));
+      return [{ title: 'Authorizations by Diagnosis', columns: ['Diagnosis Code', 'Description', 'Volume', 'Approval Rate %', 'Avg Cost'], rows }];
+    },
+  },
+  {
+    id: 'um-dx-by-authorization', module: 'um', group: 'Diagnosis & Coding', title: 'Diagnoses by Authorization',
+    description: 'Case-level list of every authorization with its diagnosis — filter to one code or search by member.',
+    dimension: { label: 'Diagnosis Code', options: [ALL, ...DX_CODES.map((d) => d.code)] },
+    memberSearchable: true,
+    tables: (ctx) => {
+      const search = ctx.memberSearch?.trim().toLowerCase();
+      const rows = CASE_POOL.filter((c) => inScope(c, ctx.lob, ctx.days)
+        && (!ctx.dimension || ctx.dimension === ALL || dxOf(c).code === ctx.dimension)
+        && (!search || c.member.toLowerCase().includes(search)))
+        .map((c) => { const dx = dxOf(c); return [c.authId, c.member, dx.code, dx.description, c.procedure, c.status, c.decision]; });
+      return [{ title: 'Diagnoses by Authorization', columns: ['Auth ID', 'Member', 'Diagnosis Code', 'Description', 'Procedure', 'Status', 'Decision'], rows }];
+    },
+  },
+  {
+    id: 'um-dx-top-admission', module: 'um', group: 'Diagnosis & Coding', title: 'Top Admission Diagnoses',
+    description: 'Every diagnosis code seen on an inpatient authorization, ranked by volume.',
+    tables: (ctx) => {
+      const cs = CASE_POOL.filter((c) => inScope(c, ctx.lob, ctx.days) && authTypeOf(c) === 'IP');
+      const byCode = new Map<string, { description: string; count: number }>();
+      cs.forEach((c) => {
+        const dx = dxOf(c);
+        const cur = byCode.get(dx.code);
+        if (cur) cur.count++; else byCode.set(dx.code, { description: dx.description, count: 1 });
+      });
+      const rows = [...byCode.entries()].map(([code, v]) => [code, v.description, v.count]).sort((a, b) => (b[2] as number) - (a[2] as number));
+      return [{ title: 'Top Admission Diagnoses', columns: ['Diagnosis Code', 'Description', 'Admissions'], rows }];
+    },
   },
 ];
 
