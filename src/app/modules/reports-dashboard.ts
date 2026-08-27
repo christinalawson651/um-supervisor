@@ -28,38 +28,51 @@ const PERIODS = [
   standalone: true,
   imports: [FormsModule, Icon],
   template: `
-    <div class="reports-shell">
+    <div class="reports-shell" [class.sidebar-collapsed]="sidebarCollapsed()">
       <!-- Report picker sidebar (hidden on print) -->
-      <aside class="picker no-print">
-        @for (mod of visibleGroups(); track mod) {
-          <div class="grp">
-            <div class="grp-title">{{ moduleLabel(mod) }}</div>
-            @for (sub of subGroupsFor(mod); track sub.name) {
-              <div class="sub-grp">
-                <div class="sub-grp-title">{{ sub.name }}</div>
-                @for (r of sub.reports; track r.id) {
-                  <button class="picker-item" [class.active]="selectedId() === r.id" (click)="select(r.id)">{{ r.title }}</button>
-                }
-              </div>
-            }
-          </div>
+      <aside class="picker no-print" [class.collapsed]="sidebarCollapsed()">
+        <button class="sidebar-toggle" [title]="sidebarCollapsed() ? 'Expand report list' : 'Collapse report list'" (click)="sidebarCollapsed.set(!sidebarCollapsed())">{{ sidebarCollapsed() ? '»' : '«' }}</button>
+        @if (!sidebarCollapsed()) {
+          @for (mod of visibleGroups(); track mod) {
+            <div class="grp">
+              <div class="grp-title">{{ moduleLabel(mod) }}</div>
+              @for (sub of subGroupsFor(mod); track sub.name) {
+                <div class="sub-grp">
+                  <button class="sub-grp-title" (click)="toggleGroup(sub.name)">
+                    <span class="sub-grp-caret" [class.collapsed]="isGroupCollapsed(sub.name)">▾</span>{{ sub.name }}
+                  </button>
+                  @if (!isGroupCollapsed(sub.name)) {
+                    @for (r of sub.reports; track r.id) {
+                      <button class="picker-item" [class.active]="!closed() && selectedId() === r.id" (click)="select(r.id)">{{ r.title }}</button>
+                    }
+                  }
+                </div>
+              }
+            </div>
+          }
+          <div class="grp-note">CM and Appeals reports are next up — this pass ships UM's full granular set.</div>
         }
-        <div class="grp-note">CM and Appeals reports are next up — this pass ships UM's full granular set.</div>
       </aside>
 
       <!-- Report body -->
       <section class="body">
         @if (!current()) {
-          <div class="empty-state">No reports available for your current role.</div>
+          <div class="empty-state">{{ closed() ? 'No report open — choose one from the list on the left.' : 'No reports available for your current role.' }}</div>
         } @else {
           <div class="report-head no-print">
-            <div>
-              <h2>{{ current()!.title }}</h2>
-              <p class="desc">{{ current()!.description }}</p>
+            <div class="rh-main">
+              <button class="chevron-btn" [title]="headerCollapsed() ? 'Expand details' : 'Collapse details'" (click)="headerCollapsed.set(!headerCollapsed())">{{ headerCollapsed() ? '▸' : '▾' }}</button>
+              <div class="rh-text">
+                <h2>{{ current()!.title }}</h2>
+                @if (!headerCollapsed()) {
+                  <p class="desc">{{ current()!.description }}</p>
+                }
+              </div>
             </div>
+            <button class="btn-close" title="Close this report" (click)="close()">×</button>
           </div>
 
-          @if (current()!.staticNote) {
+          @if (!headerCollapsed() && current()!.staticNote) {
             <div class="static-note no-print">{{ current()!.staticNote }}</div>
           }
 
@@ -76,9 +89,27 @@ const PERIODS = [
                 <span class="flab">Since</span>
                 <input type="date" [ngModel]="customSince()" (ngModelChange)="setCustomSince($event)" [max]="todayIso" />
                 <span class="flab">LOB</span>
-                <div class="queue-checks">
-                  @for (l of lobOptions; track l) {
-                    <label class="qchk"><input type="checkbox" [checked]="selectedLobs().includes(l)" (change)="toggleLob(l)" /> {{ l }}</label>
+                <div class="lob-multiselect">
+                  <button type="button" class="lob-trigger" (click)="lobDropdownOpen.set(!lobDropdownOpen())">
+                    <span>{{ lobSummaryLabel() }}</span><span class="lob-caret">▾</span>
+                  </button>
+                  @if (lobDropdownOpen()) {
+                    <div class="lob-scrim" (click)="lobDropdownOpen.set(false)"></div>
+                    <div class="lob-panel" (click)="$event.stopPropagation()">
+                      <input type="text" class="lob-search" placeholder="Search LOB…" [ngModel]="lobSearch()" (ngModelChange)="lobSearch.set($event)" />
+                      <div class="lob-actions">
+                        <button type="button" class="lob-link" (click)="selectAllLobs()">Select all</button>
+                        <button type="button" class="lob-link" (click)="clearAllLobs()">Clear</button>
+                      </div>
+                      <div class="lob-list">
+                        @for (l of filteredLobOptions(); track l) {
+                          <label class="lob-opt"><input type="checkbox" [checked]="selectedLobs().includes(l)" (change)="toggleLob(l)" /> {{ l }}</label>
+                        } @empty {
+                          <div class="lob-empty">No LOBs match "{{ lobSearch() }}"</div>
+                        }
+                      </div>
+                      <button type="button" class="btn primary sm lob-done" (click)="lobDropdownOpen.set(false)">Done</button>
+                    </div>
                   }
                 </div>
               }
@@ -189,11 +220,20 @@ const PERIODS = [
     </div>
   `,
   styles: [`
-    .reports-shell { display: grid; grid-template-columns: 240px 1fr; gap: 20px; align-items: start; }
+    .reports-shell { display: grid; grid-template-columns: 240px 1fr; gap: 20px; align-items: start; transition: grid-template-columns .15s; }
+    .reports-shell.sidebar-collapsed { grid-template-columns: 40px 1fr; }
     .picker { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 12px; }
+    .picker.collapsed { align-items: center; }
+    .sidebar-toggle { border: 1px solid var(--border); background: #fff; border-radius: 8px; width: 26px; height: 26px;
+      cursor: pointer; font-size: 13px; color: var(--gray-500); align-self: flex-start; flex-shrink: 0; }
+    .sidebar-toggle:hover { background: var(--gray-100); color: var(--ink); }
     .grp-title { font-size: 11px; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
     .sub-grp { margin-bottom: 10px; }
-    .sub-grp-title { font-size: 10.5px; font-weight: 700; color: var(--teal-700); letter-spacing: .02em; padding: 4px 10px 3px; }
+    .sub-grp-title { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: none; cursor: pointer;
+      font-size: 13px; font-weight: 700; color: var(--teal-700); letter-spacing: .02em; padding: 4px 10px 3px; text-align: left; }
+    .sub-grp-title:hover { color: var(--teal-900); }
+    .sub-grp-caret { display: inline-block; font-size: 10px; transition: transform .12s; flex-shrink: 0; }
+    .sub-grp-caret.collapsed { transform: rotate(-90deg); }
     .picker-item { display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; border: none; background: none;
       font-size: 13px; color: var(--ink); cursor: pointer; margin-bottom: 2px; }
     .picker-item:hover { background: var(--gray-100); }
@@ -201,8 +241,14 @@ const PERIODS = [
     .grp-note { font-size: 11px; color: var(--gray-500); font-style: italic; padding: 8px 10px; border-top: 1px solid var(--border); margin-top: 4px; }
 
     .body { min-width: 0; }
-    .report-head { margin-bottom: 10px; }
-    .report-head h2 { margin: 0 0 4px; }
+    .report-head { margin-bottom: 10px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .report-head h2 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--ink); }
+    .rh-main { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+    .rh-text { min-width: 0; }
+    .chevron-btn { border: none; background: none; cursor: pointer; color: var(--gray-400); font-size: 11px; padding: 4px 2px; margin-top: 5px; flex-shrink: 0; }
+    .chevron-btn:hover { color: var(--ink); }
+    .btn-close { border: none; background: none; font-size: 22px; line-height: 1; color: var(--gray-400); cursor: pointer; padding: 2px 6px; flex-shrink: 0; }
+    .btn-close:hover { color: var(--ink); }
     .desc { font-size: 12.5px; color: var(--gray-500); margin: 0; max-width: 640px; }
     .empty-state { padding: 60px 0; text-align: center; color: var(--gray-500); }
 
@@ -218,6 +264,30 @@ const PERIODS = [
     .drilldown-bar { align-items: flex-start; }
     .queue-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
     .qchk { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500; text-transform: none; color: var(--ink); cursor: pointer; }
+
+    /* LOB multi-select — a dropdown instead of inline checkboxes so this scales to the 50-100
+       real-world LOBs some clients have, not just this demo's 4. */
+    .lob-multiselect { position: relative; }
+    .lob-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 160px;
+      font-size: 12.5px; font-weight: 500; color: var(--ink); padding: 5px 10px; border: 1px solid var(--gray-300); border-radius: 8px;
+      background: #fff; cursor: pointer; text-transform: none; letter-spacing: normal; }
+    .lob-trigger:hover { border-color: var(--teal-600); }
+    .lob-caret { font-size: 9px; color: var(--gray-500); }
+    .lob-scrim { position: fixed; inset: 0; z-index: 40; background: transparent; }
+    .lob-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 41; width: 240px; background: #fff;
+      border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.15); padding: 10px; }
+    .lob-search { width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--gray-300); border-radius: 6px;
+      font-size: 12.5px; margin-bottom: 8px; outline: none; }
+    .lob-search:focus { border-color: var(--teal-600); }
+    .lob-actions { display: flex; gap: 14px; margin-bottom: 6px; }
+    .lob-link { border: none; background: none; color: var(--teal-700); font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 0; }
+    .lob-link:hover { text-decoration: underline; }
+    .lob-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+    .lob-opt { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--ink);
+      text-transform: none; letter-spacing: normal; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+    .lob-opt:hover { background: var(--gray-100); }
+    .lob-empty { font-size: 12px; color: var(--gray-500); padding: 10px 4px; text-align: center; }
+    .lob-done { width: 100%; margin-top: 8px; padding: 6px; font-size: 12.5px; }
     .member-search { font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--gray-300); border-radius: 8px; min-width: 200px; }
     .generate-btn { margin-bottom: 4px; }
     .btn.primary { background: var(--teal-700); color: #fff; border: none; padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -266,15 +336,43 @@ export class ReportsDashboard {
     return out;
   }
 
+  /** Which sidebar sub-groups (by name) are expanded — a plain Set, not per-module, so a group
+   *  name expanded under one module stays expanded if the same name ever appears under another.
+   *  Empty by default: every group starts collapsed until you open it. */
+  readonly expandedGroups = signal<Set<string>>(new Set());
+  isGroupCollapsed(name: string) { return !this.expandedGroups().has(name); }
+  toggleGroup(name: string) {
+    this.expandedGroups.update((s) => {
+      const n = new Set(s);
+      n.has(name) ? n.delete(name) : n.add(name);
+      return n;
+    });
+  }
+
   private allVisibleReports = computed<ReportDef[]>(() => this.visibleGroups().flatMap((m) => REGISTRY[m]));
   readonly selectedId = signal<string | null>(null);
+  /** True once the user explicitly closes a report — distinct from `selectedId` being unset, which
+   *  falls back to the first report so the picker never opens onto a blank page on first load. */
+  readonly closed = signal(false);
+  /** Collapses the title/description (+ static note) so the tables get more vertical room without
+   *  fully closing the report. Resets to expanded whenever a new report is picked. */
+  readonly headerCollapsed = signal(false);
+  /** Collapses the report picker down to a slim rail — same idea, for horizontal room on wide tables. */
+  readonly sidebarCollapsed = signal(false);
   readonly current = computed<ReportDef | null>(() => {
+    if (this.closed()) return null;
     const id = this.selectedId();
     const all = this.allVisibleReports();
     return all.find((r) => r.id === id) ?? all[0] ?? null;
   });
   select(id: string) {
     this.selectedId.set(id);
+    this.closed.set(false);
+    this.headerCollapsed.set(false);
+    // Auto-open the group this report lives in (a nice-to-have when picking from a collapsed
+    // group) — a one-time action, not a standing rule, so you can still collapse it afterward.
+    const group = this.allVisibleReports().find((r) => r.id === id)?.group;
+    if (group) this.expandedGroups.update((s) => new Set(s).add(group));
     this.dimension.set('');
     this.dimension2.set('');
     this.schedulePeriod.set('rolling4');
@@ -283,8 +381,11 @@ export class ReportsDashboard {
     this.historyTeam.set('');
     this.historyStaff.set('');
     this.historyActor.set('');
+    this.lobDropdownOpen.set(false);
+    this.lobSearch.set('');
     this.generated.set(false);
   }
+  close() { this.closed.set(true); this.generated.set(false); }
 
   // ---- filter selections (the "form"); independent of the shared per-module Lookback/LOB
   // signals, so building a report doesn't shift underfoot when someone changes a filter on a
@@ -293,6 +394,22 @@ export class ReportsDashboard {
   readonly customSince = signal<string | null>(null);
   readonly lobOptions = ['Medicaid', 'Medicare Advantage', 'Commercial PPO', 'ACA Exchange'];
   readonly selectedLobs = signal<string[]>([]);
+  readonly lobDropdownOpen = signal(false);
+  readonly lobSearch = signal('');
+  readonly filteredLobOptions = computed(() => {
+    const q = this.lobSearch().trim().toLowerCase();
+    return q ? this.lobOptions.filter((l) => l.toLowerCase().includes(q)) : this.lobOptions;
+  });
+  /** "All LOBs" whenever nothing (or everything) is picked — an explicit full selection reads the
+   *  same as no filter, so the summary collapses back to the same label either way. */
+  lobSummaryLabel(): string {
+    const sel = this.selectedLobs();
+    if (!sel.length || sel.length === this.lobOptions.length) return 'All LOBs';
+    if (sel.length <= 2) return sel.join(', ');
+    return `${sel.length} LOBs selected`;
+  }
+  selectAllLobs() { this.selectedLobs.set([...this.lobOptions]); }
+  clearAllLobs() { this.selectedLobs.set([]); }
   readonly dimension = signal('');
   readonly dimension2 = signal('');
   readonly schedulePeriod = signal('rolling4');
@@ -335,7 +452,7 @@ export class ReportsDashboard {
     const actorPart = this.current()?.historyFilterable && this.historyActor() ? `Reassigned By: ${this.historyActor()}` : '';
     const extra = [dimPart, dim2Part, periodPart, queuePart, memberPart, teamPart, staffPart, actorPart].filter(Boolean).join(' · ');
     if (this.current()?.noLobDays) return extra || 'No filters applied — full current data';
-    const lobPart = this.selectedLobs().length ? this.selectedLobs().join(', ') : 'All LOBs';
+    const lobPart = this.lobSummaryLabel();
     const datePart = this.customSince() ? `Since ${this.customSince()}` : (PERIODS.find((p) => p.id === this.period())?.label ?? '30 days');
     return `${datePart} · ${lobPart}${extra ? ' · ' + extra : ''}`;
   }
@@ -376,13 +493,14 @@ export class ReportsDashboard {
   // tag right before printing and removed again once the print dialog closes. ----
   readonly orientation = signal<'portrait' | 'landscape'>('portrait');
   doPrint() {
-    if (this.orientation() === 'landscape') {
-      const style = document.createElement('style');
-      style.id = 'reports-print-orientation';
-      style.textContent = '@page { size: landscape; }';
-      document.head.appendChild(style);
-      window.addEventListener('afterprint', () => document.getElementById('reports-print-orientation')?.remove(), { once: true });
-    }
+    // Always set an explicit @page size (not just for landscape) — some browsers remember the
+    // orientation from the last print job on this origin, so leaving portrait as "no override"
+    // meant picking Portrait after a landscape print did nothing.
+    const style = document.createElement('style');
+    style.id = 'reports-print-orientation';
+    style.textContent = `@page { size: ${this.orientation()}; }`;
+    document.head.appendChild(style);
+    window.addEventListener('afterprint', () => document.getElementById('reports-print-orientation')?.remove(), { once: true });
     window.print();
   }
   doExport() {
