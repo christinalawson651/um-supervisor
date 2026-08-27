@@ -1,6 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 
-export type ModuleId = 'overview' | 'um' | 'cm' | 'appeals';
+export type ModuleId = 'overview' | 'um' | 'cm' | 'appeals' | 'reports';
 export type BizModule = 'um' | 'cm' | 'appeals';
 
 export interface Role { id: string; label: string; modules: BizModule[]; }
@@ -20,10 +20,12 @@ export class Nav {
   readonly role = signal<Role>(ROLES[0]);
   readonly module = signal<ModuleId>('overview');
 
-  /** Modules the current role can see; Overview is present only for multi-module roles. */
+  /** Modules the current role can see; Overview is present only for multi-module roles. Reports
+   *  is always last and always visible — every role gets a reporting view scoped to whichever
+   *  business module(s) they own (see ReportsDashboard's use of `scope()`). */
   readonly visibleModules = computed<ModuleId[]>(() => {
     const biz = this.role().modules;
-    return biz.length > 1 ? ['overview', ...biz] : [...biz];
+    return biz.length > 1 ? ['overview', ...biz, 'reports'] : [...biz, 'reports'];
   });
 
   /** Business modules (no overview) the role owns — drives the exec Overview scope. */

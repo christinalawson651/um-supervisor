@@ -300,16 +300,20 @@ export class ConcurrentTab {
             if (row) { this.data.decrementQueue('Concurrent Review'); this.data.incrementQueue(target); }
           });
           this.ix.toast(`${assignedIds.length} concurrent review(s) moved to ${target}.`);
-          this.data.addHistory('swap', 'Concurrent reviews moved to queue', `${assignedIds.length} review(s) → ${target}`);
+          this.data.addHistory('swap', 'Concurrent reviews moved to queue', `${assignedIds.length} review(s) → ${target}`, undefined,
+            { toStaff: target, members: assignedIds.map((id) => rows.find((r) => r.authId === id)?.member).filter((m): m is string => !!m) });
           this.selected.set(new Set());
           return;
         }
+        const movedMembers = assignedIds.map((id) => rows.find((r) => r.authId === id)?.member).filter((m): m is string => !!m);
+        const fromReviewers = [...new Set(assignedIds.map((id) => rows.find((r) => r.authId === id)?.reviewer).filter((r): r is string => !!r && r !== '—'))];
         assignedIds.forEach((id) => {
           const row = rows.find((r) => r.authId === id);
           this.data.moveOneCase(row && row.reviewer !== '—' ? row.reviewer : null, target);
         });
         this.ix.toast(`${assignedIds.length} concurrent review(s) reassigned to ${target}.`);
-        this.data.addHistory('swap', 'Concurrent reviews reassigned', `${assignedIds.length} review(s) → ${target}`);
+        this.data.addHistory('swap', 'Concurrent reviews reassigned', `${assignedIds.length} review(s) → ${target}`, undefined,
+          { fromStaff: fromReviewers.length === 1 ? fromReviewers[0] : undefined, toStaff: target, members: movedMembers });
         this.selected.set(new Set());
       },
     });
@@ -341,7 +345,8 @@ export class ConcurrentTab {
       onConfirm: () => {
         plan.forEach((p) => this.data.moveOneCase(p.from, p.to));
         this.ix.toast(`${ids.length} review(s) balanced across ${byTarget.size} nurse(s).`);
-        this.data.addHistory('balance', 'Concurrent reviews balanced', `${ids.length} review(s) across ${byTarget.size} nurse(s)`);
+        this.data.addHistory('balance', 'Concurrent reviews balanced', `${ids.length} review(s) across ${byTarget.size} nurse(s)`, undefined,
+          { members: plan.map((p) => rows.find((r) => r.authId === p.authId)?.member).filter((m): m is string => !!m) });
         this.selected.set(new Set());
       },
     });
@@ -459,12 +464,13 @@ export class ConcurrentTab {
         if (mode === 'queue') {
           this.data.decrementQueue('Concurrent Review'); this.data.incrementQueue(target);
           this.ix.toast(`${r.member} moved to ${target}.`);
-          this.data.addHistory('swap', 'Concurrent review moved to queue', `${r.member} → ${target}`);
+          this.data.addHistory('swap', 'Concurrent review moved to queue', `${r.member} → ${target}`, undefined, { toStaff: target, members: [r.member] });
           return;
         }
         this.data.moveOneCase(r.reviewer !== '—' ? r.reviewer : null, target);
         this.ix.toast(`${r.member} reassigned to ${target}.`);
-        this.data.addHistory('swap', 'Concurrent review reassigned', `${r.member} → ${target}`);
+        this.data.addHistory('swap', 'Concurrent review reassigned', `${r.member} → ${target}`, undefined,
+          { fromStaff: r.reviewer !== '—' ? r.reviewer : undefined, toStaff: target, members: [r.member] });
       },
     });
   }

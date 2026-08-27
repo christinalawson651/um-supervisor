@@ -20,6 +20,7 @@ import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConc
 import { OverviewDashboard } from '../modules/overview-dashboard';
 import { CmDashboard } from '../modules/cm-dashboard';
 import { AppealsDashboard } from '../modules/appeals-dashboard';
+import { ReportsDashboard } from '../modules/reports-dashboard';
 
 import { WorkforceTab } from '../tabs/workforce-tab';
 import { SchedulingTab } from '../tabs/scheduling-tab';
@@ -74,6 +75,7 @@ const MODULES = [
   { id: 'um' as const, label: 'UM' },
   { id: 'cm' as const, label: 'CM' },
   { id: 'appeals' as const, label: 'Appeals' },
+  { id: 'reports' as const, label: 'Reports' },
 ];
 
 const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
@@ -81,13 +83,14 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   um: { title: 'UM Supervisor Dashboard', sub: "Your team is performing well — here's your operational overview", role: 'UM Supervisor' },
   cm: { title: 'CM Supervisor Dashboard', sub: 'Care management worklist and referral intake', role: 'CM Supervisor' },
   appeals: { title: 'Appeals Supervisor Dashboard', sub: 'Appeals & grievances worklist, prioritized by deadline', role: 'Appeals Supervisor' },
+  reports: { title: 'Reports', sub: 'Printable, exportable reports across UM, CM & Appeals — smart-filtered by date range and LOB', role: 'Operations Supervisor' },
 };
 
 @Component({
   selector: 'app-shell',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard,
     WorkforceTab, SchedulingTab, DemandTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab, FollowThroughBoard,
   ],

@@ -107,10 +107,10 @@ function concurrentRowFor(c: CaseRec): ConcurrentRow {
  * the shared queue. Count and age bars are both computed from that unclaimed subset only, so a
  * queue card's bars describe exactly the cases its count refers to.
  */
-function queueStats(statusName: string, opts?: { lob?: string; withinDays?: number }) {
+function queueStats(statusName: string, opts?: { lob?: string | string[]; withinDays?: number }) {
   const unclaimed = CASE_POOL.filter((c) =>
     c.phase === 'pending' && c.status === statusName && c.nurse === '—' &&
-    (!opts?.lob || opts.lob === 'all' || lobOf(c.authId) === opts.lob) &&
+    lobMatches(c.authId, opts?.lob) &&
     (opts?.withinDays === undefined || daysAgo(c.submitted) <= opts.withinDays),
   );
   const total = unclaimed.length || 1;
@@ -125,9 +125,9 @@ function queueStats(statusName: string, opts?: { lob?: string; withinDays?: numb
   };
 }
 
-function nurseStats(name: string, opts?: { lob?: string; withinDays?: number }) {
+function nurseStats(name: string, opts?: { lob?: string | string[]; withinDays?: number }) {
   const inScope = (c: CaseRec) =>
-    (!opts?.lob || opts.lob === 'all' || lobOf(c.authId) === opts.lob) &&
+    lobMatches(c.authId, opts?.lob) &&
     (opts?.withinDays === undefined || daysAgo(c.submitted) <= opts.withinDays);
   const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name && inScope(c));
   const pending = active.filter((c) => c.tags.includes('rfi') || c.tags.includes('p2p'));
@@ -140,10 +140,15 @@ const pctOf = (n: number, d: number) => Math.round((n / (d || 1)) * 100);
 
 export interface HistoryEntry {
   time: string;
+  date: string;    // ISO — real session date (same clock as `time`), so date-range filtering has something real to filter on
   icon: string;
   action: string;
   detail: string;
   actor: string;
+  team?: string;      // structured fields for Reports' Reassignment & Assignment History filters —
+  fromStaff?: string; // not every entry type populates every field (e.g. PTO redistribution has no
+  toStaff?: string;   // single fromStaff/toStaff pair), so all are optional.
+  members?: string[];
 }
 
 /**
@@ -160,6 +165,7 @@ function seedReturnHistory(): HistoryEntry[] {
     const mm = (idx * 11) % 60;
     return {
       time: `${hh}:${mm < 10 ? '0' : ''}${mm} AM`,
+      date: TODAY.toISOString().slice(0, 10),
       icon: 'inbox',
       action: auto ? 'Auto-returned to queue' : 'Returned to queue',
       detail: auto
@@ -281,9 +287,11 @@ export class DashboardData {
   /** Just the assignment-moving entries (reassign + balance) — the full activity log also includes escalations, etc. */
   readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance' || h.icon === 'calendar'));
 
-  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson') {
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    this.history.update((h) => [{ time, icon, action, detail, actor }, ...h]);
+  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[] }) {
+    const now = new Date();
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const date = now.toISOString().slice(0, 10);
+    this.history.update((h) => [{ time, date, icon, action, detail, actor, ...meta }, ...h]);
   }
 
   // ---------- persistence (localStorage) ----------
@@ -435,12 +443,12 @@ export class DashboardData {
    * nurse's overall capacity indicator (and reflects any session reassign/balance moves), not a
    * value that splits meaningfully by LOB or date.
    */
-  nurseStatsForLob(name: string, lob?: string, withinDays?: number) {
+  nurseStatsForLob(name: string, lob?: string | string[], withinDays?: number) {
     return nurseStats(name, { lob, withinDays });
   }
 
   /** Same idea as nurseStatsForLob, for one queue's unclaimed pool — used by Workforce's queue cards. */
-  queueStatsScoped(statusName: string, lob?: string, withinDays?: number) {
+  queueStatsScoped(statusName: string, lob?: string | string[], withinDays?: number) {
     return queueStats(statusName, { lob, withinDays });
   }
 
@@ -483,12 +491,19 @@ export class DashboardData {
 // drift apart the way separately hand-typed static arrays used to.
 // ---------------------------------------------------------------------------------------------
 
-export function inScope(c: CaseRec, lob?: string, withinDays?: number): boolean {
-  return (!lob || lob === 'all' || lobOf(c.authId) === lob)
+// `lob` accepts either a single LOB (existing single-select callers, e.g. every dashboard tab) or
+// an array (Reports' multi-select LOB filter) — an empty array behaves like "all", same as undefined.
+function lobMatches(authId: string, lob?: string | string[]): boolean {
+  if (!lob || lob === 'all') return true;
+  if (Array.isArray(lob)) return lob.length === 0 || lob.includes(lobOf(authId));
+  return lobOf(authId) === lob;
+}
+export function inScope(c: CaseRec, lob?: string | string[], withinDays?: number): boolean {
+  return lobMatches(c.authId, lob)
     && (withinDays === undefined || daysAgo(c.submitted) <= withinDays);
 }
 
-export function liveTatBuckets(lob?: string, withinDays?: number): TatBucket[] {
+export function liveTatBuckets(lob?: string | string[], withinDays?: number): TatBucket[] {
   const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
   return [
     { label: 'On Track', count: cs.filter((c) => c.tags.includes('onTrack')).length, tone: 'green' },
@@ -497,7 +512,7 @@ export function liveTatBuckets(lob?: string, withinDays?: number): TatBucket[] {
   ];
 }
 
-export function liveTatStats(lob?: string, withinDays?: number): TatStat[] {
+export function liveTatStats(lob?: string | string[], withinDays?: number): TatStat[] {
   const decided = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
   const pending = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
   const avg = decided.length ? `${(decided.reduce((s, c) => s + c.tatH, 0) / decided.length).toFixed(1)}d` : '0.0d';
@@ -509,7 +524,7 @@ export function liveTatStats(lob?: string, withinDays?: number): TatStat[] {
   ];
 }
 
-export function liveDecisionStats(lob?: string, withinDays?: number): DecisionStat[] {
+export function liveDecisionStats(lob?: string | string[], withinDays?: number): DecisionStat[] {
   const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
   const total = cs.length || 1;
   const pct = (n: number) => Math.round((n / total) * 100);
@@ -524,7 +539,7 @@ export function liveDecisionStats(lob?: string, withinDays?: number): DecisionSt
   ];
 }
 
-export function liveDecisionRows(lob?: string, withinDays?: number): DecisionRow[] {
+export function liveDecisionRows(lob?: string | string[], withinDays?: number): DecisionRow[] {
   const cs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
   const byProc = new Map<string, CaseRec[]>();
   for (const c of cs) { if (!byProc.has(c.procedure)) byProc.set(c.procedure, []); byProc.get(c.procedure)!.push(c); }
@@ -543,7 +558,7 @@ export type DeterminationOutcome = 'Approved' | 'Denied' | 'Partial';
 /** Breakdown of the reason codes behind one outcome's determinations — the real UM workflow
  *  requires one of these codes on every determination, not just denials. Denied and Partial are
  *  tracked separately (Partial still uses denial-style codes for why the cut portion was reduced). */
-export function liveDeterminationMix(outcome: DeterminationOutcome, lob?: string, withinDays?: number): DeterminationMixRow[] {
+export function liveDeterminationMix(outcome: DeterminationOutcome, lob?: string | string[], withinDays?: number): DeterminationMixRow[] {
   const cs = CASE_POOL.filter((c) => c.phase === 'decided' && c.decision === outcome && inScope(c, lob, withinDays));
   const total = cs.length || 1;
   const codes = outcome === 'Approved' ? APPROVAL_CODES : DENIAL_CODES;
@@ -557,18 +572,18 @@ export function liveDeterminationMix(outcome: DeterminationOutcome, lob?: string
 }
 
 /** The real cases behind one reason code — backs both the mix row's click-through and its export. */
-export function liveDeterminationCases(outcome: DeterminationOutcome, code: string, lob?: string, withinDays?: number): CaseRec[] {
+export function liveDeterminationCases(outcome: DeterminationOutcome, code: string, lob?: string | string[], withinDays?: number): CaseRec[] {
   return CASE_POOL.filter((c) => c.phase === 'decided' && c.decision === outcome && inScope(c, lob, withinDays)
     && determinationReasonOf(c)?.code === code);
 }
 
-export function liveConcurrentRows(lob?: string, withinDays?: number): ConcurrentRow[] {
+export function liveConcurrentRows(lob?: string | string[], withinDays?: number): ConcurrentRow[] {
   return CASE_POOL
     .filter((c) => c.phase === 'pending' && c.tags.includes('concurrent') && inScope(c, lob, withinDays))
     .map(concurrentRowFor);
 }
 
-export function liveQualityBars(lob?: string, withinDays?: number): QualityBar[] {
+export function liveQualityBars(lob?: string | string[], withinDays?: number): QualityBar[] {
   const pendingCs = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
   const decidedCs = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, withinDays));
   return [
@@ -584,7 +599,7 @@ function missingFieldOf(c: CaseRec): string {
   return MISSING_FIELDS[Number(c.authId.slice(-2)) % MISSING_FIELDS.length];
 }
 
-export function liveMissingFields(lob?: string, withinDays?: number): MissingField[] {
+export function liveMissingFields(lob?: string | string[], withinDays?: number): MissingField[] {
   const pendingCs = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
   const incomplete = pendingCs.filter((c) => c.tags.includes('incompleteDoc'));
   const counts = new Map<string, number>();
@@ -613,7 +628,7 @@ function approvalFactorOf(authId: string): number {
  * inpatient stays (single source of truth with Concurrent Review Monitoring) rather than
  * re-deriving that math here; non-inpatient/non-concurrent cases simply have no LOS data.
  */
-export function liveCostInsights(lob?: string, withinDays?: number): CostInsightRow[] {
+export function liveCostInsights(lob?: string | string[], withinDays?: number): CostInsightRow[] {
   const cases = CASE_POOL.filter((c) => c.phase === 'pending' && inScope(c, lob, withinDays));
 
   return cases.map((c) => {
@@ -687,7 +702,7 @@ export function liveCostInsights(lob?: string, withinDays?: number): CostInsight
  * reasonable proxies (adherence ~ decision wasn't appealed; rationale ~ approval wasn't purely
  * rule-based auto-approval and had complete documentation), not a literal stored field.
  */
-export function liveComplianceBars(lob?: string, withinDays?: number): QualityBar[] {
+export function liveComplianceBars(lob?: string | string[], withinDays?: number): QualityBar[] {
   const all = CASE_POOL.filter((c) => inScope(c, lob, withinDays));
   const decided = all.filter((c) => c.phase === 'decided');
   const approved = decided.filter((c) => c.decision === 'Approved');
@@ -702,16 +717,16 @@ export function liveComplianceBars(lob?: string, withinDays?: number): QualityBa
 // LOB/Lookback filters, same "inScope" treatment as every other live() function in this file. The
 // review record itself (sample selection, independent redetermination, discrepancy reason,
 // corrective-action tier) is built once in um-irr.ts; everything here is just filtering/rollup. ----
-function irrInScope(r: IrrReviewRecord, lob?: string, withinDays?: number): boolean {
+function irrInScope(r: IrrReviewRecord, lob?: string | string[], withinDays?: number): boolean {
   return (!lob || lob === 'all' || lobOf(r.authId) === lob) && (withinDays === undefined || daysAgo(r.reviewDate) <= withinDays);
 }
-export function liveIrrReviews(lob?: string, withinDays?: number): IrrReviewRecord[] {
+export function liveIrrReviews(lob?: string | string[], withinDays?: number): IrrReviewRecord[] {
   return UM_IRR_REVIEWS.filter((r) => irrInScope(r, lob, withinDays));
 }
 export interface IrrReviewerStat { reviewer: string; sampled: number; agree: number; pct: number; adequate: boolean; }
 /** Per-reviewer agreement — `adequate` flags whether the sample is large enough (>= MIN_SAMPLE_PER_REVIEWER)
  *  to report pass/fail on at all, rather than silently excluding thin samples from the count. */
-export function liveIrrByReviewer(lob?: string, withinDays?: number): IrrReviewerStat[] {
+export function liveIrrByReviewer(lob?: string | string[], withinDays?: number): IrrReviewerStat[] {
   const rs = liveIrrReviews(lob, withinDays);
   return [...new Set(rs.map((r) => r.reviewer))]
     .map((reviewer) => {
@@ -722,12 +737,12 @@ export function liveIrrByReviewer(lob?: string, withinDays?: number): IrrReviewe
     .sort((a, b) => a.pct - b.pct);
 }
 /** Why disagreements happened — the actual improvement-driving output of an IRR program. */
-export function liveIrrDiscrepancyReasons(lob?: string, withinDays?: number): { reason: DiscrepancyReason; count: number }[] {
+export function liveIrrDiscrepancyReasons(lob?: string | string[], withinDays?: number): { reason: DiscrepancyReason; count: number }[] {
   const disagreements = liveIrrReviews(lob, withinDays).filter((r) => !r.agree);
   return DISCREPANCY_REASONS.map((reason) => ({ reason, count: disagreements.filter((r) => r.discrepancyReason === reason).length }));
 }
 /** Every disagreement that triggered a corrective action, open or closed — the evidence-of-follow-through artifact. */
-export function liveIrrCorrectiveActions(lob?: string, withinDays?: number): IrrReviewRecord[] {
+export function liveIrrCorrectiveActions(lob?: string | string[], withinDays?: number): IrrReviewRecord[] {
   return liveIrrReviews(lob, withinDays).filter((r) => r.correctiveAction !== 'None');
 }
 
@@ -770,7 +785,7 @@ export function regBreachesFor(lob: string, withinDays?: number): CaseRec[] {
  * "Needs Attention" flag set. Thresholds are relative to the live peer average (not fixed magic
  * numbers) so the flagging stays sane regardless of LOB/Lookback scope or roster size.
  */
-export function liveProviderInsights(lob?: string, withinDays?: number): ProviderInsightRow[] {
+export function liveProviderInsights(lob?: string | string[], withinDays?: number): ProviderInsightRow[] {
   const base = PROVIDERS.map((provider) => {
     const cs = CASE_POOL.filter((c) => c.provider === provider && inScope(c, lob, withinDays));
     const decidedCs = cs.filter((c) => c.phase === 'decided');

@@ -499,15 +499,19 @@ export class WorkforceTab {
             if (cs && cs.queue !== target) { this.data.decrementQueue(cs.queue); this.data.incrementQueue(target); }
           });
           this.ix.toast(`${ids.length} authorization(s) moved to ${target}.`);
-          this.data.addHistory('swap', 'Authorizations moved to queue', `${ids.length} authorization(s) → ${target}`);
+          this.data.addHistory('swap', 'Authorizations moved to queue', `${ids.length} authorization(s) → ${target}`, undefined,
+            { toStaff: target, members: ids.map((id) => cases.find((x) => x.authId === id)?.member).filter((m): m is string => !!m) });
           return;
         }
+        const movedMembers = ids.map((id) => cases.find((x) => x.authId === id)?.member).filter((m): m is string => !!m);
+        const fromOwners = [...new Set(ids.map((id) => cases.find((x) => x.authId === id)?.owner).filter((o): o is string => !!o && o !== 'Unassigned'))];
         ids.forEach((id) => {
           const cs = cases.find((x) => x.authId === id);
           this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);
         });
         this.ix.toast(`${ids.length} authorization(s) reassigned to ${target}.`);
-        this.data.addHistory('swap', 'Authorizations reassigned', `${ids.length} authorization(s) → ${target}`);
+        this.data.addHistory('swap', 'Authorizations reassigned', `${ids.length} authorization(s) → ${target}`, undefined,
+          { fromStaff: fromOwners.length === 1 ? fromOwners[0] : undefined, toStaff: target, members: movedMembers });
       },
     });
   }
@@ -558,9 +562,10 @@ export class WorkforceTab {
       body: `Move one authorization from the busiest nurse to ${n.name} (currently ${n.utilization}% utilized)?`,
       confirmLabel: 'Reassign', tone: 'teal',
       onConfirm: () => {
+        const busiest = this.data.nurses().reduce((a, b) => (b.utilization > a.utilization ? b : a));
         this.data.reassignTo(n.name);
         this.ix.toast(`Authorization reassigned to ${n.name}.`);
-        this.data.addHistory('swap', 'Authorization reassigned', `Reassigned to ${n.name}`);
+        this.data.addHistory('swap', 'Authorization reassigned', `Reassigned to ${n.name}`, undefined, { fromStaff: busiest.name, toStaff: n.name, team: n.team });
       },
     });
   }
@@ -595,7 +600,8 @@ export class WorkforceTab {
         }
         const breakdown = [...byTarget.entries()].map(([to, n]) => `${n} → ${to}`).join(', ');
         this.ix.toast(`${total} authorization(s) redistributed from ${person} for PTO (${start} – ${end}).`);
-        this.data.addHistory('calendar', 'PTO authorizations redistributed', `${person} (${nurse.team}), ${start}–${end}: ${breakdown}`);
+        this.data.addHistory('calendar', 'PTO authorizations redistributed', `${person} (${nurse.team}), ${start}–${end}: ${breakdown}`, undefined,
+          { fromStaff: person, team: nurse.team });
       },
     });
   }

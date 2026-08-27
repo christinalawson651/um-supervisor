@@ -1,0 +1,15 @@
+[
+  {
+    "runAt": "2026-07-17T00:00:00Z",
+    "note": "Initial baseline snapshot, captured manually when this scheduled report was set up.",
+    "rows": [
+      { "queue": "Intake", "unclaimed": 8, "fresh": "88%", "day2": "0%", "over48": "0%", "breach": "13%" },
+      { "queue": "Clinical Review", "unclaimed": 10, "fresh": "30%", "day2": "0%", "over48": "70%", "breach": "0%" },
+      { "queue": "MD Review", "unclaimed": 3, "fresh": "67%", "day2": "33%", "over48": "0%", "breach": "0%" },
+      { "queue": "RFI Pending", "unclaimed": 5, "fresh": "0%", "day2": "20%", "over48": "80%", "breach": "0%" },
+      { "queue": "OON Review", "unclaimed": 2, "fresh": "0%", "day2": "0%", "over48": "100%", "breach": "0%" },
+      { "queue": "Concurrent Review", "unclaimed": 6, "fresh": "83%", "day2": "0%", "over48": "17%", "breach": "0%" },
+      { "queue": "Pending P2P", "unclaimed": 5, "fresh": "20%", "day2": "80%", "over48": "0%", "breach": "0%" }
+    ]
+  }
+]

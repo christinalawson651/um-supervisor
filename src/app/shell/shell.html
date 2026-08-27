@@ -55,7 +55,7 @@
       <div class="dash-date">{{ data.today }}</div>
     </div>
 
-    @if (nav.module() !== 'overview') {
+    @if (nav.module() !== 'overview' && nav.module() !== 'reports') {
       <div class="period-bar">
         <span class="period-lab">Lookback</span>
         <div class="period-seg">
@@ -76,6 +76,7 @@
       @case ('overview') { <section class="content"><app-overview-dashboard /></section> }
       @case ('cm') { <section class="content"><app-cm-dashboard /></section> }
       @case ('appeals') { <section class="content"><app-appeals-dashboard /></section> }
+      @case ('reports') { <section class="content"><app-reports-dashboard /></section> }
       @case ('um') {
         <!-- KPI strip (collapsible for screen real estate) -->
         <div class="kpi-toggle-row">

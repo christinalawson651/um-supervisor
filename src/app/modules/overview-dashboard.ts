@@ -1,10 +1,11 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { Nav, BizModule } from '../shared/nav';
+import { Nav, BizModule, ModuleId } from '../shared/nav';
 import { Metrics } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
 import { Interaction } from '../shared/interaction';
 import { Donut, Trend, Segment } from '../shared/charts';
 import { Icon } from '../shared/icon';
+import queueStandingHistory from '../data/scheduled-reports/queue-standing-history.json';
 
 interface WidgetDef {
   id: string; title: string; category: string; scope: BizModule[]; size: 'half' | 'full';
@@ -30,10 +31,11 @@ const WIDGETS: WidgetDef[] = [
   { id: 'provider-outliers', title: 'Provider RFI Outliers', category: 'Volume & Throughput', scope: ['um'],    size: 'half' },
   { id: 'risk-distribution', title: 'Member Risk Distribution', category: 'Risk & Population', scope: ['cm'],    size: 'half' },
   { id: 'program-outcomes', title: 'Program Enrollment',      category: 'Risk & Population', scope: ['cm'],       size: 'half' },
+  { id: 'queue-scheduled-snapshot', title: 'Queue Standing — Scheduled Snapshot', category: 'Volume & Throughput', scope: ['um'], size: 'half' },
 ];
 
 // default view: the four pies (2x2) + cost headline + cost trend
-const DEFAULT_ENABLED = ['um-decisions', 'appeal-outcomes', 'cm-adherence', 'case-mix', 'cost-heroes', 'cost-trend'];
+const DEFAULT_ENABLED = ['um-decisions', 'appeal-outcomes', 'cm-adherence', 'case-mix', 'cost-heroes', 'cost-trend', 'queue-scheduled-snapshot'];
 const KEY = 'zyter-exec-widgets-v1';
 
 @Component({
@@ -196,6 +198,15 @@ const KEY = 'zyter-exec-widgets-v1';
                 }
               </div>
             }
+            @case ('queue-scheduled-snapshot') {
+              @if (latestQueueSnapshot(); as snap) {
+                <div class="w-big">{{ queueSnapshotTotal() }}</div>
+                <div class="foot">unclaimed across {{ snap.rows.length }} queues · {{ queueSnapshotBreached() }} breached · click to open the full report</div>
+                <div class="snap-meta clk" (click)="openQueueReport()">Last scheduled run: {{ formatSnapTime(snap.runAt) }}</div>
+              } @else {
+                <div class="foot">No scheduled run yet.</div>
+              }
+            }
           }
         </div>
       } @empty {
@@ -242,6 +253,8 @@ const KEY = 'zyter-exec-widgets-v1';
     .hero.click:hover .h-drill { opacity:1; }
     .w-big { font-size:24px; font-weight:700; color:var(--teal-700); margin-bottom:6px; } .w-big.green { color:var(--green); }
     .foot { margin-top:14px; font-size:11.5px; color:var(--gray-500); } .up { color:var(--green); font-weight:600; }
+    .snap-meta { margin-top:8px; font-size:11px; color:var(--teal-700); font-weight:600; cursor:pointer; }
+    .snap-meta:hover { text-decoration:underline; }
     .empty { grid-column:1/-1; text-align:center; padding:36px; color:var(--gray-500);
       background:#fff; border:1px dashed var(--gray-300); border-radius:12px; }
 
@@ -384,10 +397,22 @@ export class OverviewDashboard {
       'appeals-aging':   { title: 'Appeals Aging', columns: ['Bucket', 'Count'], rows: this.appealsAging.map((b) => [b.label, b.value]) },
       'provider-outliers': { title: 'Provider RFI Outliers', columns: ['Provider', 'RFI Rate'], rows: this.providerOutliers.map((b) => [b.label, b.value]) },
       'program-outcomes': { title: 'Program Enrollment', columns: ['Program', 'Enrolled'], rows: this.programOutcomes.map((b) => [b.label, b.value]) },
+      'queue-scheduled-snapshot': { title: 'Queue Standing — Scheduled Snapshot History', columns: ['Run At', 'Queue', 'Unclaimed', 'Breach %'],
+        rows: this.queueHistory.flatMap((h) => h.rows.map((r) => [this.formatSnapTime(h.runAt), r.queue, r.unclaimed, r.breach])) },
     };
     const d = map[id];
     if (d) this.exporter.open({ title: d.title, name: `${id}_2026-07-17`, columns: d.columns, rows: d.rows });
   }
+  // ---- Queue Standing scheduled snapshot — a real, periodically-updated history file (see
+  // scripts/run-queue-standing-snapshot task), not a static demo number. Each run appends the
+  // actual Queue Standing report's output as of that run; this widget just shows the latest one. ----
+  readonly queueHistory = queueStandingHistory as { runAt: string; note?: string; rows: { queue: string; unclaimed: number; breach: string }[] }[];
+  readonly latestQueueSnapshot = computed(() => this.queueHistory[this.queueHistory.length - 1] ?? null);
+  queueSnapshotTotal(): number { return this.latestQueueSnapshot()?.rows.reduce((s, r) => s + r.unclaimed, 0) ?? 0; }
+  queueSnapshotBreached(): number { return this.latestQueueSnapshot()?.rows.filter((r) => parseInt(r.breach) > 0).length ?? 0; }
+  formatSnapTime(iso: string): string { return new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }); }
+  openQueueReport() { this.nav.go('reports' satisfies ModuleId); }
+
   readonly shown = computed(() => {
     const source = this.customizing() ? this.draft() : this.enabled();
     return WIDGETS.filter((w) => source.includes(w.id) && w.scope.every((m) => this.nav.scope().includes(m)));
