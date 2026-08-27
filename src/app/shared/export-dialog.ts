@@ -1,8 +1,8 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Exporter } from './exporter';
+import { Exporter, ExportMeta } from './exporter';
 import { Interaction } from './interaction';
-import { downloadCsv, downloadXls, exportPdf } from './exports';
+import { downloadCsv, downloadCsvMulti, downloadXls, downloadXlsMulti, exportPdf, exportPdfMulti } from './exports';
 
 @Component({
   selector: 'app-export-dialog',
@@ -12,9 +12,16 @@ import { downloadCsv, downloadXls, exportPdf } from './exports';
     @if (ex.config(); as c) {
       <div class="scrim" (click)="ex.close()">
         <div class="modal" (click)="$event.stopPropagation()">
-          <div class="mh"><h3>Export — {{ c.title }}{{ sections().length > 1 ? ' — ' + sections()[sectionIdx()].label : '' }}</h3><button class="x" (click)="ex.close()">×</button></div>
+          <div class="mh"><h3>Export — {{ c.title }}{{ !combineMode() && sections().length > 1 ? ' — ' + sections()[sectionIdx()].label : '' }}</h3><button class="x" (click)="ex.close()">×</button></div>
 
-          @if (sections().length > 1) {
+          @if (combineMode()) {
+            <div class="sect">
+              <div class="slab">Tables</div>
+              <div class="combine-note">All {{ sections().length }} tables in this report will be exported together, in full ({{ combineRowCount() }} total rows) — no column or row filtering in this mode.</div>
+            </div>
+          }
+
+          @if (!combineMode() && sections().length > 1) {
             <div class="sect">
               <div class="slab">Section</div>
               <select class="search" [value]="sectionIdx()" (change)="selectSection(+$any($event.target).value)">
@@ -33,25 +40,35 @@ import { downloadCsv, downloadXls, exportPdf } from './exports';
             </div>
           </div>
 
-          <div class="sect">
-            <div class="slab">Filter rows</div>
-            <input class="search" type="text" placeholder="Include only rows containing…" [ngModel]="q()" (ngModelChange)="q.set($event)" />
-          </div>
-
-          <div class="sect">
-            <div class="slab">Columns <span class="cnt">{{ included().size }}/{{ activeColumns().length }}</span></div>
-            <div class="cols">
-              @for (col of activeColumns(); track col; let i = $index) {
-                <label class="col"><input type="checkbox" [checked]="included().has(i)" (change)="toggleCol(i)" /> {{ col }}</label>
-              }
+          @if (!combineMode()) {
+            <div class="sect">
+              <div class="slab">Filter rows</div>
+              <input class="search" type="text" placeholder="Include only rows containing…" [ngModel]="q()" (ngModelChange)="q.set($event)" />
             </div>
-          </div>
+
+            <div class="sect">
+              <div class="slab">Columns <span class="cnt">{{ included().size }}/{{ activeColumns().length }}</span></div>
+              <div class="cols">
+                @for (col of activeColumns(); track col; let i = $index) {
+                  <label class="col"><input type="checkbox" [checked]="included().has(i)" (change)="toggleCol(i)" /> {{ col }}</label>
+                }
+              </div>
+            </div>
+          }
 
           <div class="mf">
-            <span class="note">{{ filteredRows().length }} row(s) · {{ included().size }} column(s)</span>
+            @if (combineMode()) {
+              <span class="note">{{ combineRowCount() }} row(s) · {{ sections().length }} table(s)</span>
+            } @else {
+              <span class="note">{{ filteredRows().length }} row(s) · {{ included().size }} column(s)</span>
+            }
             <span class="spacer"></span>
             <button class="btn outline" (click)="ex.close()">Cancel</button>
-            <button class="btn primary" [disabled]="!included().size || !filteredRows().length" (click)="run(c)">Export</button>
+            @if (combineMode()) {
+              <button class="btn primary" [disabled]="!sections().length" (click)="runCombined(c)">Export</button>
+            } @else {
+              <button class="btn primary" [disabled]="!included().size || !filteredRows().length" (click)="run(c)">Export</button>
+            }
           </div>
         </div>
       </div>
@@ -71,6 +88,7 @@ import { downloadCsv, downloadXls, exportPdf } from './exports';
     .fbtn b { font-size:13px; color:var(--ink); } .fbtn span { font-size:10.5px; color:var(--gray-500); }
     .search { width:100%; border:1px solid var(--gray-300); border-radius:8px; padding:8px 12px; font-size:12.5px; outline:none; }
     .search:focus { border-color:var(--teal-600); }
+    .combine-note { font-size:12.5px; color:var(--ink-soft); background:var(--gray-100); border-radius:8px; padding:10px 12px; line-height:1.4; }
     .cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
     .col { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); cursor:pointer; }
     .mf { display:flex; align-items:center; gap:10px; margin-top:6px; }
@@ -91,6 +109,8 @@ export class ExportDialog {
   readonly included = signal<Set<number>>(new Set());
   readonly sectionIdx = signal(0);
   readonly sections = computed(() => this.ex.config()?.sections ?? []);
+  readonly combineMode = computed(() => !!this.ex.config()?.combineAll && this.sections().length > 1);
+  readonly combineRowCount = computed(() => this.sections().reduce((s, sec) => s + sec.rows.length, 0));
   readonly activeColumns = computed(() => { const secs = this.sections(); return secs.length ? secs[this.sectionIdx()].columns : (this.ex.config()?.columns ?? []); });
   readonly activeRows = computed(() => { const secs = this.sections(); return secs.length ? secs[this.sectionIdx()].rows : (this.ex.config()?.rows ?? []); });
   readonly activeName = computed(() => { const secs = this.sections(); return secs.length ? secs[this.sectionIdx()].name : (this.ex.config()?.name ?? 'export'); });
@@ -119,7 +139,20 @@ export class ExportDialog {
     return query ? rows.filter((r) => r.some((cell) => String(cell).toLowerCase().includes(query))) : rows;
   });
 
-  run(c: { title: string }) {
+  /** Every table in the report, exported together — one CSV with a marker line per table, one
+   *  workbook with a worksheet per table, or one printable page with every table in sequence.
+   *  No row/column filtering here: combine mode is for "give me everything", not a customized cut. */
+  runCombined(c: { title: string; name: string; meta?: ExportMeta }) {
+    const secs = this.sections().map((s) => ({ label: s.label, headers: s.columns, rows: s.rows }));
+    const fmt = this.format();
+    if (fmt === 'csv') downloadCsvMulti(c.name, secs, c.meta);
+    else if (fmt === 'xls') downloadXlsMulti(c.name, secs.map((s) => ({ name: s.label, headers: s.headers, rows: s.rows })), c.meta);
+    else exportPdfMulti(c.title, secs, c.meta);
+    this.ix.toast(`Exported "${c.title}" (${this.combineRowCount()} rows across ${secs.length} tables) as ${fmt.toUpperCase()}.`);
+    this.ex.close();
+  }
+
+  run(c: { title: string; meta?: ExportMeta }) {
     const cols = [...this.included()].sort((a, b) => a - b);
     const columns = this.activeColumns();
     const headers = cols.map((i) => columns[i]);
@@ -127,9 +160,9 @@ export class ExportDialog {
     const fmt = this.format();
     const title = this.sections().length > 1 ? `${c.title} — ${this.sections()[this.sectionIdx()].label}` : c.title;
     const name = this.activeName();
-    if (fmt === 'csv') downloadCsv(name, headers, rows);
-    else if (fmt === 'xls') downloadXls(name, headers, rows);
-    else exportPdf(title, headers, rows);
+    if (fmt === 'csv') downloadCsv(name, headers, rows, c.meta);
+    else if (fmt === 'xls') downloadXls(name, headers, rows, c.meta);
+    else exportPdf(title, headers, rows, c.meta);
     this.ix.toast(`Exported "${title}" (${rows.length} rows) as ${fmt.toUpperCase()}.`);
     this.ex.close();
   }

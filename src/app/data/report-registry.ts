@@ -68,6 +68,7 @@ export interface ReportContext {
 export interface ReportDef {
   id: string;
   module: 'um' | 'cm' | 'appeals' | 'generic';
+  group: string; // sidebar sub-heading — groups a long report list into findable clusters (WFM, Audit & Compliance, etc.)
   title: string;
   description: string;
   staticNote?: string; // shown as a callout when part/all of the report is illustrative, not live
@@ -88,7 +89,7 @@ export interface ReportDef {
 export const UM_REPORTS: ReportDef[] = [
   // ---- Workforce & Queue Management, split into its component queries ----
   {
-    id: 'um-queue-standing', module: 'um', title: 'Queue Standing',
+    id: 'um-queue-standing', module: 'um', group: 'Queue & Case Operations', title: 'Queue Standing',
     description: 'Unclaimed authorizations by queue, with full age-band, breach, and by-LOB detail.',
     tables: (ctx) => {
       const activeLobs = Array.isArray(ctx.lob) && ctx.lob.length ? ctx.lob : (typeof ctx.lob === 'string' && ctx.lob !== 'all' ? [ctx.lob] : LOBS);
@@ -104,7 +105,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-breach-detail', module: 'um', title: 'Breach Detail',
+    id: 'um-breach-detail', module: 'um', group: 'Queue & Case Operations', title: 'Breach Detail',
     description: 'Every unclaimed authorization currently past its TAT deadline, case-level — select specific queues and/or search by member. Matches the Workforce tab\'s queue-card breach drill (unclaimed only — already-assigned breaches show under that nurse\'s workload instead).',
     caseLevel: true, queueFilterable: true,
     tables: (ctx) => {
@@ -116,7 +117,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-team-workload', module: 'um', title: 'Team & Nurse Workload',
+    id: 'um-team-workload', module: 'um', group: 'Workforce Management (WFM)', title: 'Team & Nurse Workload',
     description: 'Full per-nurse workload — active, pending, completed, TAT, and utilization — plus team rollups. Filter by team and/or search by nurse name.',
     dimension: { label: 'Team', options: [ALL, ...UM_TEAMS] },
     memberSearchable: true,
@@ -145,7 +146,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-assignment-history', module: 'um', title: 'Reassignment & Assignment History',
+    id: 'um-assignment-history', module: 'um', group: 'Workforce Management (WFM)', title: 'Reassignment & Assignment History',
     description: 'The session\'s log of reassignments, balancing moves, and PTO-driven reassignments — filter by date, team, staff, who made the change, and member.',
     historyFilterable: true,
     tables: (ctx) => {
@@ -163,7 +164,7 @@ export const UM_REPORTS: ReportDef[] = [
 
   // ---- Scheduling & Adherence, split ----
   {
-    id: 'um-adherence-detail', module: 'um', title: 'Adherence Detail by Nurse',
+    id: 'um-adherence-detail', module: 'um', group: 'Workforce Management (WFM)', title: 'Adherence Detail by Nurse',
     description: 'Every nurse\'s on-time/exception rate over the selected period. Not LOB/date-filtered — schedules aren\'t tied to a member\'s LOB.',
     staticNote: 'Underlying shifts/attendance are a deterministic seeded dataset, not a real timeclock feed — see the field guide.',
     dimension: { label: 'Team', options: [ALL, ...UM_TEAMS] },
@@ -198,7 +199,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-pto-balances', module: 'um', title: 'PTO Balances',
+    id: 'um-pto-balances', module: 'um', group: 'Workforce Management (WFM)', title: 'PTO Balances',
     description: 'Accrued, used, and remaining PTO for every nurse, year-to-date.',
     dimension: { label: 'Team', options: [ALL, ...UM_TEAMS] },
     noLobDays: true,
@@ -209,7 +210,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-pto-upcoming', module: 'um', title: 'Upcoming PTO',
+    id: 'um-pto-upcoming', module: 'um', group: 'Workforce Management (WFM)', title: 'Upcoming PTO',
     description: 'Scheduled PTO days over the next 3 weeks, by nurse and date.',
     noLobDays: true,
     dimension: { label: 'Team', options: [ALL, ...UM_TEAMS] },
@@ -229,7 +230,7 @@ export const UM_REPORTS: ReportDef[] = [
 
   // ---- Demand & Forecasting, split ----
   {
-    id: 'um-demand-weekly', module: 'um', title: 'Weekly Submission Volume',
+    id: 'um-demand-weekly', module: 'um', group: 'Workforce Management (WFM)', title: 'Weekly Submission Volume',
     description: 'Raw weekly authorization-submission counts, trailing 9 weeks.',
     noLobDays: true,
     dimension: { label: 'Team', options: [ALL, ...UM_TEAMS] },
@@ -250,7 +251,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-capacity-coverage', module: 'um', title: 'Capacity & Coverage Outlook',
+    id: 'um-capacity-coverage', module: 'um', group: 'Workforce Management (WFM)', title: 'Capacity & Coverage Outlook',
     description: 'Projected next-week volume against nurse capacity — team-wide, or Caseload Headroom (capacity minus current active) when a team is selected.',
     noLobDays: true,
     dimension: { label: 'Team', options: [ALL, ...UM_TEAMS] },
@@ -302,7 +303,7 @@ export const UM_REPORTS: ReportDef[] = [
 
   // ---- Remaining tabs (unchanged in scope for this pass — already single-topic) ----
   {
-    id: 'um-tat', module: 'um', title: 'TAT Compliance',
+    id: 'um-tat', module: 'um', group: 'Clinical & Utilization', title: 'TAT Compliance',
     description: 'Turnaround-time buckets, by-LOB and by-Service-Category compliance, urgency/pause detail, regulatory-clock and notification compliance, and inpatient concurrent-review aggregates — same breakdown as the TAT Compliance tab.',
     dimension: { label: 'Auth Type', options: [ALL, 'IP', 'OP', 'RX'] },
     dimension2: { label: 'Service Category', options: [ALL, ...SERVICE_CATEGORIES] },
@@ -373,7 +374,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-daily-ip', module: 'um', title: 'Daily Inpatient Authorization Requests',
+    id: 'um-daily-ip', module: 'um', group: 'Queue & Case Operations', title: 'Daily Inpatient Authorization Requests',
     description: 'Inpatient authorizations submitted in the selected window, case-level — defaults to a daily grain via the Lookback filter (pick "Today"); search by member.',
     caseLevel: true,
     tables: (ctx) => {
@@ -383,7 +384,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-clinical', module: 'um', title: 'Decision & Determination Insights',
+    id: 'um-clinical', module: 'um', group: 'Clinical & Utilization', title: 'Decision & Determination Insights',
     description: 'Headline decision mix, approval rate/volume by procedure, and reason codes by outcome.',
     dimension: { label: 'Service Type', options: [ALL, 'Inpatient', 'Outpatient', 'Behavioral'] },
     dimension2: { label: 'Reason Codes — Outcome', options: ['Denied', 'Partial', 'Approved'] },
@@ -401,7 +402,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-risk', module: 'um', title: 'Risk & Escalation Worklist',
+    id: 'um-risk', module: 'um', group: 'Clinical & Utilization', title: 'Risk & Escalation Worklist',
     description: 'Headline risk tiles plus the full high-risk/high-acuity authorization worklist, sorted by risk score.',
     staticNote: 'The Authorizations Requiring Attention worklist is a fixed illustrative seed list — see the field guide (not yet a live risk calculation). High-Dollar is a real CASE_POOL query; High-Acuity/Escalated Today read the live riskCases()/history() signals.',
     tables: (ctx) => {
@@ -433,7 +434,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-concurrent', module: 'um', title: 'Concurrent Review Monitoring',
+    id: 'um-concurrent', module: 'um', group: 'Clinical & Utilization', title: 'Concurrent Review Monitoring',
     description: 'Full inpatient continued-stay review list — filter by status, search by member/facility/reviewer.',
     dimension: { label: 'Status', options: [ALL, 'Uncertified Days', 'Extension Requested', 'Recert Due', 'Certified'] },
     memberSearchable: true,
@@ -457,7 +458,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-intake', module: 'um', title: 'Intake & Documentation Quality',
+    id: 'um-intake', module: 'um', group: 'Clinical & Utilization', title: 'Intake & Documentation Quality',
     description: 'Full Intake & Documentation Quality breakdown — headline rates, channel mix, routing, duplicates, TAT/assignment risk, missing information, missing fields, review timing, provider issues, and auto-processing.',
     dimension: { label: 'Category', options: ['All', 'Medical', 'IP', 'OP', 'RX', 'Behavioral Health'] },
     tables: (ctx) => {
@@ -524,7 +525,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-provider', module: 'um', title: 'Provider & Network Insights',
+    id: 'um-provider', module: 'um', group: 'Provider & Network', title: 'Provider & Network Insights',
     description: 'Full provider performance detail vs. peer average, with outlier flags, VIP/Gold Card designation, and a needs-attention summary.',
     dimension: { label: 'Provider', options: [ALL, ...PROVIDERS] },
     dimension2: { label: 'Designation', options: [ALL, 'Needs Attention Only', 'VIP', 'Gold Card'] },
@@ -552,7 +553,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-irr', module: 'um', title: 'IRR Agreement by Reviewer',
+    id: 'um-irr', module: 'um', group: 'Audit & Compliance', title: 'IRR Agreement by Reviewer',
     description: 'Every sampled reviewer\'s agreement rate and sample adequacy, full list.',
     tables: (ctx) => {
       const rows = liveIrrByReviewer(ctx.lob, ctx.days);
@@ -561,7 +562,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-irr-actions', module: 'um', title: 'IRR Corrective Actions',
+    id: 'um-irr-actions', module: 'um', group: 'Audit & Compliance', title: 'IRR Corrective Actions',
     description: 'Every corrective action opened from an IRR disagreement, with reason and status.',
     dimension: { label: 'Status', options: [ALL, 'Open', 'Closed'] },
     tables: (ctx) => {
@@ -571,18 +572,18 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-reg-tat', module: 'um', title: 'Regulatory TAT Compliance by Program',
+    id: 'um-reg-tat', module: 'um', group: 'Audit & Compliance', title: 'Regulatory TAT Compliance by Program',
     description: 'Every program\'s compliance rate against its own statutory decision window.',
     tables: (ctx) => [{ title: 'Regulatory TAT Compliance by Program', columns: ['Program', 'Compliant', 'Total', 'Compliance %', 'Standard Window', 'Expedited Window', 'Citation'],
       rows: liveRegCompliance(ctx.days).map((r) => [r.lob, r.compliant, r.total, r.pct, `${r.standardDays}d`, `${r.expeditedHours}h`, r.citation]) }],
   },
   {
-    id: 'um-internal-quality', module: 'um', title: 'Internal Quality',
+    id: 'um-internal-quality', module: 'um', group: 'Clinical & Utilization', title: 'Internal Quality',
     description: 'Documentation completeness, guideline adherence, and decision-rationale documentation rates.',
     tables: (ctx) => [{ title: 'Internal Quality', columns: ['Metric', '%'], rows: liveComplianceBars(ctx.lob, ctx.days).map((b) => [b.label, b.pct]) }],
   },
   {
-    id: 'um-audit-flags', module: 'um', title: 'Audit Flags',
+    id: 'um-audit-flags', module: 'um', group: 'Audit & Compliance', title: 'Audit Flags',
     description: 'Every open audit flag — missing rationale, guideline deviation, documentation, and TAT compliance events.',
     dimension: { label: 'Severity', options: [ALL, 'High', 'Medium', 'Low'] },
     tables: (ctx) => {
@@ -592,7 +593,7 @@ export const UM_REPORTS: ReportDef[] = [
     },
   },
   {
-    id: 'um-irr-discrepancy-reasons', module: 'um', title: 'IRR Discrepancy Reasons',
+    id: 'um-irr-discrepancy-reasons', module: 'um', group: 'Audit & Compliance', title: 'IRR Discrepancy Reasons',
     description: 'Every IRR disagreement, grouped by root-cause reason.',
     tables: (ctx) => [{ title: 'IRR Discrepancy Reasons', columns: ['Reason', 'Count'], rows: liveIrrDiscrepancyReasons(ctx.lob, ctx.days).map((r) => [r.reason, r.count]) }],
   },
@@ -607,7 +608,7 @@ export const APPEALS_REPORTS: ReportDef[] = [];
 // modules' history logs into one real cross-module feed instead of just UM's. ----
 export const GENERIC_REPORTS: ReportDef[] = [
   {
-    id: 'generic-user-activity', module: 'generic', title: 'User Activity Report',
+    id: 'generic-user-activity', module: 'generic', group: 'General', title: 'User Activity Report',
     description: 'Every reassignment, balance, escalation, and PTO-driven move logged this session (UM only, for now — CM/Appeals activity joins once those reports are built).',
     noLobDays: true,
     tables: (ctx) => [{ title: 'User Activity', columns: ['Time', 'Action', 'Detail', 'By'],

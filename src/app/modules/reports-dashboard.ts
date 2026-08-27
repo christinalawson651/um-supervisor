@@ -34,8 +34,13 @@ const PERIODS = [
         @for (mod of visibleGroups(); track mod) {
           <div class="grp">
             <div class="grp-title">{{ moduleLabel(mod) }}</div>
-            @for (r of reportsFor(mod); track r.id) {
-              <button class="picker-item" [class.active]="selectedId() === r.id" (click)="select(r.id)">{{ r.title }}</button>
+            @for (sub of subGroupsFor(mod); track sub.name) {
+              <div class="sub-grp">
+                <div class="sub-grp-title">{{ sub.name }}</div>
+                @for (r of sub.reports; track r.id) {
+                  <button class="picker-item" [class.active]="selectedId() === r.id" (click)="select(r.id)">{{ r.title }}</button>
+                }
+              </div>
             }
           </div>
         }
@@ -162,7 +167,7 @@ const PERIODS = [
 
             <div class="print-header">
               <h2>{{ current()!.title }} — {{ moduleLabel(current()!.module) }}</h2>
-              <p>{{ appliedScopeLabel() }} · Generated {{ todayLabel }}</p>
+              <p>{{ appliedScopeLabel() }} · Generated {{ generatedAt() }} by {{ generatedByLabel }}</p>
             </div>
 
             @for (t of tables(); track t.title) {
@@ -187,6 +192,8 @@ const PERIODS = [
     .reports-shell { display: grid; grid-template-columns: 240px 1fr; gap: 20px; align-items: start; }
     .picker { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 12px; }
     .grp-title { font-size: 11px; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+    .sub-grp { margin-bottom: 10px; }
+    .sub-grp-title { font-size: 10.5px; font-weight: 700; color: var(--teal-700); letter-spacing: .02em; padding: 4px 10px 3px; }
     .picker-item { display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; border: none; background: none;
       font-size: 13px; color: var(--ink); cursor: pointer; margin-bottom: 2px; }
     .picker-item:hover { background: var(--gray-100); }
@@ -242,12 +249,22 @@ export class ReportsDashboard {
   data = inject(DashboardData);
   readonly periods = PERIODS;
   readonly todayIso = TODAY.toISOString().slice(0, 10);
-  readonly todayLabel = 'Friday, July 17, 2026';
 
   // Generic reports aren't tied to a business module, so they're always appended regardless of role.
   readonly visibleGroups = computed<Group[]>(() => [...this.nav.scope(), 'generic']);
   moduleLabel(m: Group) { return MODULE_LABEL[m]; }
   reportsFor(m: Group): ReportDef[] { return REGISTRY[m]; }
+  /** Reports clustered by their `group` (WFM, Audit & Compliance, etc.), in first-appearance
+   *  order — a flat 22-item list is hard to scan, sub-headings make a specific report findable. */
+  subGroupsFor(m: Group): { name: string; reports: ReportDef[] }[] {
+    const out: { name: string; reports: ReportDef[] }[] = [];
+    const byName = new Map<string, ReportDef[]>();
+    for (const r of REGISTRY[m]) {
+      if (!byName.has(r.group)) { const bucket: ReportDef[] = []; byName.set(r.group, bucket); out.push({ name: r.group, reports: bucket }); }
+      byName.get(r.group)!.push(r);
+    }
+    return out;
+  }
 
   private allVisibleReports = computed<ReportDef[]>(() => this.visibleGroups().flatMap((m) => REGISTRY[m]));
   readonly selectedId = signal<string | null>(null);
@@ -298,6 +315,8 @@ export class ReportsDashboard {
   readonly generated = signal(false);
   private appliedCtx = signal<ReportContext | null>(null);
   private appliedScope = signal('');
+  readonly generatedAt = signal('');
+  readonly generatedByLabel = 'Christina Lawson'; // the signed-in supervisor shown in the app's own topbar
 
   private windowDays(): number | undefined {
     if (this.customSince()) return Math.max(0, daysAgo(this.customSince()!));
@@ -341,6 +360,7 @@ export class ReportsDashboard {
       data: this.data,
     });
     this.appliedScope.set(this.buildScopeLabel());
+    this.generatedAt.set(new Date().toLocaleString());
     this.generated.set(true);
   }
   editFilters() { this.generated.set(false); }
@@ -370,11 +390,13 @@ export class ReportsDashboard {
     if (!r) return;
     const t = this.tables();
     if (!t.length) return;
-    const [first, ...rest] = t;
+    const [first] = t;
     this.exporter.open({
-      title: r.title, name: `report-${r.id}-${first.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`,
+      title: r.title, name: `report-${r.id}_2026-07-17`,
       columns: first.columns, rows: first.rows,
-      sections: rest.map((tbl) => ({ label: tbl.title, name: `report-${r.id}-${tbl.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`, columns: tbl.columns, rows: tbl.rows })),
+      sections: t.map((tbl) => ({ label: tbl.title, name: `report-${r.id}-${tbl.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`, columns: tbl.columns, rows: tbl.rows })),
+      combineAll: true,
+      meta: { generatedAt: this.generatedAt(), generatedBy: this.generatedByLabel, scope: this.appliedScopeLabel() },
     });
   }
 }
