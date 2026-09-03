@@ -71,6 +71,7 @@ Both are in the build. Lead with the second — that's what this session is abou
 ### 1.6 Clinical audit layer — 3 min
 - **UM → Audit & Compliance**: IRR sample with independent re-determination, discrepancy reason codes, corrective-action lifecycle, regulatory TAT compliance per LOB.
 - **CM → Audit & Compliance**: documentation file review (chart audit) scored element-by-element, pass rate by care manager, rubric-element findings, second-reviewer IRR on the rubric itself, assessment/care-plan window compliance per program, and live compliance exceptions on member records.
+- **Appeals has no audit tab, on purpose.** It runs on a small hand-authored set of appeal records rather than a generated pool, so there is nothing to sample or aggregate. The thin placeholder that used to sit there was removed rather than shown. If it comes up: the clinical audit pattern is proven twice over, and extending it to Appeals is a matter of building the appeals pool first — decided appeals across levels and LOBs with acknowledgment and resolution clocks, reviewer credential and independence, and notice-content elements.
 
 ---
 

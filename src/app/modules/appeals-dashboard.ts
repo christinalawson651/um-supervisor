@@ -26,6 +26,17 @@ interface Reviewer { name: string; role: string; open: number; nearSla: number; 
 // Tabs are keyed by a stable string id, not by array position — @switch(sel()) matches on
 // TAB.key, so reordering this list never requires renumbering any @case block below (same
 // convention as CM's cm-dashboard.ts TAB_DEFS).
+//
+// Audit & Compliance is deliberately ABSENT here. UM and CM both have real audit tabs now — IRR
+// against a sampled re-determination, a scored documentation file review, per-LOB regulatory
+// windows — all computed off their module's case pool. Appeals has no such pool: it runs on eight
+// hand-authored appeal records and five reviewers, so there is nothing to sample, aggregate or
+// drill into. The tab that used to sit here was three hardcoded percentages and three static flag
+// rows, which is worse than no tab at all in front of an auditor.
+//
+// To build it for real, an appeals pool comes first — decided appeals across levels and lines of
+// business, with acknowledgment and resolution clocks, reviewer credential and independence, and
+// notice-content elements — and the tab on top of that, following tabs/cm-audit-tab.ts.
 interface TabDef { key: string; label: string; }
 const TAB_DEFS: TabDef[] = [
   { key: 'workforce', label: 'Workforce & Queue' },
@@ -38,7 +49,6 @@ const TAB_DEFS: TabDef[] = [
   { key: 'intake', label: 'Intake & Documentation' },
   { key: 'provider', label: 'Provider Patterns' },
   { key: 'overturn', label: 'Overturn Cost Impact' },
-  { key: 'audit', label: 'Audit & Compliance' },
   { key: 'ai', label: 'AI / NextGen' },
 ];
 
@@ -211,22 +221,6 @@ const TAB_DEFS: TabDef[] = [
           <tbody>@for (c of highValue; track c.appeal) {
             <tr><td class="strong">{{ c.appeal }}</td><td><a class="ml" (click)="members.openByName(c.member)">{{ c.member }}</a></td><td>{{ c.service }}</td>
               <td class="strong">{{ c.value }}</td><td><span class="badge" [class.teal]="c.outcome==='Overturned'" [class.gray]="c.outcome==='Upheld'">{{ c.outcome }}</span></td></tr>
-          }</tbody></table></div>
-      }
-
-      <!-- Audit & Compliance -->
-      @case ('audit') {
-        <div class="tab-head"><h2>Audit &amp; Compliance</h2><span class="section-note">Regulatory timeliness &amp; notices</span></div>
-        <div class="grid-3">
-          <div class="panel panel-pad"><div class="clab">Timely Determinations</div><div class="cval">96%</div><div class="pbar"><span style="width:96%"></span></div></div>
-          <div class="panel panel-pad"><div class="clab">Member Notices Sent</div><div class="cval">99%</div><div class="pbar"><span style="width:99%"></span></div></div>
-          <div class="panel panel-pad"><div class="clab">Rationale Documented</div><div class="cval">93%</div><div class="pbar"><span style="width:93%"></span></div></div>
-        </div>
-        <div class="panel mt-6"><div class="panel-pad"><h3 class="pt">Audit Flags</h3></div>
-          <table class="z-table"><thead><tr><th>ID</th><th>Type</th><th>Description</th><th>Date</th><th>Severity</th></tr></thead>
-          <tbody>@for (f of apFlags; track f.id) {
-            <tr><td class="strong">{{ f.id }}</td><td>{{ f.type }}</td><td>{{ f.desc }}</td><td>{{ f.date }}</td>
-              <td><span class="badge" [class.red]="f.sev==='High'" [class.amber]="f.sev==='Medium'" [class.green]="f.sev==='Low'">{{ f.sev }}</span></td></tr>
           }</tbody></table></div>
       }
 
@@ -819,11 +813,6 @@ export class AppealsDashboard {
     { appeal: 'AP-2026-0031', member: 'James Okafor', service: 'IP LOS extension', value: '$48k', outcome: 'Overturned' },
     { appeal: 'AP-2026-0019', member: 'Carlos Reyes', service: 'Specialty Rx', value: '$31k', outcome: 'Overturned' },
     { appeal: 'AP-2026-0028', member: 'Linda Park', service: 'OP procedure', value: '$22k', outcome: 'Upheld' },
-  ];
-  readonly apFlags = [
-    { id: 'AG-201', type: 'Timeliness', desc: 'Determination approaching regulatory deadline — AP-2025-0891', date: '2026-07-17', sev: 'High' },
-    { id: 'AG-202', type: 'Notice', desc: 'Member notice pending send — AP-2026-0059', date: '2026-07-16', sev: 'Medium' },
-    { id: 'AG-203', type: 'Rationale', desc: 'Determination rationale incomplete — AP-2026-0028', date: '2026-07-14', sev: 'Low' },
   ];
 
   open(a: Appeal) {
