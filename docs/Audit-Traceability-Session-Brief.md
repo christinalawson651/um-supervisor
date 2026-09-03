@@ -1,0 +1,140 @@
+# Audit & Traceability — Client Session Brief
+
+**Audience:** Centene audit, compliance and oversight stakeholders
+**Purpose:** demonstrate Zyter's audit and traceability capabilities across UM, CM and Appeals, then work through gaps, priority requirements and next steps.
+**Demo build:** UM Supervisor Dashboard → **Audit & Traceability** module (visible to every role), plus the per-module **Audit & Compliance** tabs.
+
+---
+
+## 0. The distinction to set up front
+
+Two different things get called "audit," and the session goes sideways if they blur together.
+
+| | Clinical quality audit | System audit / traceability |
+|---|---|---|
+| Question it answers | *Did the reviewer apply the criteria correctly?* | *Can you prove who did what, when, from where — and that the record hasn't been altered since?* |
+| Where it lives in the demo | UM → Audit & Compliance; CM → Audit & Compliance | **Audit & Traceability** module |
+| Evidence | IRR sample, file/chart review, regulatory TAT | Event log, user activity, access governance, control register |
+| Who asks for it | NCQA / URAC surveyor, delegation oversight clinician | CMS program audit, HIPAA security review, SOC 2, plan IT security |
+
+Both are in the build. Lead with the second — that's what this session is about — and use the first as the "and here's the clinical layer on top of it" close.
+
+---
+
+## 1. Demo flow (≈25 minutes)
+
+### 1.1 Audit Trail — 6 min
+**Audit & Traceability → Audit Trail**
+
+- ~3,800 events across authorizations, CM cases, members, reports, user accounts and configuration.
+- Every event carries: actor + access role, timestamp, category, action, entity type/ID, **field changed with before → after**, channel, source IP, session ID, correlation ID, reason code, PHI flag, outcome.
+- **Channel matters.** Filter to `Fax / OCR Intake`, then `API`, then `System Rule`. The trail proves *how* a request physically arrived — the first thing disputed when a provider argues a receipt date.
+- Click any row → full event detail including **previous hash / record hash**.
+- Click **Verify chain** → re-walks every event in timestamp order and reports whether the chain is intact. This is the tamper-evidence claim as a check anyone can run, not a bullet on a slide.
+- **The money filter:** category = `Configuration`. Rule thresholds, criteria-set versions, letter templates, TAT windows and role entitlements are all logged with before → after and a change ticket. Auto-approval events carry the firing rule *and version* as their reason code, so any automated determination traces back to the exact rule that produced it.
+
+### 1.2 User Activity Monitoring — 5 min
+**Audit & Traceability → User Activity Monitoring**
+
+- Sign-ins, off-hours access (outside 07:00–19:00), failed sign-ins, out-of-scope access **denied** by RBAC, break-the-glass grants, and data exports with row counts.
+- Per-account table with computed signals: `break-the-glass`, `external IP`, `no MFA`, `repeated failed sign-ins`, `off-hours pattern`, `high export volume`.
+- Click any account → that user's own trail.
+- Point to make: *out-of-scope access denied* is the control working; *break-the-glass granted* is the control being deliberately overridden, and each one is a reviewable PHI disclosure.
+
+### 1.3 Governance & Access Controls — 6 min
+**Audit & Traceability → Governance & Access Controls**
+
+- **Segregation of duties** — four rules, each evaluated against the live trail rather than asserted:
+  - SOD-1 appeal reviewed by the original decision-maker (42 CFR §438.406(b)(2), §422.590)
+  - SOD-2 configuration change published without independent approval (SOC 2 CC8.1)
+  - SOD-3 denial issued by a non-clinician (42 CFR §438.210(b)(3))
+  - SOD-4 administrator with standing PHI access (HIPAA §164.308(a)(4))
+  - A clean rule reads *"Control passing across N events in window"* — an auditable statement, not a green checkmark. SOD-2 currently returns real findings; click through to them.
+- **Role → permission matrix** across nine access roles. The constraint text is the point: "Yes — assigned caseload" is a materially different control than an unconditional grant, and it's the distinction an auditor writes up.
+- **Account inventory** with MFA status and last entitlement review against a 90-day cycle.
+
+### 1.4 Compliance Requirements & Gaps — 5 min
+**Audit & Traceability → Compliance Requirements & Gaps**
+
+14 tracked requirements, each stated as *requirement → control today → where the evidence lives → status → gap → next step → owner*, grouped by domain. This is the working list for section 3 below — put it on screen and drive the discussion from it rather than from slides.
+
+### 1.5 Clinical audit layer — 3 min
+- **UM → Audit & Compliance**: IRR sample with independent re-determination, discrepancy reason codes, corrective-action lifecycle, regulatory TAT compliance per LOB.
+- **CM → Audit & Compliance**: documentation file review (chart audit) scored element-by-element, pass rate by care manager, rubric-element findings, second-reviewer IRR on the rubric itself, assessment/care-plan window compliance per program, and live compliance exceptions on member records.
+
+---
+
+## 2. Mapping to Centene's oversight objectives
+
+| Objective | What the platform shows | Where |
+|---|---|---|
+| Prove system-of-record integrity | Hash-chained event log, verifiable on demand | Audit Trail → Verify chain |
+| Attribute every clinical action | Actor + access role on every determination, criteria application, letter | Audit Trail |
+| Prove automated decisions are governed | Auto-approval reason code names the rule version; rule changes logged with before → after and approver | Audit Trail → Configuration |
+| Minimum-necessary / PHI control | RBAC scoping, denied out-of-scope access, break-the-glass with reason code | User Activity |
+| Delegation oversight evidence | IRR, file audit, regulatory TAT, corrective actions — all exportable | UM & CM Audit & Compliance |
+| Program-audit readiness | Filtered, dated extracts with provenance | Reports module + Audit Trail export |
+| Access governance | Role→permission matrix, SOD evaluation, entitlement attestation | Governance & Access Controls |
+
+---
+
+## 3. Gaps, priorities and next steps
+
+Taken straight from the in-app register (`Compliance Requirements & Gaps` → export for the follow-up packet). **5 Met · 6 Partial · 3 Gap. Four P1 items are still open.**
+
+### P1 — address before a plan audit
+
+| # | Requirement | Gap | Next step | Owner |
+|---|---|---|---|---|
+| REQ-08 | MFA on every account with PHI access (**Gap**) | A minority of accounts still authenticate password-only, including at least one with standing PHI access. | Enforce MFA at the identity provider; disable password-only sign-in for every clinical role. | IT Operations |
+| REQ-03 | Regular information-system activity review (**Partial**) | Review is available on demand, but nothing records that a named reviewer actually looked, or when. | Monthly activity-review task with reviewer sign-off captured as its own audit event. | Compliance |
+| REQ-04 | Break-the-glass justified and reviewed (**Partial**) | Reason codes are captured; narrative justification is not required and no follow-up review is forced. | Require narrative justification at point of access; auto-route each event to Compliance for 5-day review. | Compliance |
+| REQ-06 | Periodic entitlement review and attestation (**Partial**) | Attestation is tracked but not enforced — an account past its cycle keeps full access. | Escalate at 90 days, auto-suspend entitlements at 120 unless re-attested. | IT Operations |
+
+### P2 — required for scale and for plan-side ingestion
+
+| # | Requirement | Gap | Next step | Owner |
+|---|---|---|---|---|
+| REQ-10 | Program-audit universes on request (**Partial**) | Extracts aren't shaped to the CMS ODAG/CDAG record layouts, so a universe request still needs manual reformatting. | ODAG/CDAG universe templates with field-level mapping and a record-count reconciliation page. | Reporting |
+| REQ-11 | Delegated-entity oversight reporting (**Partial**) | Evidence exports per widget; there's no single dated packet assembling the required artifact set. | One-click **Delegation Oversight Packet** — standard artifacts, cover page, generation hash. | Compliance |
+| REQ-12 | Audit data exportable to the plan's SIEM (**Gap**) | CSV pull only; no streaming or scheduled feed for continuous ingestion. | Append-only audit event API plus a nightly signed batch feed. | Platform Engineering |
+| REQ-13 | Alerting on anomalous access (**Gap**) | Signals are computed and displayed but nothing notifies anyone when a threshold is crossed. | Define thresholds per signal; route breaches to Compliance as a work item, not just a tile. | Compliance |
+
+### P3
+
+| # | Requirement | Gap | Next step | Owner |
+|---|---|---|---|---|
+| REQ-14 | Member-facing accounting of disclosures, HIPAA §164.528 (**Partial**) | Underlying events exist; there's no per-member disclosure report a member request could be answered with. | Member-scoped disclosure report covering the trailing 6 years. | Compliance |
+
+### Questions to put back to Centene
+
+1. **Universe layouts** — which ODAG/CDAG record layouts and versions should we build to, and does Centene supply the reconciliation template?
+2. **SIEM ingestion** — push (API/feed into Centene's SIEM) or pull, and what authentication and signing does Centene's security team require?
+3. **Retention** — 10 years is configured. Confirm against Centene's own schedule and any state-specific overrides.
+4. **Attestation cadence and owner** — is the 90-day entitlement cycle Centene's standard, and who signs?
+5. **Break-the-glass SLA** — what review window does Centene expect between an emergent-access grant and compliance sign-off?
+6. **Delegation packet contents** — which artifacts must the oversight packet contain, and at what cadence?
+
+---
+
+## 4. Honest caveats to state in the room
+
+- The hash chain in this build uses a lightweight digest so the mechanism is demonstrable in-browser. Production chain-of-custody is server-side SHA-256; the property being demonstrated — any alteration changes this record's hash and every hash after it — is the same.
+- Regulatory citations throughout are directional. Commercial PPO and ACA Exchange have **no** federal care-management clock, so those rows measure accreditation and plan policy, not statute. Exact subsections need Compliance validation before anything goes in front of a surveyor.
+- IRR thresholds (90% agreement) and the CM file-audit pass line (80% of rubric) are org policy choices. NCQA/URAC require a defined, followed methodology — not one universal number.
+- Data in the demo is deterministically generated from the UM/CM case pools. It is realistic in shape and stable across runs, but it is not Centene data.
+
+---
+
+## 5. Where this lives
+
+| Piece | File |
+|---|---|
+| Audit & Traceability module (4 tabs) | `src/app/modules/audit-traceability.ts` |
+| Event log, users, permission matrix, SOD rules, compliance register | `src/app/data/audit-trail.ts` |
+| CM file audit / chart review model | `src/app/data/cm-audit.ts` |
+| CM Audit & Compliance tab | `src/app/tabs/cm-audit-tab.ts` |
+| UM IRR model | `src/app/data/um-irr.ts` |
+| UM Audit & Compliance tab | `src/app/tabs/audit-tab.ts` |
+
+Hosted build deploys from this repo via `render.yaml` (static site, SPA rewrite).

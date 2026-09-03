@@ -21,6 +21,7 @@ import { OverviewDashboard } from '../modules/overview-dashboard';
 import { CmDashboard } from '../modules/cm-dashboard';
 import { AppealsDashboard } from '../modules/appeals-dashboard';
 import { ReportsDashboard } from '../modules/reports-dashboard';
+import { AuditTraceability } from '../modules/audit-traceability';
 
 import { WorkforceTab } from '../tabs/workforce-tab';
 import { SchedulingTab } from '../tabs/scheduling-tab';
@@ -76,6 +77,7 @@ const MODULES = [
   { id: 'cm' as const, label: 'CM' },
   { id: 'appeals' as const, label: 'Appeals' },
   { id: 'reports' as const, label: 'Reports' },
+  { id: 'audit' as const, label: 'Audit & Traceability' },
 ];
 
 const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
@@ -84,13 +86,14 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   cm: { title: 'CM Supervisor Dashboard', sub: 'Care management worklist and referral intake', role: 'CM Supervisor' },
   appeals: { title: 'Appeals Supervisor Dashboard', sub: 'Appeals & grievances worklist, prioritized by deadline', role: 'Appeals Supervisor' },
   reports: { title: 'Reports', sub: 'Printable, exportable reports across UM, CM & Appeals — smart-filtered by date range and LOB', role: 'Operations Supervisor' },
+  audit: { title: 'Audit & Traceability', sub: 'Audit trail, user activity monitoring, access governance and compliance evidence across every module', role: 'Compliance & Oversight' },
 };
 
 @Component({
   selector: 'app-shell',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard, AuditTraceability,
     WorkforceTab, SchedulingTab, DemandTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab, FollowThroughBoard,
   ],

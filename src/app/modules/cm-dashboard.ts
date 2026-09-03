@@ -24,6 +24,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { FollowThroughBoard } from '../shared/follow-through-board';
+import { CmAuditTab } from '../tabs/cm-audit-tab';
 
 interface CmMemberRow { name: string; risk: number; level: 'Low'|'Moderate'|'High'|'Critical'; acuity: 'Low'|'Medium'|'High'; cost: string; sla: string; slaTone: string; cm: string; dx: string; }
 
@@ -90,7 +91,7 @@ const TAB_DEFS: TabDef[] = [
 @Component({
   selector: 'app-cm-dashboard',
   standalone: true,
-  imports: [KpiStrip, Ring, Donut, Trend, FormsModule, Icon, WidgetActions, WidgetCustomize, FollowThroughBoard],
+  imports: [KpiStrip, Ring, Donut, Trend, FormsModule, Icon, WidgetActions, WidgetCustomize, FollowThroughBoard, CmAuditTab],
   template: `
     <div class="kpi-toggle-row">
       <button class="kpi-toggle" (click)="kpiCollapsed.set(!kpiCollapsed())">
@@ -680,20 +681,7 @@ const TAB_DEFS: TabDef[] = [
       }
 
       <!-- Audit & Compliance -->
-      @case ('audit') {
-        <div class="tab-head"><h2>Audit &amp; Compliance</h2><span class="section-note">Documentation &amp; regulatory compliance</span></div>
-        <div class="grid-3">
-          <div class="panel panel-pad"><div class="clab">Care Plan Timeliness</div><div class="cval">92%</div><div class="pbar"><span style="width:92%"></span></div></div>
-          <div class="panel panel-pad"><div class="clab">Assessment Compliance</div><div class="cval">85%</div><div class="pbar"><span style="width:85%"></span></div></div>
-          <div class="panel panel-pad"><div class="clab">Consent on File</div><div class="cval">97%</div><div class="pbar"><span style="width:97%"></span></div></div>
-        </div>
-        <div class="panel mt-6"><div class="panel-pad"><h3 class="pt">Audit Flags</h3></div>
-          <table class="z-table"><thead><tr><th>ID</th><th>Type</th><th>Description</th><th>Date</th><th>Severity</th></tr></thead>
-          <tbody>@for (f of cmFlags; track f.id) {
-            <tr><td class="strong">{{ f.id }}</td><td>{{ f.type }}</td><td>{{ f.desc }}</td><td>{{ f.date }}</td>
-              <td><span class="badge" [class.red]="f.sev==='High'" [class.amber]="f.sev==='Medium'" [class.green]="f.sev==='Low'">{{ f.sev }}</span></td></tr>
-          }</tbody></table></div>
-      }
+      @case ('audit') { <app-cm-audit-tab /> }
 
       <!-- Follow-Through Board -->
       @case ('followthrough') { <app-follow-through-board /> }
@@ -1176,11 +1164,6 @@ export class CmDashboard {
     { member: 'Marcus Webb', tool: 'KDQOL-36', due: '2026-07-14', overdue: '7d', cm: 'Sara Nguyen, RN' },
     { member: 'Denise Holloway', tool: 'SDOH Screening', due: '2026-07-16', overdue: '5d', cm: 'Maria Torres, RN' },
     { member: 'Ronald Pierce', tool: 'HRA', due: '2026-07-18', overdue: '3d', cm: 'Angela Ruiz, RN' },
-  ];
-  readonly cmFlags = [
-    { id: 'CM-118', type: 'Care Plan Timeliness', desc: 'Care plan not created within 14 days of enrollment — MBR000284', date: '2026-07-15', sev: 'Medium' },
-    { id: 'CM-119', type: 'Missing Assessment', desc: 'HRA not completed for high-risk member — MBR000098', date: '2026-07-14', sev: 'High' },
-    { id: 'CM-120', type: 'Consent', desc: 'Verbal consent not documented — MBR000201', date: '2026-07-13', sev: 'Low' },
   ];
 
   // ---- caseload: real data from CmData, drills, and Reassign/Balance/Escalate actions.

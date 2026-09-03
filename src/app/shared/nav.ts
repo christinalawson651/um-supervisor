@@ -1,6 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 
-export type ModuleId = 'overview' | 'um' | 'cm' | 'appeals' | 'reports';
+export type ModuleId = 'overview' | 'um' | 'cm' | 'appeals' | 'reports' | 'audit';
 export type BizModule = 'um' | 'cm' | 'appeals';
 
 export interface Role { id: string; label: string; modules: BizModule[]; }
@@ -21,11 +21,15 @@ export class Nav {
   readonly module = signal<ModuleId>('overview');
 
   /** Modules the current role can see; Overview is present only for multi-module roles. Reports
-   *  is always last and always visible — every role gets a reporting view scoped to whichever
-   *  business module(s) they own (see ReportsDashboard's use of `scope()`). */
+   *  and Audit & Traceability are always last and always visible — every role gets a reporting view
+   *  scoped to whichever business module(s) they own (see ReportsDashboard's use of `scope()`), and
+   *  the audit trail is role-independent. */
   readonly visibleModules = computed<ModuleId[]>(() => {
     const biz = this.role().modules;
-    return biz.length > 1 ? ['overview', ...biz, 'reports'] : [...biz, 'reports'];
+    // Audit & Traceability sits alongside Reports: always visible, regardless of role. It is the
+    // system-of-record evidence view (who did what, when) rather than a business module, and every
+    // role is accountable to it — a UM Supervisor who can't see the trail can't answer for it.
+    return biz.length > 1 ? ['overview', ...biz, 'reports', 'audit'] : [...biz, 'reports', 'audit'];
   });
 
   /** Business modules (no overview) the role owns — drives the exec Overview scope. */
