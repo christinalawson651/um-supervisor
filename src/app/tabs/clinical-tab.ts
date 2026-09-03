@@ -4,7 +4,7 @@ import {
   liveDeterminationMix, liveDeterminationCases, DeterminationMixRow, DeterminationOutcome,
 } from '../data/dashboard-data';
 import { CASE_POOL, GUIDELINE_DETAIL } from '../data/case-pool';
-import { urgencyOf, mdReviewerOf, determinationReasonOf, criteriaStatusOf, authStatusOf, AUTH_STATUSES, dxOf } from '../data/case-fields';
+import { urgencyOf, mdReviewerOf, determinationReasonOf, criteriaStatusOf, authStatusOf, AUTH_STATUSES, dxOf, TODAY_ISO } from '../data/case-fields';
 import { Interaction } from '../shared/interaction';
 import { Metrics, COLUMNS, toRow } from '../shared/metrics';
 import { Exporter } from '../shared/exporter';
@@ -272,13 +272,13 @@ export class ClinicalTab {
   exportStat(s: { label: string; value: string }, key: string) {
     const cases = this.metrics.cases(key);
     this.exporter.open({
-      title: s.label, name: `clinical-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      title: s.label, name: `clinical-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       columns: COLUMNS, rows: cases.map(toRow),
     });
   }
   exportDrilldown() {
     this.exporter.open({
-      title: 'Decision Drilldown by Service', name: 'clinical-drilldown_2026-07-17',
+      title: 'Decision Drilldown by Service', name: `clinical-drilldown${TODAY_ISO}`,
       columns: ['Procedure', 'Service Type', 'Guideline', 'Approval Rate %', 'Volume'],
       rows: this.sortedRows().map((r) => [r.procedure, r.serviceType, r.guideline, r.approvalRate, r.volume]),
     });
@@ -313,7 +313,7 @@ export class ClinicalTab {
   exportMix() {
     const [lob, days] = this.scopeArgs();
     const cases = CASE_POOL.filter((c) => c.phase === 'decided' && inScope(c, lob, days));
-    this.exporter.open({ title: 'Decision Mix', name: 'clinical-decision-mix_2026-07-17', columns: COLUMNS, rows: cases.map(toRow) });
+    this.exporter.open({ title: 'Decision Mix', name: `clinical-decision-mix${TODAY_ISO}`, columns: COLUMNS, rows: cases.map(toRow) });
   }
 
   /** Full lifecycle status mix — pending queues collapse into their broader stage, decided cases
@@ -335,12 +335,12 @@ export class ClinicalTab {
       title: `Authorization Status — ${status}`,
       context: `${cases.length} authorization(s) currently ${status}`,
       columns: COLUMNS, rows: cases.map(toRow),
-      exportName: `auth-status-${status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`, memberColumn: 1,
+      exportName: `auth-status-${status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   exportAuthStatus() {
     this.exporter.open({
-      title: 'Authorization Status Mix', name: 'clinical-auth-status-mix_2026-07-17',
+      title: 'Authorization Status Mix', name: `clinical-auth-status-mix${TODAY_ISO}`,
       columns: ['Status', 'Count', '% of Total'],
       rows: this.authStatusMix().map((s) => [s.status, s.count, s.pct]),
     });
@@ -369,12 +369,12 @@ export class ClinicalTab {
       title: `Diagnosis — ${code}`,
       context: `${cases.length} authorization(s) coded ${code} (${description})`,
       columns: COLUMNS, rows: cases.map(toRow),
-      exportName: `diagnosis-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`, memberColumn: 1,
+      exportName: `diagnosis-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   exportDiagnosisMix() {
     this.exporter.open({
-      title: 'Diagnosis Mix', name: 'clinical-diagnosis-mix_2026-07-17',
+      title: 'Diagnosis Mix', name: `clinical-diagnosis-mix${TODAY_ISO}`,
       columns: ['Diagnosis Code', 'Description', 'Count', '% of Total'],
       rows: this.diagnosisMix().map((d) => [d.code, d.description, d.count, d.pct]),
     });
@@ -392,7 +392,7 @@ export class ClinicalTab {
       title: `${row.code} · ${row.label}`,
       context: `${cases.length} ${this.mixOutcome().toLowerCase()} decision(s) coded ${row.code} (${row.pct}% of ${this.mixOutcome().toLowerCase()} decisions)`,
       columns: COLUMNS, rows: cases.map(toRow),
-      exportName: `determination-${row.code.toLowerCase()}_2026-07-17`, memberColumn: 1,
+      exportName: `determination-${row.code.toLowerCase()}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   exportReasonMix() {
@@ -400,7 +400,7 @@ export class ClinicalTab {
     const outcome = this.mixOutcome();
     const cases = CASE_POOL.filter((c) => c.phase === 'decided' && c.decision === outcome && inScope(c, lob, days));
     this.exporter.open({
-      title: `Reason Codes by Outcome — ${outcome}`, name: `determination-mix-${outcome.toLowerCase()}_2026-07-17`,
+      title: `Reason Codes by Outcome — ${outcome}`, name: `determination-mix-${outcome.toLowerCase()}${TODAY_ISO}`,
       columns: [...COLUMNS, 'Reason Code'],
       rows: cases.map((c) => [...toRow(c), determinationReasonOf(c)?.label ?? '—']),
     });
@@ -460,7 +460,7 @@ export class ClinicalTab {
         const cs = criteriaStatusOf(c);
         return [c.authId, c.member, c.decision, `${cs.met}/${cs.total}`, determinationReasonOf(c)?.code ?? '—', c.nurse, mdReviewerOf(c) ?? '—', c.provider, urgencyOf(c), c.submitted, c.tatH, `$${c.cost.toLocaleString()}`];
       }),
-      exportName: `decision-log-${r.procedure.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`,
+      exportName: `decision-log-${r.procedure.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }

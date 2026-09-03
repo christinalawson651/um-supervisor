@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, inject } from '@angular/core';
 import { DashboardData, liveCostInsights, inScope } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
@@ -224,7 +225,7 @@ export class CostTab {
     this.ix.openExplorer({
       title, context: context ?? `${cs.length} authorization(s)`,
       columns: COLUMNS, rows: cs.map(toRow),
-      exportName: `cost-${exportSlug}_2026-07-17`, memberColumn: 1,
+      exportName: `cost-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
 
@@ -252,7 +253,7 @@ export class CostTab {
 
   exportKpis() {
     this.exporter.open({
-      title: 'Cost Overview', name: 'cost-overview_2026-07-17',
+      title: 'Cost Overview', name: `cost-overview${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [
         ['Active Authorizations', this.totalActive()],
@@ -264,21 +265,21 @@ export class CostTab {
   }
   exportFlags() {
     this.exporter.open({
-      title: 'Needs-Attention Summary', name: 'cost-needs-attention_2026-07-17',
+      title: 'Needs-Attention Summary', name: `cost-needs-attention${TODAY_ISO}`,
       columns: ['Flag', 'Authorizations Affected'],
       rows: this.tiles.map((t) => [t.label, this.tileCount(t.flag)]),
     });
   }
   exportByService() {
     this.exporter.open({
-      title: 'Cost Exposure by Service Type', name: 'cost-by-service-type_2026-07-17',
+      title: 'Cost Exposure by Service Type', name: `cost-by-service-type${TODAY_ISO}`,
       columns: ['Service Type', 'Count', '% of Needs-Attention'],
       rows: this.byServiceType().map((s) => [s.type, s.count, s.pct]),
     });
   }
   exportByNetwork() {
     this.exporter.open({
-      title: 'Cost Exposure by Network Status', name: 'cost-by-network-status_2026-07-17',
+      title: 'Cost Exposure by Network Status', name: `cost-by-network-status${TODAY_ISO}`,
       columns: ['Network Status', 'Count', '% of Needs-Attention'],
       rows: this.byNetworkStatus().map((s) => [s.status, s.count, s.pct]),
     });

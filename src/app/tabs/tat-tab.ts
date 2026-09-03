@@ -7,7 +7,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
-import { LOBS, SERVICE_CATEGORIES, lobOf, serviceCategoryOf, authTypeOf, tatStatus, urgencyOf } from '../data/case-fields';
+import { LOBS, SERVICE_CATEGORIES, lobOf, serviceCategoryOf, authTypeOf, tatStatus, urgencyOf, TODAY_ISO } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
@@ -304,7 +304,7 @@ export class TatTab {
 
   exportHeadline() {
     this.exporter.open({
-      title: 'TAT Compliance', name: 'tat-headline_2026-07-17',
+      title: 'TAT Compliance', name: `tat-headline${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [['Compliance %', this.head().compliance], ...this.buckets().map((b) => [b.label, b.count] as (string | number)[]), ...this.stats().map((s) => [s.label, s.value] as (string | number)[])],
     });
@@ -312,21 +312,21 @@ export class TatTab {
   exportConcurrentPanel() {
     const c = this.concurrent();
     this.exporter.open({
-      title: 'Inpatient Concurrent Review', name: 'tat-concurrent_2026-07-17',
+      title: 'Inpatient Concurrent Review', name: `tat-concurrent${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [['Active Reviews', c.active], ['Overstay Risk', c.overstay], ['Days Approved', c.daysApproved], ['Days Requested', c.daysRequested], ['Avg LOS', `${c.avgLos}d`], ['Avg Expected LOS', `${c.avgExp}d`]],
     });
   }
   exportByLob() {
     this.exporter.open({
-      title: 'TAT Compliance by Line of Business', name: 'tat-by-lob_2026-07-17',
+      title: 'TAT Compliance by Line of Business', name: `tat-by-lob${TODAY_ISO}`,
       columns: ['Line of Business', 'Volume', 'On Track', 'At Risk', 'Breached', 'Compliance %'],
       rows: this.byLob().map((r) => [r.name, r.total, r.onTrack, r.atRisk, r.breached, r.compliance]),
     });
   }
   exportByServiceCategory() {
     this.exporter.open({
-      title: 'TAT Compliance by Service Category', name: 'tat-by-service-category_2026-07-17',
+      title: 'TAT Compliance by Service Category', name: `tat-by-service-category${TODAY_ISO}`,
       columns: ['Service Category', 'Volume', 'On Track', 'At Risk', 'Breached', 'Compliance %'],
       rows: this.byServiceCategory().map((r) => [r.name, r.total, r.onTrack, r.atRisk, r.breached, r.compliance]),
     });
@@ -334,14 +334,14 @@ export class TatTab {
   exportNotification() {
     const n = this.notif();
     this.exporter.open({
-      title: 'Notification Compliance', name: 'tat-notification_2026-07-17',
+      title: 'Notification Compliance', name: `tat-notification${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [['Member Notice On-Time %', n.memberPct], ['Provider Notice On-Time %', n.providerPct], ['Avg Time to Notice (d)', n.avgDays], ['Late Notices', n.late]],
     });
   }
   exportRegulatory() {
     this.exporter.open({
-      title: 'Regulatory TAT by Urgency', name: 'tat-regulatory_2026-07-17',
+      title: 'Regulatory TAT by Urgency', name: `tat-regulatory${TODAY_ISO}`,
       columns: ['Urgency', 'Clock', 'On Time', 'At Risk', 'Breached', 'Total', 'Compliance %'],
       rows: this.regTat().map((u) => [u.name, u.clock, u.onTime, u.atRisk, u.breached, u.total, u.compliance]),
     });
@@ -490,7 +490,7 @@ export class TatTab {
       context: `${cases.length} decisions · ${this.head().compliance}% on track`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'TAT Status', 'Est. Cost'],
       rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), tatStatus(c), `$${c.cost.toLocaleString()}`]),
-      exportName: 'tat-all-decided_2026-07-17',
+      exportName: `tat-all-decided${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -504,7 +504,7 @@ export class TatTab {
       context: `${cases.length} decisions · ${label}`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'TAT Status', 'Est. Cost'],
       rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), tatStatus(c), `$${c.cost.toLocaleString()}`]),
-      exportName: `tat-${label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      exportName: `tat-${label.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -518,7 +518,7 @@ export class TatTab {
         context: `${cases.length} authorization(s) with the clock stopped, pending RFI response`,
         columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Status', 'Est. Cost'],
         rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), c.status, `$${c.cost.toLocaleString()}`]),
-        exportName: 'tat-paused_2026-07-17',
+        exportName: `tat-paused${TODAY_ISO}`,
         memberColumn: 1,
       });
       return;
@@ -530,7 +530,7 @@ export class TatTab {
         context: `${this.stats().find((s) => s.label === 'Avg Turnaround')?.value} average across ${cases.length} completed reviews (longest first)`,
         columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'TAT Status', 'TAT (days)', 'Est. Cost'],
         rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), tatStatus(c), c.tatH, `$${c.cost.toLocaleString()}`]),
-        exportName: 'tat-avg-turnaround_2026-07-17',
+        exportName: `tat-avg-turnaround${TODAY_ISO}`,
         memberColumn: 1,
       });
       return;
@@ -543,7 +543,7 @@ export class TatTab {
       context: `${cases.length} ${label.toLowerCase()} review(s) in view`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'TAT Status', 'TAT (days)', 'Est. Cost'],
       rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, tatStatus(c), c.tatH, `$${c.cost.toLocaleString()}`]),
-      exportName: `tat-${label.toLowerCase()}_2026-07-17`,
+      exportName: `tat-${label.toLowerCase()}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -556,7 +556,7 @@ export class TatTab {
       context: `${rows.length} inpatient continued-stay reviews`,
       columns: ['Member', 'Facility', 'LOS', 'Expected', 'Days Approved', 'Days Requested', 'Overstay Risk'],
       rows: rows.map((r) => [r.member, r.facility, r.los, r.expectedLos, r.totalCertifiedDays, r.daysRequested, r.overstayLabel]),
-      exportName: 'concurrent-all_2026-07-17',
+      exportName: `concurrent-all${TODAY_ISO}`,
       memberColumn: 0,
     });
   }
@@ -570,7 +570,7 @@ export class TatTab {
       context: `${cases.length} decisions · ${label} ${value}`,
       columns: ['Auth ID', 'Member', 'Procedure', label, 'Provider', 'Urgency', 'TAT Status', 'Est. Cost'],
       rows: cases.map((c) => [c.authId, c.member, c.procedure, value, c.provider, urgencyOf(c), tatStatus(c), `$${c.cost.toLocaleString()}`]),
-      exportName: `tat-${dim}-${value.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      exportName: `tat-${dim}-${value.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -583,7 +583,7 @@ export class TatTab {
       context: `${cases.length} decisions in this urgency tier`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'TAT Status', 'TAT (days)', 'Est. Cost'],
       rows: cases.map((c) => [c.authId, c.member, c.procedure, c.provider, tatStatus(c), c.tatH, `$${c.cost.toLocaleString()}`]),
-      exportName: `regulatory-tat-${name.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      exportName: `regulatory-tat-${name.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -612,7 +612,7 @@ export class TatTab {
       title, context,
       columns: ['Auth ID', 'Member', 'Notice Type', 'Determination', 'Provider', 'Urgency', 'Notice Status', 'Est. Cost'],
       rows: cases.map((c) => [c.authId, c.member, noticeType(c), c.decision, c.provider, urgencyOf(c), lateSet.has(c) ? 'Late' : 'On Time', `$${c.cost.toLocaleString()}`]),
-      exportName: `notification-${kind}_2026-07-17`,
+      exportName: `notification-${kind}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -624,7 +624,7 @@ export class TatTab {
       context: `${cases.length} inpatient continued-stay reviews in progress`,
       columns: ['Auth ID', 'Member', 'Procedure', 'LOB', 'Provider', 'Urgency', 'Status'],
       rows: cases.map((c) => [c.authId, c.member, c.procedure, lobOf(c.authId), c.provider, urgencyOf(c), c.status]),
-      exportName: `concurrent-active_2026-07-17`,
+      exportName: `concurrent-active${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -636,7 +636,7 @@ export class TatTab {
       context: `${rows.length} members exceeding expected length of stay`,
       columns: ['Member', 'Facility', 'LOS', 'Expected', 'Days Approved', 'Days Requested', 'Overstay Risk'],
       rows: rows.map((r) => [r.member, r.facility, r.los, r.expectedLos, r.totalCertifiedDays, r.daysRequested, r.overstayLabel]),
-      exportName: `concurrent-overstay_2026-07-17`,
+      exportName: `concurrent-overstay${TODAY_ISO}`,
       memberColumn: 0,
     });
   }

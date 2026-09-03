@@ -289,7 +289,11 @@ export function bandOf(authId: string, breached: boolean): 'fresh' | 'day2' | 'o
 
 // ---- Shared "now" for every lookback/date calculation, so the case pool's dates and the
 // Lookback filter always agree on what "today" means (matches DashboardData.today). ----
-export const TODAY = new Date(2026, 6, 17); // Friday, July 17, 2026
+// The clock lives in its own leaf module — see clock.ts for why — and is re-exported here so
+// every existing `from './case-fields'` import keeps working.
+export { TODAY, TODAY_ISO, TODAY_LONG } from './clock';
+import { TODAY } from './clock';
+
 export function daysAgo(dateStr: string): number {
   const d = new Date(`${dateStr}T00:00:00`);
   return Math.round((TODAY.getTime() - d.getTime()) / 86400000);

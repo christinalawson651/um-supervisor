@@ -1,12 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveMissingFields, inScope } from '../data/dashboard-data';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
-import {
-  urgencyOf, INTAKE_CHANNELS, intakeChannelOf, RoutingStatus, routingStatusOf,
-  isDuplicateOf, duplicateResolvedOf, MissingInfoCategory, missingInfoCategoryOf,
-  ReviewType, reviewTypeOf, providerIssueOf, IntakeProcessingStatus, intakeProcessingStatusOf,
-  IntakeCategory, intakeCategoryOf, rfiOriginStageOf,
-} from '../data/case-fields';
+import { urgencyOf, INTAKE_CHANNELS, intakeChannelOf, RoutingStatus, routingStatusOf, isDuplicateOf, duplicateResolvedOf, MissingInfoCategory, missingInfoCategoryOf, ReviewType, reviewTypeOf, providerIssueOf, IntakeProcessingStatus, intakeProcessingStatusOf, IntakeCategory, intakeCategoryOf, rfiOriginStageOf, TODAY_ISO } from '../data/case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { Interaction } from '../shared/interaction';
 import { MissingField } from '../data/dashboard.models';
@@ -379,13 +374,13 @@ export class IntakeTab {
       : b.label === 'Auto-Approved' ? this.decidedScoped().filter((c) => c.tags.includes('auto'))
       : this.pendingScoped().filter((c) => c.tags.includes('rfi') && rfiOriginStageOf(c) === 'Intake');
     this.exporter.open({
-      title: b.label, name: `intake-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      title: b.label, name: `intake-${b.label.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       columns: COLUMNS, rows: cs.map(toRow),
     });
   }
   exportMissingFields() {
     this.exporter.open({
-      title: 'Top Missing Fields', name: 'intake-missing-fields_2026-07-17',
+      title: 'Top Missing Fields', name: `intake-missing-fields${TODAY_ISO}`,
       columns: ['Field', 'Missing Count', '% of Submissions'],
       rows: this.missingFields().map((f) => [f.field, f.count, f.pct]),
     });
@@ -411,7 +406,7 @@ export class IntakeTab {
     this.ix.openExplorer({
       title, context: context ?? `${cs.length} pending authorization(s)`,
       columns: COLUMNS, rows: cs.map(toRow),
-      exportName: `intake-${exportSlug}_2026-07-17`, memberColumn: 1,
+      exportName: `intake-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
 
@@ -429,7 +424,7 @@ export class IntakeTab {
     this.openCases(`Intake Channel — ${channel}`, cs, `channel-${channel.toLowerCase()}`, `${cs.length} pending authorization(s) submitted via ${channel}`);
   }
   exportChannelMix() {
-    this.exporter.open({ title: 'Intake Channel Mix', name: 'intake-channel-mix_2026-07-17', columns: ['Channel', 'Count', '% of Pending'], rows: this.channelMix().map((c) => [c.channel, c.count, c.pct]) });
+    this.exporter.open({ title: 'Intake Channel Mix', name: `intake-channel-mix${TODAY_ISO}`, columns: ['Channel', 'Count', '% of Pending'], rows: this.channelMix().map((c) => [c.channel, c.count, c.pct]) });
   }
 
   // ---- Routing Status ----
@@ -452,7 +447,7 @@ export class IntakeTab {
     this.openCases(label, cs, `routing-${status.toLowerCase()}${urgency ? '-' + urgency.toLowerCase() : ''}`);
   }
   exportRouting() {
-    this.exporter.open({ title: 'Routing Status', name: 'intake-routing_2026-07-17', columns: ['Routing', 'Standard', 'Expedited', 'Total'], rows: this.routingRows().map((r) => [r.status, r.standard, r.expedited, r.total]) });
+    this.exporter.open({ title: 'Routing Status', name: `intake-routing${TODAY_ISO}`, columns: ['Routing', 'Standard', 'Expedited', 'Total'], rows: this.routingRows().map((r) => [r.status, r.standard, r.expedited, r.total]) });
   }
 
   // ---- Duplicates ----
@@ -467,7 +462,7 @@ export class IntakeTab {
   }
   exportDuplicates() {
     const s = this.duplicateStats();
-    this.exporter.open({ title: 'Duplicates', name: 'intake-duplicates_2026-07-17', columns: ['Metric', 'Value'], rows: [['Resolved', s.resolved], ['Unresolved', s.unresolved]] });
+    this.exporter.open({ title: 'Duplicates', name: `intake-duplicates${TODAY_ISO}`, columns: ['Metric', 'Value'], rows: [['Resolved', s.resolved], ['Unresolved', s.unresolved]] });
   }
 
   // ---- TAT & Assignment Risk ----
@@ -486,7 +481,7 @@ export class IntakeTab {
   }
   exportTatRisk() {
     const s = this.tatRiskStats();
-    this.exporter.open({ title: 'TAT & Assignment Risk', name: 'intake-tat-risk_2026-07-17', columns: ['Metric', 'Value'], rows: [['Approaching TAT', s.approachingTat], ['Unassigned', s.unassigned]] });
+    this.exporter.open({ title: 'TAT & Assignment Risk', name: `intake-tat-risk${TODAY_ISO}`, columns: ['Metric', 'Value'], rows: [['Approaching TAT', s.approachingTat], ['Unassigned', s.unassigned]] });
   }
 
   // ---- Missing Information (category) ----
@@ -506,7 +501,7 @@ export class IntakeTab {
     this.openCases(category, cs, `missing-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
   }
   exportMissingInfo() {
-    this.exporter.open({ title: 'Missing Information', name: 'intake-missing-info_2026-07-17', columns: ['Category', 'Count', '% of Incomplete'], rows: this.missingInfoRows().map((m) => [m.category, m.count, m.pct]) });
+    this.exporter.open({ title: 'Missing Information', name: `intake-missing-info${TODAY_ISO}`, columns: ['Category', 'Count', '% of Incomplete'], rows: this.missingInfoRows().map((m) => [m.category, m.count, m.pct]) });
   }
 
   // ---- Auth Type (review timing) ----
@@ -523,7 +518,7 @@ export class IntakeTab {
     this.openCases(type, cs, `review-type-${type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
   }
   exportReviewType() {
-    this.exporter.open({ title: 'Auth Type (Review Timing)', name: 'intake-review-type_2026-07-17', columns: ['Type', 'Count', '% of Pending'], rows: this.reviewTypeMix().map((r) => [r.type, r.count, r.pct]) });
+    this.exporter.open({ title: 'Auth Type (Review Timing)', name: `intake-review-type${TODAY_ISO}`, columns: ['Type', 'Count', '% of Pending'], rows: this.reviewTypeMix().map((r) => [r.type, r.count, r.pct]) });
   }
 
   // ---- Provider Issues ----
@@ -540,7 +535,7 @@ export class IntakeTab {
   }
   exportProviderIssues() {
     const s = this.providerIssueStats();
-    this.exporter.open({ title: 'Provider Issues', name: 'intake-provider-issues_2026-07-17', columns: ['Metric', 'Value'], rows: [['Incomplete', s.incomplete], ['Out of Network', s.oon]] });
+    this.exporter.open({ title: 'Provider Issues', name: `intake-provider-issues${TODAY_ISO}`, columns: ['Metric', 'Value'], rows: [['Incomplete', s.incomplete], ['Out of Network', s.oon]] });
   }
 
   // ---- Intake Auto-Processing ----
@@ -553,6 +548,6 @@ export class IntakeTab {
     this.openCases(`Intake Auto-Processing — ${status}`, cs, `processing-${status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
   }
   exportProcessing() {
-    this.exporter.open({ title: 'Intake Auto-Processing', name: 'intake-auto-processing_2026-07-17', columns: ['Status', 'Count'], rows: this.processingStats().map((p) => [p.status, p.count]) });
+    this.exporter.open({ title: 'Intake Auto-Processing', name: `intake-auto-processing${TODAY_ISO}`, columns: ['Status', 'Count'], rows: this.processingStats().map((p) => [p.status, p.count]) });
   }
 }

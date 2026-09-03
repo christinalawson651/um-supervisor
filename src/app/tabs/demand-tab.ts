@@ -7,7 +7,7 @@ import { Interaction } from '../shared/interaction';
 import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL } from '../data/case-pool';
 import { COLUMNS, toRow } from '../shared/metrics';
-import { TODAY } from '../data/case-fields';
+import { TODAY, TODAY_ISO } from '../data/case-fields';
 import { UM_NURSE_ROSTER } from '../data/um-schedule';
 
 // Same "weekly volume + trailing-average projection + capacity coverage" shape as CM's Demand &
@@ -130,16 +130,16 @@ export class DemandTab {
   exportDemand() {
     const f = this.forecast();
     const capacityLabel = this.teamFilter() === 'all' ? 'Total Nurse Capacity' : 'Caseload Headroom';
-    this.exporter.open({ title: 'Demand & Forecasting', name: 'um-demand-forecast_2026-07-17',
+    this.exporter.open({ title: 'Demand & Forecasting', name: `um-demand-forecast${TODAY_ISO}`,
       columns: ['Week Of', 'Submissions'], rows: f.history.map((h) => [h.start, h.count]),
       sections: [
-        { label: 'Weekly Volume', name: 'um-demand-weekly_2026-07-17', columns: ['Week Of', 'Submissions'], rows: f.history.map((h) => [h.start, h.count]) },
-        { label: 'Forecast Summary', name: 'um-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
+        { label: 'Weekly Volume', name: `um-demand-weekly${TODAY_ISO}`, columns: ['Week Of', 'Submissions'], rows: f.history.map((h) => [h.start, h.count]) },
+        { label: 'Forecast Summary', name: `um-demand-summary${TODAY_ISO}`, columns: ['Metric', 'Value'],
           rows: [['Projected Next Week', f.projected], [capacityLabel, f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
   }
   private openInfoExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
-    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `um-demand-${exportSlug}_2026-07-17` });
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `um-demand-${exportSlug}${TODAY_ISO}` });
   }
   /** Real CASE_POOL rows, same COLUMNS/toRow shape as every other UM case drill-down (Reassign/
    *  Escalate/Balance included, since columns[0] === 'Auth ID' is recognized as a real case list). */
@@ -149,7 +149,7 @@ export class DemandTab {
     const cases = CASE_POOL.filter((c) => c.submitted >= thisWeek.start && (!team || this.nurseTeamOf(c.nurse) === team));
     this.ix.openExplorer({
       title: `Submissions This Week${team ? ' — ' + team : ''}`, context: `${cases.length} authorization(s) submitted since ${thisWeek.start}`,
-      columns: COLUMNS, rows: cases.map(toRow), exportName: `um-demand-this-week_2026-07-17`, memberColumn: 1,
+      columns: COLUMNS, rows: cases.map(toRow), exportName: `um-demand-this-week${TODAY_ISO}`, memberColumn: 1,
     });
   }
   openForecastBasis() {

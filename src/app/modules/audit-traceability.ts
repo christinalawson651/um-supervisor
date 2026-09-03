@@ -15,7 +15,7 @@ import {
 import { Interaction } from '../shared/interaction';
 import { Nav } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
-import { LOBS, daysAgo } from '../data/case-fields';
+import { LOBS, daysAgo, TODAY_ISO } from '../data/case-fields';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Disposition, DispositionCertificate, DISPOSITION_APPROVERS } from '../shared/disposition';
 import { NOTIFICATION_RULES } from '../shared/alerts';
@@ -1319,7 +1319,7 @@ export class AuditTraceability {
     this.ix.openExplorer({
       title, context: `${rows.length.toLocaleString()} determination(s) · run ledger · ${this.rangeLabel()}`,
       columns: this.AI_COLUMNS, rows: rows.map((r) => this.aiRow(r)),
-      exportName: `ai-oversight-${slugName}_2026-07-17`, memberColumn: 1,
+      exportName: `ai-oversight-${slugName}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   drillBand(c: CalibrationRow) {
@@ -1337,7 +1337,7 @@ export class AuditTraceability {
   }
   exportAi() {
     this.exporter.open({
-      title: 'AI Oversight', name: 'ai-oversight_2026-07-17',
+      title: 'AI Oversight', name: `ai-oversight${TODAY_ISO}`,
       columns: this.AI_COLUMNS, rows: this.aiRows().map((r) => this.aiRow(r)),
     });
   }
@@ -1411,7 +1411,7 @@ export class AuditTraceability {
   drillSegments(title: string, gs: ArchiveSegment[], slugName: string) {
     this.ix.openExplorer({
       title, context: `${gs.length} sealed segment(s) · ${gs.reduce((s, g) => s + g.eventCount, 0).toLocaleString()} archived events`,
-      columns: this.SEGMENT_COLUMNS, rows: gs.map((g) => this.segmentRow(g)), exportName: `audit-archive-${slugName}_2026-07-17`,
+      columns: this.SEGMENT_COLUMNS, rows: gs.map((g) => this.segmentRow(g)), exportName: `audit-archive-${slugName}${TODAY_ISO}`,
     });
   }
   drillRestores() {
@@ -1419,7 +1419,7 @@ export class AuditTraceability {
       title: 'Restore Requests', context: `${RESTORE_REQUESTS.length} retrieval request(s) from cold storage`,
       columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'SLA (days)', 'Status'],
       rows: RESTORE_REQUESTS.map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]),
-      exportName: 'audit-archive-restores_2026-07-17',
+      exportName: `audit-archive-restores${TODAY_ISO}`,
     });
   }
   openSegment(g: ArchiveSegment) {
@@ -1450,7 +1450,7 @@ export class AuditTraceability {
   }
   exportArchive() {
     this.exporter.open({
-      title: 'Archive Segment Index', name: 'audit-archive-index_2026-07-17',
+      title: 'Archive Segment Index', name: `audit-archive-index${TODAY_ISO}`,
       columns: this.SEGMENT_COLUMNS, rows: ARCHIVE_SEGMENTS.map((g) => this.segmentRow(g)),
     });
   }
@@ -1514,7 +1514,7 @@ export class AuditTraceability {
   }
   exportCertificates() {
     this.exporter.open({
-      title: 'Certificates of Destruction', name: 'audit-disposition-certificates_2026-07-17',
+      title: 'Certificates of Destruction', name: `audit-disposition-certificates${TODAY_ISO}`,
       columns: ['Certificate', 'Segment', 'Period From', 'Period To', 'Events Destroyed', 'Terminal Hash', 'Retention Basis', 'Method', 'Disposed By', 'Approved By', 'Date'],
       rows: this.certificates().map((c) => [c.certificateId, c.segmentId, c.periodFrom, c.periodTo, c.eventCount, c.terminalHash, c.retentionBasis, c.method, c.disposedBy, c.approvedBy, c.disposedDate]),
     });
@@ -1547,7 +1547,7 @@ export class AuditTraceability {
       context: `${evs.length} event(s) · every agent step, every human action, every executed action`,
       columns: ['Section', ...EVENT_COLUMNS],
       rows: evs.map((e) => [governanceSection(e), ...eventRow(e)]),
-      exportName: `governance-record-${slug(entityId)}_2026-07-17`,
+      exportName: `governance-record-${slug(entityId)}${TODAY_ISO}`,
     });
   }
 
@@ -1555,7 +1555,7 @@ export class AuditTraceability {
     const rows = [...evs].reverse();
     this.ix.openExplorer({
       title, context: `${rows.length.toLocaleString()} audit event(s) · ${this.rangeLabel()}`,
-      columns: EVENT_COLUMNS, rows: rows.map(eventRow), exportName: `audit-trail-${slugName}_2026-07-17`,
+      columns: EVENT_COLUMNS, rows: rows.map(eventRow), exportName: `audit-trail-${slugName}${TODAY_ISO}`,
     });
   }
   openEvent(e: AuditEvent) {
@@ -1599,7 +1599,7 @@ export class AuditTraceability {
       title, context: `${us.length} account(s)`,
       columns: ['Account', 'User ID', 'Access Role', 'Department', 'MFA', 'Last Entitlement Review', 'Days Since Review', 'Last Sign-in', 'Status'],
       rows: us.map((u) => [u.name, u.userId, u.role, u.department, u.mfaEnrolled ? 'Enrolled' : 'Password only', u.lastAccessReview, attestationAgeDays(u), u.lastLogin, u.status]),
-      exportName: `audit-accounts-${slugName}_2026-07-17`,
+      exportName: `audit-accounts-${slugName}${TODAY_ISO}`,
     });
   }
   drillSod(r: SodResult) {
@@ -1607,7 +1607,7 @@ export class AuditTraceability {
       title: `${r.rule.id} — ${r.rule.name}`, context: `${r.conflicts.length} conflict(s) detected in ${this.rangeLabel().toLowerCase()}`,
       columns: ['Rule', 'Subject', 'Detail', 'Citation', 'Event ID'],
       rows: r.conflicts.map((c: SodConflictRow) => [c.ruleId, c.subject, c.detail, c.citation, c.eventIds.join(', ')]),
-      exportName: `audit-sod-${slug(r.rule.id)}_2026-07-17`,
+      exportName: `audit-sod-${slug(r.rule.id)}${TODAY_ISO}`,
     });
   }
   drillRegister(title: string, rows: ComplianceRequirement[], slugName: string) {
@@ -1615,33 +1615,33 @@ export class AuditTraceability {
       title, context: `${rows.length} requirement(s)`,
       columns: ['ID', 'Domain', 'Requirement', 'Citation', 'Control Today', 'Evidence', 'Status', 'Priority', 'Gap', 'Next Step', 'Owner'],
       rows: rows.map((r) => [r.id, r.domain, r.requirement, r.citation, r.control, r.evidence, r.status, r.priority, r.gap ?? '—', r.nextStep ?? '—', r.owner]),
-      exportName: `audit-compliance-${slugName}_2026-07-17`,
+      exportName: `audit-compliance-${slugName}${TODAY_ISO}`,
     });
   }
 
   exportEvents() {
     this.exporter.open({
-      title: 'Audit Trail', name: 'audit-trail_2026-07-17',
+      title: 'Audit Trail', name: `audit-trail${TODAY_ISO}`,
       columns: EVENT_COLUMNS, rows: this.sortedRows().map((r) => eventRow(r.ev)),
     });
   }
   exportActivity() {
     this.exporter.open({
-      title: 'User Activity Monitoring', name: 'audit-user-activity_2026-07-17',
+      title: 'User Activity Monitoring', name: `audit-user-activity${TODAY_ISO}`,
       columns: ['Account', 'User ID', 'Role', 'Events', 'Sessions', 'PHI Events', 'Off-Hours', 'Failed Sign-ins', 'Denied Access', 'Break-the-Glass', 'Exports', 'Rows Exported', 'External IP', 'Last Activity', 'Signals'],
       rows: this.activity().map((a) => [a.name, a.userId, a.role, a.events, a.sessions, a.phi, a.offHours, a.failedLogins, a.deniedAccess, a.breakGlass, a.exports, a.exportedRows, a.externalIp, a.lastActivity || '—', a.signals.join('; ') || '—']),
     });
   }
   exportGovernance() {
     this.exporter.open({
-      title: 'Role → Permission Matrix', name: 'audit-permission-matrix_2026-07-17',
+      title: 'Role → Permission Matrix', name: `audit-permission-matrix${TODAY_ISO}`,
       columns: ['Permission', ...this.roles],
       rows: this.permissions.map((p) => [p, ...this.roles.map((r) => this.matrix(r, p))]),
     });
   }
   exportRegister() {
     this.exporter.open({
-      title: 'Compliance Requirements & Gaps', name: 'audit-compliance-register_2026-07-17',
+      title: 'Compliance Requirements & Gaps', name: `audit-compliance-register${TODAY_ISO}`,
       columns: ['ID', 'Domain', 'Requirement', 'Citation', 'Control Today', 'Evidence', 'Status', 'Priority', 'Gap', 'Next Step', 'Owner'],
       rows: this.register.map((r) => [r.id, r.domain, r.requirement, r.citation, r.control, r.evidence, r.status, r.priority, r.gap ?? '—', r.nextStep ?? '—', r.owner]),
     });

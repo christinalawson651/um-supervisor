@@ -13,7 +13,7 @@ import { Lookback } from '../shared/lookback';
 import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { COLUMNS, toRow } from '../shared/metrics';
-import { urgencyOf, oonResolutionOf, oonReasonOf, OonResolution } from '../data/case-fields';
+import { urgencyOf, oonResolutionOf, oonReasonOf, OonResolution, TODAY_ISO } from '../data/case-fields';
 
 const PROVIDER_WIDGETS = [
   { id: 'flags', title: 'Needs-Attention Summary' },
@@ -279,16 +279,16 @@ export class ProviderTab {
       title: `Out-of-Network — ${reason}`,
       context: `${cases.length} OON authorization(s) with this reason`,
       columns: COLUMNS, rows: cases.map(toRow),
-      exportName: `oon-reason-${reason.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}_2026-07-17`, memberColumn: 1,
+      exportName: `oon-reason-${reason.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   exportOonResolution() {
     this.exporter.open({
-      title: 'Out-of-Network Resolution', name: 'provider-oon-resolution_2026-07-17',
+      title: 'Out-of-Network Resolution', name: `provider-oon-resolution${TODAY_ISO}`,
       columns: ['Resolution', 'Count'], rows: this.oonResolutionCounts().map((r) => [r.resolution, r.count]),
       sections: [
-        { label: 'Resolution Summary', name: 'provider-oon-resolution_2026-07-17', columns: ['Resolution', 'Count'], rows: this.oonResolutionCounts().map((r) => [r.resolution, r.count]) },
-        { label: 'Reasons', name: 'provider-oon-reasons_2026-07-17', columns: ['Reason', 'Resolution', 'Count', '% of OON'], rows: this.oonReasonBreakdown().map((r) => [r.reason, r.resolution, r.count, r.pct]) },
+        { label: 'Resolution Summary', name: `provider-oon-resolution${TODAY_ISO}`, columns: ['Resolution', 'Count'], rows: this.oonResolutionCounts().map((r) => [r.resolution, r.count]) },
+        { label: 'Reasons', name: `provider-oon-reasons${TODAY_ISO}`, columns: ['Reason', 'Resolution', 'Count', '% of OON'], rows: this.oonReasonBreakdown().map((r) => [r.reason, r.resolution, r.count, r.pct]) },
       ],
     });
   }
@@ -340,14 +340,14 @@ export class ProviderTab {
 
   exportFlags() {
     this.exporter.open({
-      title: 'Needs-Attention Summary', name: 'provider-needs-attention_2026-07-17',
+      title: 'Needs-Attention Summary', name: `provider-needs-attention${TODAY_ISO}`,
       columns: ['Flag', 'Providers/Facilities Affected'],
       rows: this.tiles.map((t) => [t.label, this.tileCount(t.flag)]),
     });
   }
   exportGrid() {
     this.exporter.open({
-      title: 'Providers & Facilities', name: 'providers_2026-07-17',
+      title: 'Providers & Facilities', name: `providers${TODAY_ISO}`,
       columns: ['Provider/Facility', 'Specialty', 'Network Status', 'Total Requests', 'OON Requests', 'Approval Rate %', 'Denial Rate %', 'Incomplete Rate %', 'Avg Response (days)', 'Expedited Rate %', 'Primary Insight'],
       rows: this.displayRows().map((p) => [p.provider, p.specialty, p.networkStatus, p.totalRequests, p.oonRequests, p.approvalRate, p.denialRate, p.incompleteRate, p.avgResponseDays, p.expeditedRate, p.primaryInsight]),
     });
@@ -364,7 +364,7 @@ export class ProviderTab {
       title: `${p.provider} — Authorizations`,
       context: `${cs.length} authorization(s) submitted by ${p.provider}`,
       columns: COLUMNS, rows: cs.map(toRow),
-      exportName: `provider-${slug(p.provider)}-auths_2026-07-17`, memberColumn: 1,
+      exportName: `provider-${slug(p.provider)}-auths${TODAY_ISO}`, memberColumn: 1,
     });
   }
 

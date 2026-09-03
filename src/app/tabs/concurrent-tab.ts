@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, inject, signal } from '@angular/core';
 import { DashboardData, liveConcurrentRows } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
@@ -374,14 +375,14 @@ export class ConcurrentTab {
   exportStat(s: { label: string; filter: StatusFilter }) {
     const rows = s.filter === 'all' ? this.concurrentRows() : this.concurrentRows().filter((r) => r.status === s.filter);
     this.exporter.open({
-      title: s.label, name: `concurrent-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      title: s.label, name: `concurrent-${s.label.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       columns: TABLE_COLUMNS, rows: rows.map(toTableRow),
     });
   }
 
   exportTable() {
     this.exporter.open({
-      title: 'Concurrent Review Monitoring', name: 'concurrent-review_2026-07-17',
+      title: 'Concurrent Review Monitoring', name: `concurrent-review${TODAY_ISO}`,
       columns: TABLE_COLUMNS, rows: this.filteredRows().map(toTableRow),
     });
   }

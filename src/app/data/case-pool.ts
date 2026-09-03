@@ -1,6 +1,7 @@
 // A generated pool of authorization records that backs every metric drill-down.
 // Deterministic (no RNG) so the demo shows the same data on every load.
-import { ageH, TODAY } from './case-fields';
+import { ageH } from './case-fields';
+import { TODAY } from './clock';
 
 export type Decision = 'Approved' | 'Denied' | 'Partial' | 'Pending';
 

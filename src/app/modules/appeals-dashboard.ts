@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
@@ -575,7 +576,7 @@ export class AppealsDashboard {
   sortAp(k: keyof Appeal) { if (this.apSortKey() === k) this.apSortDir.set(this.apSortDir() === 1 ? -1 : 1); else { this.apSortKey.set(k); this.apSortDir.set(1); } }
   caretAp(k: keyof Appeal) { return caretFor(this.apSortKey(), k, this.apSortDir()); }
   exportAppeals() {
-    this.exporter.open({ title: 'Appeals Worklist', name: 'appeals-worklist_2026-07-17',
+    this.exporter.open({ title: 'Appeals Worklist', name: `appeals-worklist${TODAY_ISO}`,
       columns: ['Appeal', 'Auth', 'Member', 'Service', 'Level', 'Status', 'TAT', 'Assigned'],
       rows: this.visible().map((a) => [a.appealId, a.auth, a.member, a.service, a.level, a.status, a.tat, a.assigned]) });
   }
@@ -587,7 +588,7 @@ export class AppealsDashboard {
   sortRv(k: keyof Reviewer) { if (this.rvSortKey() === k) this.rvSortDir.set(this.rvSortDir() === 1 ? -1 : 1); else { this.rvSortKey.set(k); this.rvSortDir.set(1); } }
   caretRv(k: keyof Reviewer) { return caretFor(this.rvSortKey(), k, this.rvSortDir()); }
   exportReviewers() {
-    this.exporter.open({ title: 'Reviewer Workload', name: 'appeals-reviewers_2026-07-17',
+    this.exporter.open({ title: 'Reviewer Workload', name: `appeals-reviewers${TODAY_ISO}`,
       columns: ['Reviewer', 'Role', 'Open', 'Near SLA', 'Overdue', 'Overturn Rate %', 'Utilization %'],
       rows: this.reviewers.map((r) => [r.name, r.role, r.open, r.nearSla, r.overdue, r.overturnRate, r.utilization]) });
   }
@@ -653,7 +654,7 @@ export class AppealsDashboard {
     return [a.reviewer, a.day, `${a.scheduledStart}–${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}–${a.actualEnd}` : '—', a.status, a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm'];
   }
   private openScheduleExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
-    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `appeals-schedule-${exportSlug}_2026-07-17` });
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `appeals-schedule-${exportSlug}${TODAY_ISO}` });
   }
   openAllAdherence() {
     const rows = this.adherenceForPeriod().map((a) => this.adherenceRow(a));
@@ -725,15 +726,15 @@ export class AppealsDashboard {
   exportSchedule() {
     if (this.schedulePeriod() === 'weekly' || this.schedulePeriod() === 'daily') {
       const rows = this.weekSchedules().map((w) => [w.reviewer, w.role, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
-      this.exporter.open({ title: `${this.schedulePeriodLabel()}'s Schedule`, name: 'appeals-schedule_2026-07-17', columns: ['Reviewer', 'Role', ...this.weekDayLabels], rows });
+      this.exporter.open({ title: `${this.schedulePeriodLabel()}'s Schedule`, name: `appeals-schedule${TODAY_ISO}`, columns: ['Reviewer', 'Role', ...this.weekDayLabels], rows });
       return;
     }
     const rows = this.weekRollup().map((r) => [r.reviewer, r.role, ...r.weeks.map((w) => `${w.shifts} shifts${w.pto ? ` · ${w.pto} PTO` : ''}`)]);
-    this.exporter.open({ title: `${this.schedulePeriodLabel()} Schedule Summary`, name: 'appeals-schedule-summary_2026-07-17',
+    this.exporter.open({ title: `${this.schedulePeriodLabel()} Schedule Summary`, name: `appeals-schedule-summary${TODAY_ISO}`,
       columns: ['Reviewer', 'Role', ...this.weekBlocks().map((b) => `Week of ${b.weekStart}`)], rows });
   }
   exportPtoBalances() {
-    this.exporter.open({ title: 'Adherence & PTO by Reviewer', name: 'appeals-adherence-pto_2026-07-17',
+    this.exporter.open({ title: 'Adherence & PTO by Reviewer', name: `appeals-adherence-pto${TODAY_ISO}`,
       columns: ['Reviewer', 'Role', 'Adherence Rate %', 'PTO Accrued (YTD)', 'PTO Used', 'PTO Remaining'],
       rows: this.reviewerSummaryRows().map((p) => [p.reviewer, p.role, p.adherenceRate, p.accruedDays, p.usedDays, p.remainingDays]) });
   }
@@ -757,11 +758,11 @@ export class AppealsDashboard {
   readonly demandTrendLabels = computed(() => this.demandForecast().history.map((h) => h.label));
   exportDemand() {
     const f = this.demandForecast();
-    this.exporter.open({ title: 'Demand & Forecasting', name: 'appeals-demand-forecast_2026-07-17',
+    this.exporter.open({ title: 'Demand & Forecasting', name: `appeals-demand-forecast${TODAY_ISO}`,
       columns: ['Week Of', 'Appeals'], rows: f.history.map((h) => [h.start, h.count]),
       sections: [
-        { label: 'Weekly Volume', name: 'appeals-demand-weekly_2026-07-17', columns: ['Week Of', 'Appeals'], rows: f.history.map((h) => [h.start, h.count]) },
-        { label: 'Forecast Summary', name: 'appeals-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
+        { label: 'Weekly Volume', name: `appeals-demand-weekly${TODAY_ISO}`, columns: ['Week Of', 'Appeals'], rows: f.history.map((h) => [h.start, h.count]) },
+        { label: 'Forecast Summary', name: `appeals-demand-summary${TODAY_ISO}`, columns: ['Metric', 'Value'],
           rows: [['Projected Next Week', f.projected], ['Reviewer Capacity', f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
   }

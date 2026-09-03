@@ -10,7 +10,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL } from '../data/case-pool';
-import { lobOf } from '../data/case-fields';
+import { lobOf, TODAY_ISO } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
@@ -141,11 +141,11 @@ export class RiskTab {
   hide(id: string) { this.vis.remove(id); }
 
   exportTile(t: RiskTile) {
-    this.exporter.open({ title: t.label, name: `risk-${t.label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`, columns: ['Metric', 'Value', 'Detail'], rows: [[t.label, t.value, t.footer]] });
+    this.exporter.open({ title: t.label, name: `risk-${t.label.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`, columns: ['Metric', 'Value', 'Detail'], rows: [[t.label, t.value, t.footer]] });
   }
   exportTable() {
     const rows = this.data.riskCases().map((r) => [r.authId, r.member, r.drivers.join('; '), r.amount, r.stage, r.score]);
-    this.exporter.open({ title: 'Authorizations Requiring Attention', name: 'risk-escalation_2026-07-17', columns: ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'], rows });
+    this.exporter.open({ title: 'Authorizations Requiring Attention', name: `risk-escalation${TODAY_ISO}`, columns: ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'], rows });
   }
 
   /**
@@ -250,7 +250,7 @@ export class RiskTab {
         context: `${cases.length} authorization(s) flagged ICU, transplant, or oncology`,
         columns: ['Auth ID', 'Member', 'Risk Drivers', 'Amount', 'Stage', 'Risk Score'],
         rows: cases.map((r) => [r.authId, r.member, r.drivers.join(', '), r.amount, r.stage, r.score]),
-        exportName: 'risk-high-acuity_2026-07-17',
+        exportName: `risk-high-acuity${TODAY_ISO}`,
         memberColumn: 1,
       });
       return;

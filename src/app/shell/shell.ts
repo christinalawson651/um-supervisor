@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, signal, computed, inject, effect, ViewChild, ElementRef } from '@angular/core';
 import { Icon } from '../shared/icon';
 import { Overlays } from '../shared/overlays';
@@ -237,6 +238,6 @@ export class Shell {
         rows = REFERRALS.map((r) => [r.authId, r.member, r.reason, r.fromStage, r.received, r.status]); break;
     }
     const title = this.tabs.find((t) => t.key === this.selected())?.label ?? 'Export';
-    this.exporter.open({ title, name: `${name}_2026-07-17`, columns, rows });
+    this.exporter.open({ title, name: `${name}${TODAY_ISO}`, columns, rows });
   }
 }

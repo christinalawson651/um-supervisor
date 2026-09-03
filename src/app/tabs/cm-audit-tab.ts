@@ -13,7 +13,7 @@ import { Lookback } from '../shared/lookback';
 import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
-import { daysAgo } from '../data/case-fields';
+import { daysAgo, TODAY_ISO } from '../data/case-fields';
 
 const CM_AUDIT_WIDGETS = [
   { id: 'quality', title: 'Documentation Quality' },
@@ -471,13 +471,13 @@ export class CmAuditTab {
   private openAudits(title: string, rs: CmFileAuditRecord[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
       title, context: context ?? `${rs.length} audited file(s)`,
-      columns: AUDIT_COLUMNS, rows: rs.map(auditRow), exportName: `cm-audit-${exportSlug}_2026-07-17`, memberColumn: 0,
+      columns: AUDIT_COLUMNS, rows: rs.map(auditRow), exportName: `cm-audit-${exportSlug}${TODAY_ISO}`, memberColumn: 0,
     });
   }
   private openCases(title: string, cs: CmCaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
       title, context: context ?? `${cs.length} case(s)`,
-      columns: CM_COLUMNS, rows: cs.map(cmToRow), exportName: `cm-audit-${exportSlug}_2026-07-17`, memberColumn: 1,
+      columns: CM_COLUMNS, rows: cs.map(cmToRow), exportName: `cm-audit-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
 
@@ -506,7 +506,7 @@ export class CmAuditTab {
   private openIrr(title: string, rs: CmFileAuditRecord[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
       title, context: context ?? `${rs.length} blind-rescored file(s)`,
-      columns: IRR_COLUMNS, rows: rs.map(irrRow), exportName: `cm-audit-${exportSlug}_2026-07-17`, memberColumn: 0,
+      columns: IRR_COLUMNS, rows: rs.map(irrRow), exportName: `cm-audit-${exportSlug}${TODAY_ISO}`, memberColumn: 0,
     });
   }
   drillRescored() { this.openIrr('Blind-Rescored Files', this.rescored(), 'irr-rescored'); }
@@ -518,7 +518,7 @@ export class CmAuditTab {
     this.ix.openExplorer({
       title: `${lob} — Assessment / Care Plan Window Breaches`,
       context: `${cs.length} case(s) missed ${lob}'s assessment or care-plan window`,
-      columns: REG_COLUMNS, rows: cs.map(regRow), exportName: `cm-audit-reg-${slug(lob)}_2026-07-17`, memberColumn: 1,
+      columns: REG_COLUMNS, rows: cs.map(regRow), exportName: `cm-audit-reg-${slug(lob)}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   drillProgramsBelow() {
@@ -526,7 +526,7 @@ export class CmAuditTab {
     const cs = below.flatMap((lob) => cmRegBreachesFor(lob, this.scopedCases()));
     this.ix.openExplorer({
       title: 'Window Breaches — Programs Below Target', context: `${cs.length} case(s)`,
-      columns: REG_COLUMNS, rows: cs.map(regRow), exportName: 'cm-audit-reg-below-target_2026-07-17', memberColumn: 1,
+      columns: REG_COLUMNS, rows: cs.map(regRow), exportName: `cm-audit-reg-below-target${TODAY_ISO}`, memberColumn: 1,
     });
   }
 
@@ -536,7 +536,7 @@ export class CmAuditTab {
       title: 'All Audit Flags', context: `${fs.length} compliance exception(s)`,
       columns: ['Flag ID', 'Type', 'Member', 'Member ID#', 'Care Manager', 'Description', 'Date', 'Severity'],
       rows: fs.map((f) => [f.id, f.type, f.member, f.memberId, f.careManager, f.description, f.date, f.severityLabel]),
-      exportName: 'cm-audit-flags_2026-07-17', memberColumn: 2,
+      exportName: `cm-audit-flags${TODAY_ISO}`, memberColumn: 2,
     });
   }
   openFlag(f: CmAuditFlag) {
@@ -559,14 +559,14 @@ export class CmAuditTab {
   // ---- exports ----
   exportQuality() {
     this.exporter.open({
-      title: 'Documentation Quality', name: 'cm-audit-quality_2026-07-17',
+      title: 'Documentation Quality', name: `cm-audit-quality${TODAY_ISO}`,
       columns: ['Rubric Element', 'Met', 'Records in Scope', 'Compliance %'],
       rows: this.elementCompliance().map((e) => [e.element, e.met, e.total, e.pct]),
     });
   }
   exportFileAudit() {
     this.exporter.open({
-      title: 'File Audit (Chart Review)', name: 'cm-audit-file-review_2026-07-17',
+      title: 'File Audit (Chart Review)', name: `cm-audit-file-review${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [
         ['Files Audited', this.audits().length],
@@ -580,42 +580,42 @@ export class CmAuditTab {
   }
   exportByManager() {
     this.exporter.open({
-      title: 'Pass Rate by Care Manager', name: 'cm-audit-by-manager_2026-07-17',
+      title: 'Pass Rate by Care Manager', name: `cm-audit-by-manager${TODAY_ISO}`,
       columns: ['Care Manager', 'Files Audited', 'Passed', 'Pass Rate %', 'Sample Adequate'],
       rows: this.byManager().map((m) => [m.careManager, m.audited, m.passed, m.pct, m.adequate ? 'Yes' : 'No']),
     });
   }
   exportElements() {
     this.exporter.open({
-      title: 'Rubric Element Findings', name: 'cm-audit-elements_2026-07-17',
+      title: 'Rubric Element Findings', name: `cm-audit-elements${TODAY_ISO}`,
       columns: ['Rubric Element', 'Files Failing', '% of Audited Files'],
       rows: this.elementFindings().map((f) => [f.element, f.count, f.pct]),
     });
   }
   exportIrr() {
     this.exporter.open({
-      title: 'Inter-Rater Reliability', name: 'cm-audit-irr_2026-07-17',
+      title: 'Inter-Rater Reliability', name: `cm-audit-irr${TODAY_ISO}`,
       columns: ['Auditor', 'Files Rescored', 'Agreements', 'Agreement Rate %'],
       rows: this.irrByAuditor().map((a) => [a.auditor, a.rescored, a.agree, a.pct]),
     });
   }
   exportRegCompliance() {
     this.exporter.open({
-      title: 'Regulatory Compliance by Program', name: 'cm-audit-reg-compliance_2026-07-17',
+      title: 'Regulatory Compliance by Program', name: `cm-audit-reg-compliance${TODAY_ISO}`,
       columns: ['Program', 'Assessment Window (days)', 'Care Plan Window (days)', 'Citation', 'Basis', 'Compliant', 'Total', 'Compliance %'],
       rows: this.regCompliance().map((r) => [r.lob, r.assessmentDays, r.carePlanDays, r.citation, r.basis, r.compliant, r.total, r.pct]),
     });
   }
   exportActions() {
     this.exporter.open({
-      title: 'Corrective Actions', name: 'cm-audit-actions_2026-07-17',
+      title: 'Corrective Actions', name: `cm-audit-actions${TODAY_ISO}`,
       columns: ['Care Manager', 'Member', 'Member ID', 'Finding', 'Corrective Action', 'Status', 'Action Date'],
       rows: this.correctiveActions().map((a) => [a.careManager, a.member, a.memberId, a.discrepancyReason ?? '—', a.correctiveAction, a.correctiveActionStatus ?? '—', a.correctiveActionDate ?? '—']),
     });
   }
   exportFlags() {
     this.exporter.open({
-      title: 'Audit Flags', name: 'cm-audit-flags_2026-07-17',
+      title: 'Audit Flags', name: `cm-audit-flags${TODAY_ISO}`,
       columns: ['ID', 'Type', 'Member', 'Member ID', 'Care Manager', 'Description', 'Date', 'Severity'],
       rows: this.allFlags().map((f) => [f.id, f.type, f.member, f.memberId, f.careManager, f.description, f.date, f.severityLabel]),
     });

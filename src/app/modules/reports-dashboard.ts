@@ -4,7 +4,7 @@ import { Icon } from '../shared/icon';
 import { Nav, BizModule } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
 import { DashboardData } from '../data/dashboard-data';
-import { daysAgo, TODAY } from '../data/case-fields';
+import { daysAgo, TODAY, TODAY_ISO } from '../data/case-fields';
 import { UM_REPORTS, CM_REPORTS, APPEALS_REPORTS, GENERIC_REPORTS, UM_QUEUE_NAMES, UM_TEAMS, ReportDef, ReportContext } from '../data/report-registry';
 import { NURSES } from '../data/case-pool';
 
@@ -510,9 +510,9 @@ export class ReportsDashboard {
     if (!t.length) return;
     const [first] = t;
     this.exporter.open({
-      title: r.title, name: `report-${r.id}_2026-07-17`,
+      title: r.title, name: `report-${r.id}${TODAY_ISO}`,
       columns: first.columns, rows: first.rows,
-      sections: t.map((tbl) => ({ label: tbl.title, name: `report-${r.id}-${tbl.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}_2026-07-17`, columns: tbl.columns, rows: tbl.rows })),
+      sections: t.map((tbl) => ({ label: tbl.title, name: `report-${r.id}-${tbl.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${TODAY_ISO}`, columns: tbl.columns, rows: tbl.rows })),
       combineAll: true,
       meta: { generatedAt: this.generatedAt(), generatedBy: this.generatedByLabel, scope: this.appliedScopeLabel() },
     });

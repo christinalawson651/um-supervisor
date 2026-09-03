@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { DashboardData } from '../data/dashboard-data';
 import { nbaFor } from '../data/um-status';
-import { lobOf, urgencyOf } from '../data/case-fields';
+import { lobOf, urgencyOf, TODAY_ISO } from '../data/case-fields';
 import { Interaction } from './interaction';
 import { LobFilter } from './lob-filter';
 import { Lookback } from './lookback';
@@ -160,7 +160,7 @@ export class Metrics {
       const nurses = this.data.nurses();
       const columns = ['Nurse', 'Active Authorizations', 'Pending', 'Completed (MTD)', 'Avg TAT', 'Utilization'];
       const rows = nurses.map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, `${n.utilization}%`]);
-      this.ix.openExplorer({ title: d.title, context: d.ctx(nurses.length), columns, rows, exportName: 'team-utilization_2026-07-17' });
+      this.ix.openExplorer({ title: d.title, context: d.ctx(nurses.length), columns, rows, exportName: `team-utilization${TODAY_ISO}` });
       return;
     }
 
@@ -175,7 +175,7 @@ export class Metrics {
       this.ix.openExplorer({
         title: 'Pending Authorizations',
         context: this.ctxFor({ ...d, ctx: () => `${cases.length} pending authorizations — by pend reason & next best action` }, cases),
-        columns, rows, exportName: `pending-auths_2026-07-17`, memberColumn: 1,
+        columns, rows, exportName: `pending-auths${TODAY_ISO}`, memberColumn: 1,
       });
       return;
     }
@@ -189,7 +189,7 @@ export class Metrics {
         title: 'Breached TAT',
         context: this.ctxFor({ ...d, ctx: () => `${cases.length} authorizations past their TAT deadline — time overdue shown` }, cases),
         columns: ['Auth ID', 'Member', 'Procedure', 'Stage', 'Provider', 'Urgency', 'Time Past Deadline', 'Est. Cost'],
-        rows, exportName: 'breached-tat_2026-07-17', memberColumn: 1,
+        rows, exportName: `breached-tat${TODAY_ISO}`, memberColumn: 1,
       });
       return;
     }
@@ -200,7 +200,7 @@ export class Metrics {
       context: this.ctxFor(d, cases),
       columns: COLUMNS,
       rows: cases.map(toRow),
-      exportName: `${key.replace('.', '-')}_2026-07-17`,
+      exportName: `${key.replace('.', '-')}${TODAY_ISO}`,
       memberColumn: 1, // "Member" is the 2nd column
     });
   }

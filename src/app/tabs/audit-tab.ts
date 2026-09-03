@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, inject } from '@angular/core';
 import { DashboardData, liveComplianceBars, liveIrrReviews, liveIrrByReviewer, liveIrrDiscrepancyReasons, liveIrrCorrectiveActions, liveRegCompliance, regBreachesFor, inScope } from '../data/dashboard-data';
 import { IrrReviewRecord, DiscrepancyReason, IRR_TARGET_PCT, MIN_SAMPLE_PER_REVIEWER } from '../data/um-irr';
@@ -327,7 +328,7 @@ export class AuditTab {
     this.ix.openExplorer({
       title, context: context ?? `${cs.length} authorization(s)`,
       columns: COLUMNS, rows: cs.map(toRow),
-      exportName: `audit-${exportSlug}_2026-07-17`, memberColumn: 1,
+      exportName: `audit-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   /** IRR review records get their own column set (auditor, redetermination, discrepancy reason,
@@ -338,7 +339,7 @@ export class AuditTab {
     this.ix.openExplorer({
       title, context: context ?? `${rs.length} IRR review(s)`,
       columns: IRR_COLUMNS, rows: rs.map(irrRow),
-      exportName: `audit-${exportSlug}_2026-07-17`,
+      exportName: `audit-${exportSlug}${TODAY_ISO}`,
     });
   }
 
@@ -373,13 +374,13 @@ export class AuditTab {
 
   exportQuality() {
     this.exporter.open({
-      title: 'Internal Quality', name: 'audit-internal-quality_2026-07-17',
+      title: 'Internal Quality', name: `audit-internal-quality${TODAY_ISO}`,
       columns: ['Metric', 'Value'], rows: this.complianceBars().map((b) => [b.label, `${b.pct}%`]),
     });
   }
   exportIrr() {
     this.exporter.open({
-      title: 'Inter-Rater Reliability', name: 'audit-irr_2026-07-17',
+      title: 'Inter-Rater Reliability', name: `audit-irr${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [
         ['IRR Agreement Rate', `${this.irrAgreementRate()}%`],
@@ -392,35 +393,35 @@ export class AuditTab {
   }
   exportIrrByReviewer() {
     this.exporter.open({
-      title: 'IRR Agreement by Reviewer', name: 'audit-irr-by-reviewer_2026-07-17',
+      title: 'IRR Agreement by Reviewer', name: `audit-irr-by-reviewer${TODAY_ISO}`,
       columns: ['Reviewer', 'Agreements', 'Sampled', 'Agreement Rate %', 'Sample Adequate'],
       rows: this.irrByReviewer().map((r) => [r.reviewer, r.agree, r.sampled, r.pct, r.adequate ? 'Yes' : 'No']),
     });
   }
   exportIrrReasons() {
     this.exporter.open({
-      title: 'IRR Discrepancy Reasons', name: 'audit-irr-reasons_2026-07-17',
+      title: 'IRR Discrepancy Reasons', name: `audit-irr-reasons${TODAY_ISO}`,
       columns: ['Reason', 'Count', '% of Disagreements'],
       rows: this.irrReasons().map((r) => [r.reason, r.count, this.reasonPct(r.count)]),
     });
   }
   exportIrrActions() {
     this.exporter.open({
-      title: 'IRR Corrective Actions', name: 'audit-irr-actions_2026-07-17',
+      title: 'IRR Corrective Actions', name: `audit-irr-actions${TODAY_ISO}`,
       columns: ['Reviewer', 'Auth', 'Discrepancy Reason', 'Corrective Action', 'Status', 'Action Date'],
       rows: this.irrActions().map((a) => [a.reviewer, a.authId, a.discrepancyReason ?? '—', a.correctiveAction, a.correctiveActionStatus ?? '—', a.correctiveActionDate ?? '—']),
     });
   }
   exportRegTat() {
     this.exporter.open({
-      title: 'Regulatory TAT Compliance by Program', name: 'audit-reg-tat_2026-07-17',
+      title: 'Regulatory TAT Compliance by Program', name: `audit-reg-tat${TODAY_ISO}`,
       columns: ['Program', 'Standard Window (days)', 'Expedited Window (hours)', 'Citation', 'Compliant', 'Total', 'Compliance %'],
       rows: this.regCompliance().map((r) => [r.lob, r.standardDays, r.expeditedHours, r.citation, r.compliant, r.total, r.pct]),
     });
   }
   exportFlags() {
     this.exporter.open({
-      title: 'Audit Flags', name: 'audit-flags_2026-07-17',
+      title: 'Audit Flags', name: `audit-flags${TODAY_ISO}`,
       columns: ['ID', 'Type', 'Description', 'Date', 'Severity'],
       rows: this.data.auditFlags().map((f) => [f.id, f.type, f.description, f.date, f.severityLabel]),
     });

@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -276,7 +277,7 @@ export class CmRosterView {
 
   exportRoster() {
     this.exporter.open({
-      title: 'CM Roster', name: `cm-roster-${this.username}_2026-07-17`,
+      title: 'CM Roster', name: `cm-roster-${this.username}${TODAY_ISO}`,
       columns: ['Member ID', 'Member', 'Priority', 'To-Dos', 'Clinical Acuity', 'Case #', 'Start', 'Target', 'Program', 'Last Update'],
       rows: this.filteredRows().map((r) => [r.case.memberId, r.case.member, r.priorityLabel, r.todoCount, r.case.acuity, r.caseNumber, r.case.received, r.case.slaDueDate, r.case.program, r.lastUpdate]),
     });

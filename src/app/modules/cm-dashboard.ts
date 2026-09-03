@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
@@ -1197,19 +1198,19 @@ export class CmDashboard {
     const stageCols = ['Stage', 'Members', 'On Track %', 'Due Soon %', 'Overdue %'];
     const stageRows = this.cmStages().map((s) => [s.name, s.count, s.buckets.onTrack, s.buckets.dueSoon, s.buckets.overdue]);
     this.exporter.open({
-      title: 'Intake & Assessment SLA', name: 'cm-intake-assessment-sla_2026-07-17', columns: stageCols, rows: stageRows,
+      title: 'Intake & Assessment SLA', name: `cm-intake-assessment-sla${TODAY_ISO}`, columns: stageCols, rows: stageRows,
       sections: [
-        { label: 'Lifecycle Stages', name: 'cm-intake-assessment-sla_2026-07-17', columns: stageCols, rows: stageRows },
-        { label: 'Intake Coordinator Workload', name: 'cm-ic-workload_2026-07-17', columns: ['Assigned To', 'Pending Referrals'], rows: this.icWorkload().map((w) => [w.name, w.count]) },
-        { label: 'Referrals by Source', name: 'cm-referrals-by-source_2026-07-17', columns: ['Source', 'Count', '% of Total'], rows: this.referralsBySource().map((r) => [r.label, r.value, r.pct]) },
-        { label: 'Accepted by Care Manager', name: 'cm-accepted-by-cm_2026-07-17', columns: ['Care Manager', 'Accepted Referrals'], rows: this.acceptedByCm().map((r) => [r.name, r.count]) },
-        { label: 'Referrals by Status', name: 'cm-referrals-by-status_2026-07-17', columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) },
-        { label: 'Pending — Blocked By', name: 'cm-pending-blocked-by_2026-07-17', columns: ['Reason', 'Count'], rows: this.pendReasonBreakdown().map((r) => [r.reason, r.count]) },
-        { label: 'Referral TAT', name: 'cm-referral-tat_2026-07-17', columns: ['Band', 'Count'], rows: this.referralTatBreakdown().map((r) => [this.tatLabel(r.band), r.count]) },
-        { label: 'By Referral Reason', name: 'cm-referral-reason_2026-07-17', columns: ['Reason', 'Count'], rows: this.referralReasonBreakdown().map((r) => [r.reason, r.count]) },
-        { label: 'Consent', name: 'cm-consent-by-type_2026-07-17', columns: ['Consent Type', 'Members', 'At Risk of Expiring'], rows: this.consentBreakdown().map((c) => [c.type, c.count, c.atRisk]) },
-        { label: 'Assessments', name: 'cm-assessments-by-type_2026-07-17', columns: ['Assessment Type', 'Members', 'TAT Adherent'], rows: this.assessmentBreakdown().map((a) => [a.type, a.count, a.adherent]) },
-        { label: 'Outreach', name: 'cm-outreach-stats_2026-07-17', columns: ['Metric', 'Value'], rows: [['Success Rate %', this.outreachStats().successRate], ['Avg Attempts', this.outreachStats().avgAttempts], ['UTR Letters Sent', this.outreachStats().utrCount]] },
+        { label: 'Lifecycle Stages', name: `cm-intake-assessment-sla${TODAY_ISO}`, columns: stageCols, rows: stageRows },
+        { label: 'Intake Coordinator Workload', name: `cm-ic-workload${TODAY_ISO}`, columns: ['Assigned To', 'Pending Referrals'], rows: this.icWorkload().map((w) => [w.name, w.count]) },
+        { label: 'Referrals by Source', name: `cm-referrals-by-source${TODAY_ISO}`, columns: ['Source', 'Count', '% of Total'], rows: this.referralsBySource().map((r) => [r.label, r.value, r.pct]) },
+        { label: 'Accepted by Care Manager', name: `cm-accepted-by-cm${TODAY_ISO}`, columns: ['Care Manager', 'Accepted Referrals'], rows: this.acceptedByCm().map((r) => [r.name, r.count]) },
+        { label: 'Referrals by Status', name: `cm-referrals-by-status${TODAY_ISO}`, columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) },
+        { label: 'Pending — Blocked By', name: `cm-pending-blocked-by${TODAY_ISO}`, columns: ['Reason', 'Count'], rows: this.pendReasonBreakdown().map((r) => [r.reason, r.count]) },
+        { label: 'Referral TAT', name: `cm-referral-tat${TODAY_ISO}`, columns: ['Band', 'Count'], rows: this.referralTatBreakdown().map((r) => [this.tatLabel(r.band), r.count]) },
+        { label: 'By Referral Reason', name: `cm-referral-reason${TODAY_ISO}`, columns: ['Reason', 'Count'], rows: this.referralReasonBreakdown().map((r) => [r.reason, r.count]) },
+        { label: 'Consent', name: `cm-consent-by-type${TODAY_ISO}`, columns: ['Consent Type', 'Members', 'At Risk of Expiring'], rows: this.consentBreakdown().map((c) => [c.type, c.count, c.atRisk]) },
+        { label: 'Assessments', name: `cm-assessments-by-type${TODAY_ISO}`, columns: ['Assessment Type', 'Members', 'TAT Adherent'], rows: this.assessmentBreakdown().map((a) => [a.type, a.count, a.adherent]) },
+        { label: 'Outreach', name: `cm-outreach-stats${TODAY_ISO}`, columns: ['Metric', 'Value'], rows: [['Success Rate %', this.outreachStats().successRate], ['Avg Attempts', this.outreachStats().avgAttempts], ['UTR Letters Sent', this.outreachStats().utrCount]] },
       ],
     });
   }
@@ -1242,7 +1243,7 @@ export class CmDashboard {
     this.ix.openExplorer({
       title, context: context ?? `${refs.length} referral(s) in the last ${this.lookbackLabel()}`,
       columns: this.REFERRAL_COLUMNS, rows: refs.map((r) => this.referralToRow(r)),
-      exportName: `cm-referrals-${exportSlug}_2026-07-17`, memberColumn: 1,
+      exportName: `cm-referrals-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   // ---- Dedicated "New Referrals" view — Pending only, purpose-built column set. Deliberately
@@ -1259,7 +1260,7 @@ export class CmDashboard {
     this.ix.openExplorer({
       title: 'New Referrals', context: `${refs.length} referral(s) awaiting a decision`,
       columns: this.NEW_REFERRAL_COLUMNS, rows: refs.map((r) => this.newReferralToRow(r)),
-      exportName: 'cm-new-referrals_2026-07-17', memberColumn: 1,
+      exportName: `cm-new-referrals${TODAY_ISO}`, memberColumn: 1,
     });
   }
   openAllReferrals() {
@@ -1275,11 +1276,11 @@ export class CmDashboard {
     this.openReferralsExplorer(`${status} Referrals`, rows, `status-${slug(status)}`);
   }
   exportReferralsBySource() {
-    this.exporter.open({ title: 'Referrals by Source', name: 'cm-referrals-by-source_2026-07-17',
+    this.exporter.open({ title: 'Referrals by Source', name: `cm-referrals-by-source${TODAY_ISO}`,
       columns: ['Source', 'Count', '% of Total'], rows: this.referralsBySource().map((r) => [r.label, r.value, r.pct]) });
   }
   exportReferralsByStatus() {
-    this.exporter.open({ title: 'Referrals by Status', name: 'cm-referrals-by-status_2026-07-17',
+    this.exporter.open({ title: 'Referrals by Status', name: `cm-referrals-by-status${TODAY_ISO}`,
       columns: ['Status', 'Count'], rows: this.referralsByStatus().map((r) => [r.status, r.count]) });
   }
 
@@ -1321,23 +1322,23 @@ export class CmDashboard {
     this.openReferralsExplorer(`Referral Reason: ${reason}`, rows, `reason-${slug(reason)}`);
   }
   exportIcWorkload() {
-    this.exporter.open({ title: 'Intake Coordinator Workload', name: 'cm-ic-workload_2026-07-17',
+    this.exporter.open({ title: 'Intake Coordinator Workload', name: `cm-ic-workload${TODAY_ISO}`,
       columns: ['Assigned To', 'Pending Referrals'], rows: this.icWorkload().map((w) => [w.name, w.count]) });
   }
   exportAcceptedByCm() {
-    this.exporter.open({ title: 'Accepted by Care Manager', name: 'cm-accepted-by-cm_2026-07-17',
+    this.exporter.open({ title: 'Accepted by Care Manager', name: `cm-accepted-by-cm${TODAY_ISO}`,
       columns: ['Care Manager', 'Accepted Referrals'], rows: this.acceptedByCm().map((r) => [r.name, r.count]) });
   }
   exportPendReasons() {
-    this.exporter.open({ title: 'Pending — Blocked By', name: 'cm-pending-blocked-by_2026-07-17',
+    this.exporter.open({ title: 'Pending — Blocked By', name: `cm-pending-blocked-by${TODAY_ISO}`,
       columns: ['Reason', 'Count'], rows: this.pendReasonBreakdown().map((r) => [r.reason, r.count]) });
   }
   exportReferralTat() {
-    this.exporter.open({ title: 'Referral TAT', name: 'cm-referral-tat_2026-07-17',
+    this.exporter.open({ title: 'Referral TAT', name: `cm-referral-tat${TODAY_ISO}`,
       columns: ['Band', 'Count'], rows: this.referralTatBreakdown().map((r) => [this.tatLabel(r.band), r.count]) });
   }
   exportByReferralReason() {
-    this.exporter.open({ title: 'By Referral Reason', name: 'cm-referral-reason_2026-07-17',
+    this.exporter.open({ title: 'By Referral Reason', name: `cm-referral-reason${TODAY_ISO}`,
       columns: ['Reason', 'Count'], rows: this.referralReasonBreakdown().map((r) => [r.reason, r.count]) });
   }
   /** Same strategy-picker Balance shape as cmBalance(), but rebalancing Pending referrals between
@@ -1390,7 +1391,7 @@ export class CmDashboard {
     this.openCmCases(`${type}${atRiskOnly ? ' — At Risk of Expiring' : ''}`, cases, `consent-${slug(type)}${atRiskOnly ? '-at-risk' : ''}`);
   }
   exportConsent() {
-    this.exporter.open({ title: 'Consent', name: 'cm-consent-by-type_2026-07-17',
+    this.exporter.open({ title: 'Consent', name: `cm-consent-by-type${TODAY_ISO}`,
       columns: ['Consent Type', 'Members', 'At Risk of Expiring'], rows: this.consentBreakdown().map((c) => [c.type, c.count, c.atRisk]) });
   }
 
@@ -1401,7 +1402,7 @@ export class CmDashboard {
     this.openCmCases(`${type} — ${adherentOnly ? 'TAT Adherent' : 'TAT Missed'}`, cases, `assessment-${slug(type)}-${adherentOnly ? 'adherent' : 'missed'}`);
   }
   exportAssessments() {
-    this.exporter.open({ title: 'Assessments', name: 'cm-assessments-by-type_2026-07-17',
+    this.exporter.open({ title: 'Assessments', name: `cm-assessments-by-type${TODAY_ISO}`,
       columns: ['Assessment Type', 'Members', 'TAT Adherent'], rows: this.assessmentBreakdown().map((a) => [a.type, a.count, a.adherent]) });
   }
 
@@ -1413,7 +1414,7 @@ export class CmDashboard {
   }
   exportOutreach() {
     const s = this.outreachStats();
-    this.exporter.open({ title: 'Outreach', name: 'cm-outreach-stats_2026-07-17',
+    this.exporter.open({ title: 'Outreach', name: `cm-outreach-stats${TODAY_ISO}`,
       columns: ['Metric', 'Value'], rows: [['Success Rate %', s.successRate], ['Avg Attempts', s.avgAttempts], ['UTR Letters Sent', s.utrCount]] });
   }
 
@@ -1448,7 +1449,7 @@ export class CmDashboard {
     this.ix.openExplorer({
       title, context: context ?? `${cases.length} case(s)`,
       columns: CARE_PLAN_COLUMNS, rows: cases.map(carePlanRow),
-      exportName: `cm-careplan-${exportSlug}_2026-07-17`, memberColumn: 1,
+      exportName: `cm-careplan-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   openActiveCarePlans() { this.openCarePlanCases('Active Care Plans', this.carePlanOpen(), 'active'); }
@@ -1476,15 +1477,15 @@ export class CmDashboard {
   openSmartGap() { this.openCarePlanCases('Not SMART-Language Compliant', this.cmData.casesNotSmartCompliant(this.scopedCases()), 'smart-gap'); }
 
   exportGoalProgress() {
-    this.exporter.open({ title: 'Goal Progress', name: 'cm-careplan-goal-progress_2026-07-17',
+    this.exporter.open({ title: 'Goal Progress', name: `cm-careplan-goal-progress${TODAY_ISO}`,
       columns: ['Status', 'Goals'], rows: this.goalProgress().map((g) => [g.status, g.count]) });
   }
   exportTemplates() {
-    this.exporter.open({ title: 'Care Plan Template', name: 'cm-careplan-templates_2026-07-17',
+    this.exporter.open({ title: 'Care Plan Template', name: `cm-careplan-templates${TODAY_ISO}`,
       columns: ['Template', 'Plans'], rows: this.templateBreakdown().map((t) => [t.template, t.count]) });
   }
   exportCarePlanSummary() {
-    this.exporter.open({ title: 'Care Plan & Outcomes Summary', name: 'cm-careplan-summary_2026-07-17',
+    this.exporter.open({ title: 'Care Plan & Outcomes Summary', name: `cm-careplan-summary${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [
         ['Active Care Plans', this.carePlanOpen().length],
@@ -1543,7 +1544,7 @@ export class CmDashboard {
     this.ix.openExplorer({
       title, context: context ?? `${cases.length} case(s)`,
       columns: CM_COLUMNS, rows: cases.map(cmToRow),
-      exportName: `cm-program-${exportSlug}_2026-07-17`, memberColumn: 1,
+      exportName: `cm-program-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   openProgramActive(p: CareProgramName) { this.openProgramCases(`${p} — Active`, this.cmData.casesInProgram(p, this.scopedCases()), `${slug(p)}-active`); }
@@ -1555,16 +1556,16 @@ export class CmDashboard {
   openProgramOverlap(bucket: string) { this.openProgramCases(bucket, this.cmData.casesWithOverlap(bucket, this.scopedCases()), `overlap-${slug(bucket)}`); }
 
   exportProgramSummary() {
-    this.exporter.open({ title: 'Program Management', name: 'cm-program-summary_2026-07-17',
+    this.exporter.open({ title: 'Program Management', name: `cm-program-summary${TODAY_ISO}`,
       columns: ['Program', 'Active', `New (${this.lookbackLabel()})`, `Disenrolled (${this.lookbackLabel()})`, 'Disenrollment Rate %', 'Avg. Active Tenure (days)', 'Avg. Completed Duration (days)'],
       rows: this.programStats().map((p) => [p.program, p.active, p.newEnrolled, p.disenrolled, p.disenrollmentRate, p.avgActiveTenure, p.avgCompletedDuration]) });
   }
   exportDisenrollReasons() {
-    this.exporter.open({ title: 'Disenrollment Reasons', name: 'cm-program-disenroll-reasons_2026-07-17',
+    this.exporter.open({ title: 'Disenrollment Reasons', name: `cm-program-disenroll-reasons${TODAY_ISO}`,
       columns: ['Reason', 'Count'], rows: this.programDisenrollReasons().map((r) => [r.reason, r.count]) });
   }
   exportOverlap() {
-    this.exporter.open({ title: 'Concurrent Program Enrollment', name: 'cm-program-overlap_2026-07-17',
+    this.exporter.open({ title: 'Concurrent Program Enrollment', name: `cm-program-overlap${TODAY_ISO}`,
       columns: ['Bucket', 'Members'], rows: this.programOverlap().map((o) => [o.bucket, o.count]) });
   }
 
@@ -1647,7 +1648,7 @@ export class CmDashboard {
     return [a.cm, a.day, `${a.scheduledStart}–${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}–${a.actualEnd}` : '—', a.status, a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm'];
   }
   private openScheduleExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
-    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `cm-schedule-${exportSlug}_2026-07-17` });
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `cm-schedule-${exportSlug}${TODAY_ISO}` });
   }
   openAllAdherence() {
     const rows = this.cmData.adherenceRecords(this.schedulePeriod(), this.scheduleTeam()).map((a) => this.adherenceRow(a));
@@ -1700,20 +1701,20 @@ export class CmDashboard {
   exportSchedule() {
     if (this.schedulePeriod() === 'weekly' || this.schedulePeriod() === 'daily') {
       const rows = this.weekScheduleRows().map((w) => [w.cm, w.discipline, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
-      this.exporter.open({ title: `${this.schedulePeriodLabel()}'s Schedule`, name: 'cm-schedule_2026-07-17', columns: ['Care Manager', 'Discipline', ...this.weekDayLabels], rows });
+      this.exporter.open({ title: `${this.schedulePeriodLabel()}'s Schedule`, name: `cm-schedule${TODAY_ISO}`, columns: ['Care Manager', 'Discipline', ...this.weekDayLabels], rows });
       return;
     }
     const rows = this.weekRollup().map((r) => [r.cm, r.discipline, ...r.weeks.map((w) => `${w.shifts} shifts${w.pto ? ` · ${w.pto} PTO` : ''}`)]);
-    this.exporter.open({ title: `${this.schedulePeriodLabel()} Schedule Summary`, name: 'cm-schedule-summary_2026-07-17',
+    this.exporter.open({ title: `${this.schedulePeriodLabel()} Schedule Summary`, name: `cm-schedule-summary${TODAY_ISO}`,
       columns: ['Care Manager', 'Discipline', ...this.weekBlocks().map((b) => `Week of ${b.weekStart}`)], rows });
   }
   exportAdherence() {
-    this.exporter.open({ title: 'Adherence Exceptions', name: 'cm-adherence_2026-07-17',
+    this.exporter.open({ title: 'Adherence Exceptions', name: `cm-adherence${TODAY_ISO}`,
       columns: ['Care Manager', 'Day', 'Scheduled', 'Actual', 'Status', 'Variance (min)'],
       rows: this.adherenceExceptions().map((a) => [a.cm, a.day, `${a.scheduledStart}-${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}-${a.actualEnd}` : '—', a.status, a.varianceMin]) });
   }
   exportPtoBalances() {
-    this.exporter.open({ title: 'Adherence & PTO by Care Manager', name: 'cm-adherence-pto-summary_2026-07-17',
+    this.exporter.open({ title: 'Adherence & PTO by Care Manager', name: `cm-adherence-pto-summary${TODAY_ISO}`,
       columns: ['Care Manager', 'Discipline', 'Adherence Rate %', 'PTO Accrued (YTD)', 'PTO Used', 'PTO Remaining'],
       rows: this.cmSummaryRows().map((p) => [p.cm, p.discipline, p.adherenceRate, p.accruedDays, p.usedDays, p.remainingDays]) });
   }
@@ -1727,11 +1728,11 @@ export class CmDashboard {
   exportDemand() {
     const f = this.demandForecast();
     const capacityLabel = this.demandTeamFilter() === 'all' ? 'Team Intake Capacity' : 'Caseload Headroom';
-    this.exporter.open({ title: 'Demand & Forecasting', name: 'cm-demand-forecast_2026-07-17',
+    this.exporter.open({ title: 'Demand & Forecasting', name: `cm-demand-forecast${TODAY_ISO}`,
       columns: ['Week Of', 'Referrals'], rows: f.history.map((h) => [h.start, h.count]),
       sections: [
-        { label: 'Weekly Volume', name: 'cm-demand-weekly_2026-07-17', columns: ['Week Of', 'Referrals'], rows: f.history.map((h) => [h.start, h.count]) },
-        { label: 'Forecast Summary', name: 'cm-demand-summary_2026-07-17', columns: ['Metric', 'Value'],
+        { label: 'Weekly Volume', name: `cm-demand-weekly${TODAY_ISO}`, columns: ['Week Of', 'Referrals'], rows: f.history.map((h) => [h.start, h.count]) },
+        { label: 'Forecast Summary', name: `cm-demand-summary${TODAY_ISO}`, columns: ['Metric', 'Value'],
           rows: [['Projected Next Week', f.projected], [capacityLabel, f.teamCapacity], ['Over Capacity', f.overCapacity ? 'Yes' : 'No']] },
       ] });
   }
@@ -1831,22 +1832,22 @@ export class CmDashboard {
     const caseTypeRows = this.caseTypeBreakdown().map((c) => [c.type, c.count]);
     const assignmentRows = this.assignmentBreakdown().map((a) => [a.method, a.count]);
     this.exporter.open({
-      title: 'Caseload & Workload Balancing', name: 'cm-workload_2026-07-17', columns: workloadCols, rows: workloadRows,
+      title: 'Caseload & Workload Balancing', name: `cm-workload${TODAY_ISO}`, columns: workloadCols, rows: workloadRows,
       sections: [
-        { label: 'Workload per Care Manager', name: 'cm-workload_2026-07-17', columns: workloadCols, rows: workloadRows },
-        { label: 'Queues', name: 'cm-queues_2026-07-17', columns: ['Queue', 'Unclaimed', '0-24h %', '24-48h %', '>48h %', 'Breach %'], rows: queueRows },
-        { label: 'Cases by Case Type', name: 'cm-case-type_2026-07-17', columns: ['Case Type', 'Count'], rows: caseTypeRows },
-        { label: 'How Members Were Assigned', name: 'cm-assignment-method_2026-07-17', columns: ['Method', 'Count'], rows: assignmentRows },
+        { label: 'Workload per Care Manager', name: `cm-workload${TODAY_ISO}`, columns: workloadCols, rows: workloadRows },
+        { label: 'Queues', name: `cm-queues${TODAY_ISO}`, columns: ['Queue', 'Unclaimed', '0-24h %', '24-48h %', '>48h %', 'Breach %'], rows: queueRows },
+        { label: 'Cases by Case Type', name: `cm-case-type${TODAY_ISO}`, columns: ['Case Type', 'Count'], rows: caseTypeRows },
+        { label: 'How Members Were Assigned', name: `cm-assignment-method${TODAY_ISO}`, columns: ['Method', 'Count'], rows: assignmentRows },
       ],
     });
   }
   exportQueue(q: CmQueueCard) {
-    this.exporter.open({ title: q.name, name: `cm-queue-${slug(q.name)}_2026-07-17`,
+    this.exporter.open({ title: q.name, name: `cm-queue-${slug(q.name)}${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [['Unclaimed', q.count], ['0-24h %', q.buckets.fresh], ['24-48h %', q.buckets.day2], ['>48h %', q.buckets.over48], ['Breach %', q.buckets.breach]] });
   }
   exportWorkload() {
-    this.exporter.open({ title: 'Workload per Care Manager', name: 'cm-workload_2026-07-17',
+    this.exporter.open({ title: 'Workload per Care Manager', name: `cm-workload${TODAY_ISO}`,
       columns: ['Care Manager', 'Discipline', 'Active', 'High Risk', 'High Acuity', 'High Cost', 'SLA At-Risk', 'Utilization %'],
       rows: this.sortedCms().map((c) => [c.name, c.discipline, c.active, c.highRisk, c.highAcuity, c.highCost, c.slaAtRisk, c.utilization]) });
   }
@@ -1855,7 +1856,7 @@ export class CmDashboard {
     this.ix.openExplorer({
       title, context: context ?? `${cases.length} case(s)`,
       columns: CM_COLUMNS, rows: cases.map(cmToRow),
-      exportName: `cm-${exportSlug}_2026-07-17`, memberColumn: 1,
+      exportName: `cm-${exportSlug}${TODAY_ISO}`, memberColumn: 1,
     });
   }
   openCmActive(c: CmManagerStat) {
@@ -1881,7 +1882,7 @@ export class CmDashboard {
     this.ix.openExplorer({
       title: `${queue} — ${labels[band]}`, context: `${cases.length} case(s)`,
       columns: this.QUEUE_COLUMNS, rows: cases.map((c) => this.queueCaseRow(c)),
-      exportName: `cm-${slug(queue)}-${slug(band)}_2026-07-17`, memberColumn: 1,
+      exportName: `cm-${slug(queue)}-${slug(band)}${TODAY_ISO}`, memberColumn: 1,
     });
   }
 
@@ -2043,7 +2044,7 @@ export class CmDashboard {
   sortWl(k: keyof CmMemberRow) { if (this.wlSortKey() === k) this.wlSortDir.set(this.wlSortDir() === 1 ? -1 : 1); else { this.wlSortKey.set(k); this.wlSortDir.set(1); } }
   caretWl(k: keyof CmMemberRow) { return caretFor(this.wlSortKey(), k, this.wlSortDir()); }
   exportWorklist() {
-    this.exporter.open({ title: 'High-Risk Members', name: 'cm-high-risk-members_2026-07-17',
+    this.exporter.open({ title: 'High-Risk Members', name: `cm-high-risk-members${TODAY_ISO}`,
       columns: ['Member', 'Primary Dx', 'Risk', 'Level', 'Acuity', 'Annual Cost', 'SLA', 'Care Manager'],
       rows: this.worklist.map((m) => [m.name, m.dx, m.risk, m.level, m.acuity, m.cost, m.sla, m.cm]) });
   }
@@ -2053,7 +2054,7 @@ export class CmDashboard {
       onChoose: (who) => { this.ix.toast(`${m.name} escalated to ${who}.`, 'warn'); this.data.addHistory('arrowup', 'CM member escalated', `${m.name} → ${who}`); } });
   }
   exportRecommendations() {
-    this.exporter.open({ title: 'AI Recommendations', name: 'cm-ai-recommendations_2026-07-17',
+    this.exporter.open({ title: 'AI Recommendations', name: `cm-ai-recommendations${TODAY_ISO}`,
       columns: ['Member', 'Recommendation'],
       rows: [
         ['Marcus Webb', 'Predicted 30-day readmission risk 84%. Recommend intensive outreach + nephrology coordination.'],
@@ -2062,11 +2063,11 @@ export class CmDashboard {
       ] });
   }
   exportRiskGauges() {
-    this.exporter.open({ title: 'Predictive Risk Gauges', name: 'cm-predictive-risk-gauges_2026-07-17',
+    this.exporter.open({ title: 'Predictive Risk Gauges', name: `cm-predictive-risk-gauges${TODAY_ISO}`,
       columns: ['Gauge', 'Value %'], rows: [['Readmission Risk', 84], ['ER Utilization Risk', 31], ['Care Gap Risk', 19]] });
   }
   exportRisingMembers() {
-    this.exporter.open({ title: 'Rising-Risk Members', name: 'cm-rising-risk-members_2026-07-17',
+    this.exporter.open({ title: 'Rising-Risk Members', name: `cm-rising-risk-members${TODAY_ISO}`,
       columns: ['Member', 'Risk Score'], rows: this.worklist.slice(0, 4).map((m) => [m.name, m.risk]) });
   }
   toast(m: string) { this.ix.toast(m, 'info'); this.data.addHistory('sparkles', 'CM AI action', m); }

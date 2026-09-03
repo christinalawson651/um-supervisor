@@ -6,11 +6,7 @@ import {
   RegComplianceRow,
 } from './dashboard.models';
 import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
-import {
-  ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf,
-  providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf,
-  isDuplicateOf, duplicateResolvedOf, LOBS,
-} from './case-fields';
+import { ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf, providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf, isDuplicateOf, duplicateResolvedOf, LOBS, TODAY_LONG } from './case-fields';
 import { IrrReviewRecord, UM_IRR_REVIEWS, DISCREPANCY_REASONS, DiscrepancyReason, MIN_SAMPLE_PER_REVIEWER } from './um-irr';
 
 /**
@@ -178,9 +174,16 @@ function seedReturnHistory(): HistoryEntry[] {
 
 const STORAGE_KEY = 'zyter-um-demo-v3';
 
+/** Audit flags are discrete events rather than derived rollups, so their dates are authored — but
+ *  authored as offsets, not as fixed days, or they drift into the past as the demo clock moves. */
+function isoDaysAgo(n: number): string {
+  const d = new Date(TODAY); d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 @Injectable({ providedIn: 'root' })
 export class DashboardData {
-  readonly today = 'Friday, July 17, 2026';
+  readonly today = TODAY_LONG;
 
   // Mutable collections are signals so the UI reacts to demo actions.
   readonly kpis = signal<Kpi[]>([
@@ -241,10 +244,10 @@ export class DashboardData {
   // session-mutable list (like riskCases) — these are discrete flagged audit EVENTS, not an
   // aggregate stat, so they aren't derived from the case pool the way the compliance bars are.
   readonly auditFlags = signal<AuditFlag[]>([
-    { id: 'AUD-201', type: 'Missing Rationale',       description: 'Decision rationale not documented for AUTH-4488', date: '2026-03-15', severity: 'amber', severityLabel: 'Medium' },
-    { id: 'AUD-202', type: 'Guideline Deviation',     description: 'Approval without XYZ criteria match — AUTH-4501',  date: '2026-03-14', severity: 'red',   severityLabel: 'High' },
-    { id: 'AUD-203', type: 'Incomplete Documentation', description: 'Clinical notes incomplete for concurrent review AUTH-4515', date: '2026-03-16', severity: 'green', severityLabel: 'Low' },
-    { id: 'AUD-204', type: 'TAT Compliance',          description: 'Decision rendered after SLA deadline — AUTH-4473', date: '2026-03-13', severity: 'red',   severityLabel: 'High' },
+    { id: 'AUD-201', type: 'Missing Rationale',       description: 'Decision rationale not documented for AUTH-4488', date: isoDaysAgo(9), severity: 'amber', severityLabel: 'Medium' },
+    { id: 'AUD-202', type: 'Guideline Deviation',     description: 'Approval without XYZ criteria match — AUTH-4501',  date: isoDaysAgo(11), severity: 'red',   severityLabel: 'High' },
+    { id: 'AUD-203', type: 'Incomplete Documentation', description: 'Clinical notes incomplete for concurrent review AUTH-4515', date: isoDaysAgo(6), severity: 'green', severityLabel: 'Low' },
+    { id: 'AUD-204', type: 'TAT Compliance',          description: 'Decision rendered after SLA deadline — AUTH-4473', date: isoDaysAgo(14), severity: 'red',   severityLabel: 'High' },
   ]);
 
   // ---------- AI / NextGen Intelligence ----------

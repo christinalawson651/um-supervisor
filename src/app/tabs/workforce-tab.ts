@@ -7,7 +7,7 @@ import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Balance } from '../shared/balance';
 import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
-import { urgencyOf, lobOf, LOBS, ageH, bandOf, daysAgo } from '../data/case-fields';
+import { urgencyOf, lobOf, LOBS, ageH, bandOf, daysAgo, TODAY_ISO } from '../data/case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
@@ -263,7 +263,7 @@ export class WorkforceTab {
 
   exportQueue(q: DisplayQueue) {
     this.exporter.open({
-      title: q.name, name: `queue-${q.name.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      title: q.name, name: `queue-${q.name.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
       rows: [['Unclaimed', q.count], ['0-24h %', q.buckets.fresh], ['24-48h %', q.buckets.day2], ['>48h %', q.buckets.over48], ['Breach %', q.buckets.breach]],
     });
@@ -273,7 +273,7 @@ export class WorkforceTab {
       ? this.visibleNurses().map((n) => [n.name, n.active, n.pending, n.completed, n.avgTat, n.utilization, n.team])
       : this.filteredTeams().map((t) => [t.name, t.active, t.pending, t.completed, t.avgTat, t.utilization, '']);
     this.exporter.open({
-      title: `Workload ${this.groupBy() === 'team' ? '— by Team' : 'per Nurse'}`, name: 'workforce-workload_2026-07-17',
+      title: `Workload ${this.groupBy() === 'team' ? '— by Team' : 'per Nurse'}`, name: `workforce-workload${TODAY_ISO}`,
       columns: ['Nurse/Team', 'Active', 'Pending', 'Completed (MTD)', 'Avg TAT', 'Utilization %', 'Team'],
       rows,
     });
@@ -445,7 +445,7 @@ export class WorkforceTab {
       context: `${cases.length} pending authorization(s) assigned${scope} · ${n.utilization}% utilized`,
       columns: COLUMNS,
       rows: cases.map(toRow),
-      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}_2026-07-17`,
+      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -460,7 +460,7 @@ export class WorkforceTab {
       context: `${cases.length} authorization(s) awaiting RFI or peer-to-peer response${scope}`,
       columns: COLUMNS,
       rows: cases.map(toRow),
-      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-pending_2026-07-17`,
+      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-pending${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -475,7 +475,7 @@ export class WorkforceTab {
       context: `${cases.length} authorization(s) decided this month${scope}`,
       columns: COLUMNS,
       rows: cases.map(toRow),
-      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-completed_2026-07-17`,
+      exportName: `nurse-${n.name.split(',')[0].toLowerCase()}-completed${TODAY_ISO}`,
       memberColumn: 1,
     });
   }
@@ -533,7 +533,7 @@ export class WorkforceTab {
       title: `${queueLabel} — ${labels[band]}`,
       context: `${rows.length} unclaimed authorization(s) in ${queueLabel} · ${labels[band]}`,
       columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'Age in Queue'],
-      rows, exportName: `${queueLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}_2026-07-17`, memberColumn: 1,
+      rows, exportName: `${queueLabel.toLowerCase().replace(/[^a-z]+/g, '-')}-${band}${TODAY_ISO}`, memberColumn: 1,
     });
   }
 

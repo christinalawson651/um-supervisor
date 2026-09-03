@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, inject } from '@angular/core';
 import { REFERRALS, Referral } from '../data/referrals';
 import { Members } from '../shared/members';
@@ -69,7 +70,7 @@ export class ReferralsTab {
       context: `${rows.length} referral(s)`,
       columns: ['Auth', 'Member', 'Reason', 'Referred From', 'Sent', 'CM Status', 'Assigned To'],
       rows: rows.map((r) => [r.authId, r.member, r.reason, r.fromStage, r.received, r.status, r.assignedTo]),
-      exportName: `cm-referrals-${label.toLowerCase().replace(/[^a-z]+/g, '-')}_2026-07-17`,
+      exportName: `cm-referrals-${label.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       memberColumn: 1,
     });
   }

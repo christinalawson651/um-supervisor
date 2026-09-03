@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, inject, signal } from '@angular/core';
 import { Nav, BizModule, ModuleId } from '../shared/nav';
 import { Metrics } from '../shared/metrics';
@@ -401,7 +402,7 @@ export class OverviewDashboard {
         rows: this.queueHistory.flatMap((h) => h.rows.map((r) => [this.formatSnapTime(h.runAt), r.queue, r.unclaimed, r.breach])) },
     };
     const d = map[id];
-    if (d) this.exporter.open({ title: d.title, name: `${id}_2026-07-17`, columns: d.columns, rows: d.rows });
+    if (d) this.exporter.open({ title: d.title, name: `${id}${TODAY_ISO}`, columns: d.columns, rows: d.rows });
   }
   // ---- Queue Standing scheduled snapshot — a real, periodically-updated history file (see
   // scripts/run-queue-standing-snapshot task), not a static demo number. Each run appends the

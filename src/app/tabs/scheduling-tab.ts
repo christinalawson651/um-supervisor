@@ -1,3 +1,4 @@
+import { TODAY_ISO } from '../data/case-fields';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '../shared/icon';
@@ -257,7 +258,7 @@ export class SchedulingTab {
     return [a.nurse, a.day, `${a.scheduledStart}–${a.scheduledEnd}`, a.actualStart ? `${a.actualStart}–${a.actualEnd}` : '—', a.status, a.varianceMin === 0 ? '—' : (a.varianceMin > 0 ? '+' : '') + a.varianceMin + 'm'];
   }
   private openScheduleExplorer(title: string, columns: string[], rows: (string | number)[][], exportSlug: string, context?: string) {
-    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `um-schedule-${exportSlug}_2026-07-17` });
+    this.ix.openExplorer({ title, context: context ?? `${rows.length} record(s)`, columns, rows, exportName: `um-schedule-${exportSlug}${TODAY_ISO}` });
   }
   openAllAdherence() {
     const rows = this.adherenceForPeriod().map((a) => this.adherenceRow(a));
@@ -338,15 +339,15 @@ export class SchedulingTab {
   exportSchedule() {
     if (this.period() === 'weekly' || this.period() === 'daily') {
       const rows = this.scheduleRows().map((w) => [w.nurse, w.team, ...w.days.map((d) => (d.type === 'Off' ? '—' : d.type === 'PTO' ? 'PTO' : `${d.start}–${d.end}`))]);
-      this.exporter.open({ title: `${this.periodLabel()}'s Schedule`, name: 'um-schedule_2026-07-17', columns: ['Nurse', 'Team', ...this.weekDayLabels], rows });
+      this.exporter.open({ title: `${this.periodLabel()}'s Schedule`, name: `um-schedule${TODAY_ISO}`, columns: ['Nurse', 'Team', ...this.weekDayLabels], rows });
       return;
     }
     const rows = this.weekRollup().map((r) => [r.nurse, r.team, ...r.weeks.map((w) => `${w.shifts} shifts${w.pto ? ` · ${w.pto} PTO` : ''}`)]);
-    this.exporter.open({ title: `${this.periodLabel()} Schedule Summary`, name: 'um-schedule-summary_2026-07-17',
+    this.exporter.open({ title: `${this.periodLabel()} Schedule Summary`, name: `um-schedule-summary${TODAY_ISO}`,
       columns: ['Nurse', 'Team', ...this.weekBlocks().map((b) => `Week of ${b.weekStart}`)], rows });
   }
   exportPtoBalances() {
-    this.exporter.open({ title: 'Adherence & PTO by Nurse', name: 'um-adherence-pto_2026-07-17',
+    this.exporter.open({ title: 'Adherence & PTO by Nurse', name: `um-adherence-pto${TODAY_ISO}`,
       columns: ['Nurse', 'Team', 'Adherence Rate %', 'PTO Accrued (YTD)', 'PTO Used', 'PTO Remaining'],
       rows: this.nurseSummaryRows().map((p) => [p.nurse, p.team, p.adherenceRate, p.accruedDays, p.usedDays, p.remainingDays]) });
   }

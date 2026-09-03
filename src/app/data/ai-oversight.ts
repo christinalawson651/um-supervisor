@@ -54,11 +54,18 @@ export const MODEL_ATTRIBUTABLE: OverrideReason[] = [
   'Comorbidity not weighted by the model',
 ];
 
+/** The bundle promotion date moves with the clock — a config that says it was promoted eleven
+ *  weeks ago should still say that next month. */
+function bundlePromotedIso(): string {
+  const d = new Date(TODAY); d.setDate(d.getDate() - 88);
+  return d.toISOString().slice(0, 10);
+}
+
 /** What is serving live — Symphony's Production Config panel. */
 export const PRODUCTION_CONFIG = {
   workflow: 'Prior Authorization v0.2.0',
   bundle: 'Med-necessity bundle: Grounding-tuned',
-  bundlePromoted: '2026-06-07',
+  bundlePromoted: bundlePromotedIso(),
   model: 'claude-sonnet-4-6',
   autoApproveGate: 0.80,
   autoPendGate: 0.70,
