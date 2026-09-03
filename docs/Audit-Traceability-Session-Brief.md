@@ -50,7 +50,7 @@ Both are in the build. Lead with the second — that's what this session is abou
   - SOD-3 denial issued by a non-clinician (42 CFR §438.210(b)(3))
   - SOD-4 administrator with standing PHI access (HIPAA §164.308(a)(4))
   - A clean rule reads *"Control passing across N events in window"* — an auditable statement, not a green checkmark. SOD-2 currently returns real findings; click through to them.
-- **Role → permission matrix** across nine access roles. The constraint text is the point: "Yes — assigned caseload" is a materially different control than an unconditional grant, and it's the distinction an auditor writes up.
+- **Role → permission matrix** — nine permissions across ten access roles. The constraint text is the point: "Yes — assigned caseload" is a materially different control than an unconditional grant, and it's the distinction an auditor writes up.
 - **Account inventory** with MFA status and last entitlement review against a 90-day cycle.
 
 ### 1.4 Compliance Requirements & Gaps — 5 min

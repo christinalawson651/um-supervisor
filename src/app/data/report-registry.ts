@@ -31,6 +31,11 @@ import {
 import { COLUMNS, toRow } from '../shared/metrics';
 import { IRR_TARGET_PCT } from './um-irr';
 import { UM_NURSE_ROSTER, UM_ROLLING_4_WEEKS, UM_MONTHLY_WEEKS, UM_PTO_BALANCES, UM_UPCOMING_WEEKS, UM_TODAY_ISO } from './um-schedule';
+import {
+  AUDIT_EVENTS, AuditEvent, SYSTEM_USERS, PERMISSIONS, PERMISSION_MATRIX, COMPLIANCE_REGISTER,
+  userActivityRollup, evaluateSod, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
+  eventDate, verifyChain,
+} from './audit-trail';
 
 export const UM_QUEUE_NAMES = ['Intake', 'Clinical Review', 'MD Review', 'RFI Pending', 'OON Review', 'Concurrent Review', 'Pending P2P'];
 export const UM_TEAMS = ['Inpatient Review', 'Outpatient Review', 'Complex & Concurrent'];
@@ -688,6 +693,181 @@ export const UM_REPORTS: ReportDef[] = [
 export const CM_REPORTS: ReportDef[] = [];
 export const APPEALS_REPORTS: ReportDef[] = [];
 
+
+// ---- Audit & Traceability reports ---------------------------------------------------------
+// The system-of-record evidence layer as printable, schedulable, exportable extracts. These sit in
+// GENERIC_REPORTS (not under a business module) because the trail spans UM, CM and Appeals and
+// every role is accountable to it — the same reasoning that puts the module itself beside Reports.
+//
+// Every table here calls the SAME function backing the Audit & Traceability screen
+// (userActivityRollup, evaluateSod, attestationAgeDays), per this registry's own rule that a report
+// never recomputes independently. An audit report that disagreed with the audit screen would be
+// worse than no report at all.
+//
+// This is also the first half of REQ-10/REQ-11 in the compliance register — the extracts a plan
+// asks a delegated vendor to produce. What is still missing is the CMS ODAG/CDAG record layout and
+// a single bundled oversight packet, both of which stay listed as open gaps on the Compliance tab.
+const AUDIT_GROUP = 'Audit & Traceability';
+
+/** Audit reports scope by EVENT date, not case date. `ctx.days` undefined means the full retained
+ *  log, which for an audit extract is the sensible default rather than a 30-day slice. */
+function auditScope(ctx: ReportContext): AuditEvent[] {
+  const lobs = !ctx.lob || ctx.lob === ALL ? null : (Array.isArray(ctx.lob) ? ctx.lob : [ctx.lob]);
+  return AUDIT_EVENTS.filter((e) => {
+    if (ctx.days !== undefined) { const d = daysAgo(eventDate(e.timestamp)); if (d < 0 || d > ctx.days) return false; }
+    // Infrastructure events (sign-ins, configuration, account admin) carry no LOB and stay in scope
+    // under an LOB filter — dropping them would misrepresent the log, not narrow it.
+    if (lobs && lobs.length && e.lob !== null && !lobs.includes(e.lob)) return false;
+    return true;
+  });
+}
+const AUDIT_EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Access Role', 'Category', 'Action', 'Record Type', 'Record ID', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
+function auditEventRow(e: AuditEvent): (string | number)[] {
+  return [e.eventId, e.timestamp.replace('T', ' '), e.actor, e.actorRole, e.category, e.action, e.entityType, e.entityId,
+    e.field ?? '—', e.before ?? '—', e.after ?? '—', e.channel, e.sourceIp, e.sessionId, e.correlationId,
+    e.reasonCode ?? '—', e.phi ? 'Yes' : 'No', e.outcome, e.recordHash];
+}
+const AUDIT_CATEGORY_OPTIONS = [ALL, 'Access', 'Clinical Decision', 'Case Management', 'Correspondence', 'Administrative', 'Configuration', 'Security', 'Data Export'];
+const AUDIT_CHANNEL_OPTIONS = [ALL, 'Web UI', 'API', 'Batch Interface', 'Fax / OCR Intake', 'System Rule'];
+const AUDIT_ROLE_OPTIONS = [ALL, ...Array.from(new Set(SYSTEM_USERS.map((u) => String(u.role))))];
+const AUDIT_ROLE_KEYS = Object.keys(PERMISSION_MATRIX);
+
+export const AUDIT_REPORTS: ReportDef[] = [
+  {
+    id: 'audit-access-change-log', module: 'generic', group: AUDIT_GROUP, title: 'Audit Trail — Access & Change Log',
+    description: 'Every create, read and change against an authorization, CM case, member, appeal, report or configuration, with actor, before/after, channel, source IP and correlation ID. HIPAA §164.312(b).',
+    dimension: { label: 'Category', options: AUDIT_CATEGORY_OPTIONS },
+    dimension2: { label: 'Channel', options: AUDIT_CHANNEL_OPTIONS },
+    tables: (ctx) => {
+      const rows = auditScope(ctx)
+        .filter((e) => (!ctx.dimension || ctx.dimension === ALL || e.category === ctx.dimension))
+        .filter((e) => (!ctx.dimension2 || ctx.dimension2 === ALL || e.channel === ctx.dimension2));
+      const chain = verifyChain();
+      return [
+        { title: 'Chain Integrity', columns: ['Check', 'Result'], rows: [
+          ['Events verified', chain.verified],
+          ['Hash chain', chain.brokenAt ? `BROKEN at ${chain.brokenAt}` : 'Intact — no gaps or alterations'],
+          ['Events in this extract', rows.length],
+        ] },
+        { title: 'Access & Change Log', columns: AUDIT_EVENT_COLUMNS, rows: [...rows].reverse().map(auditEventRow) },
+      ];
+    },
+  },
+  {
+    id: 'audit-user-activity-review', module: 'generic', group: AUDIT_GROUP, title: 'User Activity Review',
+    description: 'Per-account activity with off-hours, external-IP, failed sign-in, denied-access, break-the-glass and export signals — the information-system activity review evidence. HIPAA §164.308(a)(1)(ii)(D).',
+    dimension: { label: 'Access Role', options: AUDIT_ROLE_OPTIONS },
+    tables: (ctx) => {
+      const rows = userActivityRollup(auditScope(ctx)).filter((a) => !ctx.dimension || ctx.dimension === ALL || a.role === ctx.dimension);
+      return [
+        { title: 'Activity by Account', columns: ['Account', 'User ID', 'Access Role', 'Department', 'Events', 'Sessions', 'PHI Events', 'Off-Hours', 'Failed Sign-ins', 'Denied Access', 'Break-the-Glass', 'Exports', 'Rows Exported', 'External IP', 'Last Activity', 'Signals'],
+          rows: rows.map((a) => [a.name, a.userId, a.role, a.department, a.events, a.sessions, a.phi, a.offHours, a.failedLogins, a.deniedAccess, a.breakGlass, a.exports, a.exportedRows, a.externalIp, a.lastActivity || '—', a.signals.join('; ') || '—']) },
+        { title: 'Accounts Carrying a Signal', columns: ['Account', 'Access Role', 'Signals'],
+          rows: rows.filter((a) => a.signals.length).map((a) => [a.name, a.role, a.signals.join('; ')]) },
+      ];
+    },
+  },
+  {
+    id: 'audit-phi-disclosure', module: 'generic', group: AUDIT_GROUP, title: 'PHI Access & Disclosure Log',
+    description: 'Every event that exposed protected health information — record views, letters, exports and break-the-glass grants. Underpins accounting of disclosures, HIPAA §164.528.',
+    dimension: { label: 'Record Type', options: [ALL, 'Authorization', 'CM Case', 'Member', 'Appeal', 'Report'] },
+    memberSearchable: true,
+    tables: (ctx) => {
+      const q = (ctx.memberSearch ?? '').trim().toLowerCase();
+      const rows = auditScope(ctx)
+        .filter((e) => e.phi)
+        .filter((e) => !ctx.dimension || ctx.dimension === ALL || e.entityType === ctx.dimension)
+        .filter((e) => !q || (e.memberId ?? '').toLowerCase().includes(q) || e.entityId.toLowerCase().includes(q));
+      const byActor = new Map<string, number>();
+      rows.forEach((e) => byActor.set(e.actor, (byActor.get(e.actor) ?? 0) + 1));
+      return [
+        { title: 'PHI Access Summary', columns: ['Actor', 'PHI Events'],
+          rows: Array.from(byActor.entries()).sort((a, b) => b[1] - a[1]).map(([a, n]) => [a, n]) },
+        { title: 'PHI Access & Disclosure Log', columns: ['Event ID', 'Timestamp', 'Actor', 'Access Role', 'Action', 'Record Type', 'Record ID', 'Member ID', 'Channel', 'Reason Code', 'Outcome'],
+          rows: [...rows].reverse().map((e) => [e.eventId, e.timestamp.replace('T', ' '), e.actor, e.actorRole, e.action, e.entityType, e.entityId, e.memberId ?? '—', e.channel, e.reasonCode ?? '—', e.outcome]) },
+      ];
+    },
+  },
+  {
+    id: 'audit-config-changes', module: 'generic', group: AUDIT_GROUP, title: 'Configuration Change Log',
+    description: 'Rule thresholds, criteria-set versions, letter templates, TAT windows and role entitlements — what changed, from what to what, by whom, and whether an independent approval exists on the change ticket.',
+    tables: (ctx) => {
+      const evs = auditScope(ctx);
+      const published = evs.filter((e) => e.action === 'Configuration change published');
+      const approvals = new Map(evs.filter((e) => e.action === 'Configuration change approved').map((e) => [e.correlationId, e.actor]));
+      const byRule = new Map<string, number>();
+      evs.filter((e) => e.channel === 'System Rule' && e.reasonCode).forEach((e) => byRule.set(e.reasonCode as string, (byRule.get(e.reasonCode as string) ?? 0) + 1));
+      return [
+        { title: 'Configuration Changes', columns: ['Change Ticket', 'Date', 'Component', 'Field', 'Before', 'After', 'Published By', 'Approved By', 'Two-Person Control'],
+          rows: [...published].reverse().map((e) => [
+            e.correlationId, eventDate(e.timestamp), e.entityId, e.field ?? '—', e.before ?? '—', e.after ?? '—',
+            e.actor, approvals.get(e.correlationId) ?? '—', approvals.has(e.correlationId) ? 'Met' : 'NOT MET',
+          ]) },
+        { title: 'Automated Determination Rules in Force', columns: ['Rule / Version', 'Determinations Attributed'],
+          rows: Array.from(byRule.entries()).sort((a, b) => b[1] - a[1]).map(([r, n]) => [r, n]) },
+      ];
+    },
+  },
+  {
+    id: 'audit-sod-exceptions', module: 'generic', group: AUDIT_GROUP, title: 'Segregation-of-Duties Exceptions',
+    description: 'Each SOD rule evaluated against the audit trail rather than asserted. A clean rule states the event count it was tested over, so a passing control is itself evidence.',
+    tables: (ctx) => {
+      const evs = auditScope(ctx);
+      const results = evaluateSod(evs);
+      return [
+        { title: 'Rule Results', columns: ['Rule', 'Control', 'Citation', 'Conflicts', 'Result'],
+          rows: results.map((r) => [r.rule.id, r.rule.name, r.rule.citation, r.conflicts.length,
+            r.conflicts.length ? 'EXCEPTION' : `Passing across ${evs.length} events tested`]) },
+        { title: 'Exceptions', columns: ['Rule', 'Subject', 'Detail', 'Citation', 'Event ID'],
+          rows: results.flatMap((r) => r.conflicts.map((c) => [c.ruleId, c.subject, c.detail, c.citation, c.eventIds.join(', ')])) },
+      ];
+    },
+  },
+  {
+    id: 'audit-entitlements', module: 'generic', group: AUDIT_GROUP, title: 'User Entitlements & Attestation',
+    description: 'Account inventory with MFA status and entitlement attestation against the 90-day cycle, plus the role-to-permission grid those entitlements resolve to. SOC 2 CC6.2.',
+    noLobDays: true,
+    dimension: { label: 'Access Role', options: AUDIT_ROLE_OPTIONS },
+    tables: (ctx) => {
+      const users = SYSTEM_USERS.filter((u) => !ctx.dimension || ctx.dimension === ALL || u.role === ctx.dimension);
+      return [
+        { title: 'Account Inventory', columns: ['Account', 'User ID', 'Access Role', 'Department', 'Status', 'MFA', 'Last Entitlement Review', 'Days Since Review', 'Attestation', 'Last Sign-in'],
+          rows: users.map((u) => {
+            const age = attestationAgeDays(u);
+            return [u.name, u.userId, u.role, u.department, u.status, u.mfaEnrolled ? 'Enrolled' : 'Password only',
+              u.lastAccessReview, age, age > ATTESTATION_CYCLE_DAYS ? 'OVERDUE' : 'Current', u.lastLogin];
+          }) },
+        { title: 'Exceptions', columns: ['Account', 'Access Role', 'Exception'],
+          rows: [
+            ...users.filter((u) => !u.mfaEnrolled).map((u) => [u.name, String(u.role), 'No MFA — password-only sign-in']),
+            ...users.filter((u) => attestationAgeDays(u) > ATTESTATION_CYCLE_DAYS).map((u) => [u.name, String(u.role), `Entitlement review ${attestationAgeDays(u)} days old`]),
+          ] },
+        { title: 'Role → Permission Matrix', columns: ['Permission', ...AUDIT_ROLE_KEYS],
+          rows: PERMISSIONS.map((p) => [p, ...AUDIT_ROLE_KEYS.map((r) => (PERMISSION_MATRIX as any)[r][p] ?? '—')]) },
+      ];
+    },
+  },
+  {
+    id: 'audit-control-register', module: 'generic', group: AUDIT_GROUP, title: 'Compliance Control Register',
+    description: 'Requirement, the control satisfying it today, where the evidence lives, status, open gap, next step and owner — the working list for a plan audit or delegation review.',
+    noLobDays: true,
+    dimension: { label: 'Status', options: [ALL, 'Met', 'Partial', 'Gap'] },
+    tables: (ctx) => {
+      const rows = COMPLIANCE_REGISTER.filter((r) => !ctx.dimension || ctx.dimension === ALL || r.status === ctx.dimension);
+      return [
+        { title: 'Coverage', columns: ['Status', 'Requirements'], rows: [
+          ['Met', COMPLIANCE_REGISTER.filter((r) => r.status === 'Met').length],
+          ['Partial', COMPLIANCE_REGISTER.filter((r) => r.status === 'Partial').length],
+          ['Gap', COMPLIANCE_REGISTER.filter((r) => r.status === 'Gap').length],
+          ['P1 still open', COMPLIANCE_REGISTER.filter((r) => r.priority === 'P1' && r.status !== 'Met').length],
+        ] },
+        { title: 'Control Register', columns: ['ID', 'Domain', 'Requirement', 'Citation', 'Control Today', 'Evidence', 'Status', 'Priority', 'Gap', 'Next Step', 'Owner'],
+          rows: rows.map((r) => [r.id, r.domain, r.requirement, r.citation, r.control, r.evidence, r.status, r.priority, r.gap ?? '—', r.nextStep ?? '—', r.owner]) },
+      ];
+    },
+  },
+];
+
 // ---- Generic (cross-module) reports — not scoped to a single business module, so these are
 // always visible regardless of role. Starts with UM's activity log since UM is the only module
 // with reports built out so far; once CM/Appeals reports exist, this should merge all three
@@ -700,4 +880,5 @@ export const GENERIC_REPORTS: ReportDef[] = [
     tables: (ctx) => [{ title: 'User Activity', columns: ['Time', 'Action', 'Detail', 'By'],
       rows: ctx.data.history().map((h) => [h.time, h.action, h.detail, h.actor]) }],
   },
+  ...AUDIT_REPORTS,
 ];

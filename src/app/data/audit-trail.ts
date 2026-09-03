@@ -484,15 +484,15 @@ export interface ComplianceRequirement {
 export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
   { id: 'REQ-01', domain: 'Audit Trail', requirement: 'Record and examine activity in systems containing ePHI', citation: 'HIPAA §164.312(b)', control: 'Every create/read/update on an auth, CM case, member, or appeal writes an immutable event with actor, role, timestamp, channel, source IP and correlation ID.', evidence: 'Audit Trail tab — filter by entity or actor', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
   { id: 'REQ-02', domain: 'Retention & Integrity', requirement: 'Audit records are tamper-evident and retained for the required period', citation: 'HIPAA §164.316(b)(2) · CMS 10-year', control: 'Events are hash-chained in timestamp order; retention is configured at 10 years and the change itself is logged.', evidence: 'Audit Trail — Verify chain', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
-  { id: 'REQ-03', domain: 'User Activity', requirement: 'Regular review of information-system activity', citation: 'HIPAA §164.308(a)(1)(ii)(D)', control: 'Per-user activity rollups with off-hours, external-IP, failed sign-in, unassigned-record and bulk-export signals.', evidence: 'User Activity tab', status: 'Partial', priority: 'P1', gap: 'Review is available on demand but there is no scheduled attestation that a named reviewer looked at it, and no sign-off record.', nextStep: 'Add a monthly activity-review task with reviewer sign-off captured as its own audit event.', owner: 'Compliance' },
+  { id: 'REQ-03', domain: 'User Activity', requirement: 'Regular review of information-system activity', citation: 'HIPAA §164.308(a)(1)(ii)(D)', control: 'Per-user activity rollups with off-hours, external-IP, failed sign-in, unassigned-record and bulk-export signals.', evidence: 'User Activity tab · Reports → User Activity Review', status: 'Partial', priority: 'P1', gap: 'Review is available on demand but there is no scheduled attestation that a named reviewer looked at it, and no sign-off record.', nextStep: 'Add a monthly activity-review task with reviewer sign-off captured as its own audit event.', owner: 'Compliance' },
   { id: 'REQ-04', domain: 'User Activity', requirement: 'Break-the-glass access is justified and reviewed', citation: 'HIPAA §164.308(a)(4) — minimum necessary', control: 'Out-of-scope record access is denied by default; emergent access requires a reason code and is logged as PHI disclosure.', evidence: 'User Activity — Break-the-glass', status: 'Partial', priority: 'P1', gap: 'Reason codes are captured but free-text justification is not required, and nothing forces a follow-up review within a set window.', nextStep: 'Require narrative justification at the point of access and auto-route each event to Compliance for 5-day review.', owner: 'Compliance' },
   { id: 'REQ-05', domain: 'Access Governance', requirement: 'Role-based access enforces minimum necessary', citation: 'HIPAA §164.308(a)(3)-(4) · NCQA UM 2', control: 'Nine access roles with per-permission constraints; PHI is scoped to assigned caseload for reviewer roles and masked for administrators.', evidence: 'Governance & Access — permission matrix', status: 'Met', priority: 'P2', gap: null, nextStep: null, owner: 'IT Operations' },
   { id: 'REQ-06', domain: 'Access Governance', requirement: 'Periodic entitlement review and attestation', citation: 'SOC 2 CC6.2 · HIPAA §164.308(a)(3)(ii)(B)', control: 'Each account carries a last-attested date surfaced against a 90-day cycle.', evidence: 'Governance & Access — attestation status', status: 'Partial', priority: 'P1', gap: 'Attestation is tracked but not enforced — an account past its cycle keeps full access.', nextStep: 'Escalate at 90 days and auto-suspend entitlements at 120 unless re-attested.', owner: 'IT Operations' },
   { id: 'REQ-07', domain: 'Access Governance', requirement: 'Segregation of duties between decision and appeal', citation: '42 CFR §438.406(b)(2) · §422.590', control: 'The appeal assignment check compares the appeal reviewer against the original determination actor recorded in the audit trail.', evidence: 'Governance & Access — SOD conflicts', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'UM Operations' },
   { id: 'REQ-08', domain: 'Access Governance', requirement: 'Multi-factor authentication on all accounts with PHI access', citation: 'HIPAA Security Rule (proposed) · SOC 2 CC6.1', control: 'MFA enrollment is tracked per account and recorded on each sign-in event.', evidence: 'Governance & Access — MFA coverage', status: 'Gap', priority: 'P1', gap: 'A minority of accounts still authenticate with password only, including at least one with standing PHI access.', nextStep: 'Enforce MFA at the identity provider and disable password-only sign-in for every clinical role.', owner: 'IT Operations' },
   { id: 'REQ-09', domain: 'Audit Trail', requirement: 'Automated determinations are traceable to the rule version that produced them', citation: 'NCQA UM 2 · CMS delegation oversight', control: 'Auto-approval events carry the firing rule and version as the reason code, and rule changes are themselves logged with before/after.', evidence: 'Audit Trail — filter Configuration', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Clinical Content' },
-  { id: 'REQ-10', domain: 'Reporting & Extracts', requirement: 'Produce program-audit universes on request within the required window', citation: 'CMS Program Audit — ODAG / CDAG', control: 'Reports module generates filtered, dated extracts with provenance; audit-trail extracts are exportable per entity or actor.', evidence: 'Reports module · Audit Trail export', status: 'Partial', priority: 'P2', gap: 'Extracts are not yet shaped to the CMS ODAG/CDAG record layouts, so a universe request still needs manual reformatting.', nextStep: 'Add ODAG/CDAG universe templates with field-level mapping and a record-count reconciliation page.', owner: 'Reporting' },
-  { id: 'REQ-11', domain: 'Reporting & Extracts', requirement: 'Delegated-entity oversight reporting to the plan', citation: 'CMS 42 CFR §422.504(i) · NCQA DEL', control: 'Module-level compliance tabs (UM/CM IRR, regulatory TAT, file audit) export as evidence packets.', evidence: 'UM & CM Audit & Compliance tabs', status: 'Partial', priority: 'P2', gap: 'Evidence is exportable per widget; there is no single dated oversight packet assembling every required artifact.', nextStep: 'Add a one-click "Delegation Oversight Packet" that bundles the standard artifact set with a cover page and generation hash.', owner: 'Compliance' },
+  { id: 'REQ-10', domain: 'Reporting & Extracts', requirement: 'Produce program-audit universes on request within the required window', citation: 'CMS Program Audit — ODAG / CDAG', control: 'Reports module generates filtered, dated extracts with provenance; audit-trail extracts are exportable per entity or actor.', evidence: 'Reports → Audit & Traceability (7 extracts) · Audit Trail export', status: 'Partial', priority: 'P2', gap: 'Extracts are not yet shaped to the CMS ODAG/CDAG record layouts, so a universe request still needs manual reformatting.', nextStep: 'Add ODAG/CDAG universe templates with field-level mapping and a record-count reconciliation page.', owner: 'Reporting' },
+  { id: 'REQ-11', domain: 'Reporting & Extracts', requirement: 'Delegated-entity oversight reporting to the plan', citation: 'CMS 42 CFR §422.504(i) · NCQA DEL', control: 'Module-level compliance tabs (UM/CM IRR, regulatory TAT, file audit) export as evidence packets.', evidence: 'UM & CM Audit & Compliance tabs · Reports → Audit & Traceability', status: 'Partial', priority: 'P2', gap: 'Evidence is exportable per widget; there is no single dated oversight packet assembling every required artifact.', nextStep: 'Add a one-click "Delegation Oversight Packet" that bundles the standard artifact set with a cover page and generation hash.', owner: 'Compliance' },
   { id: 'REQ-12', domain: 'Retention & Integrity', requirement: 'Audit data is exportable to the plan\'s own SIEM / long-term store', citation: 'SOC 2 CC7.2 · plan security requirements', control: 'Audit events export as CSV on demand.', evidence: 'Audit Trail — Export', status: 'Gap', priority: 'P2', gap: 'No streaming or scheduled feed — a plan wanting continuous ingestion into its own SIEM has to pull manually.', nextStep: 'Expose an append-only audit event API and a nightly signed batch feed.', owner: 'Platform Engineering' },
   { id: 'REQ-13', domain: 'User Activity', requirement: 'Alerting on anomalous access patterns', citation: 'SOC 2 CC7.2 · HIPAA §164.308(a)(6)', control: 'Anomaly signals are computed and displayed.', evidence: 'User Activity — flagged users', status: 'Gap', priority: 'P2', gap: 'Signals are visible in the dashboard only — nothing notifies anyone when a threshold is crossed.', nextStep: 'Define thresholds per signal and route breaches to Compliance as a work item, not just a tile.', owner: 'Compliance' },
   { id: 'REQ-14', domain: 'Audit Trail', requirement: 'Member-facing disclosure accounting', citation: 'HIPAA §164.528', control: 'PHI disclosure events (letters, exports, break-the-glass) are individually flagged in the trail.', evidence: 'Audit Trail — PHI filter', status: 'Partial', priority: 'P3', gap: 'The underlying events exist, but there is no per-member accounting-of-disclosures report a member request could be answered with.', nextStep: 'Add a member-scoped disclosure report covering the trailing 6 years.', owner: 'Compliance' },
@@ -503,4 +503,125 @@ export function registerCounts(rows: ComplianceRequirement[] = COMPLIANCE_REGIST
   const partial = rows.filter((r) => r.status === 'Partial').length;
   const gap = rows.filter((r) => r.status === 'Gap').length;
   return { met, partial, gap, total: rows.length, coverage: pctOf(met, rows.length) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rollups — extracted so the Audit & Traceability tabs and the Reports module compute these the
+// SAME way. The report registry's own design rule is that a report calls straight into the
+// function backing the dashboard rather than recomputing independently; an audit report that
+// disagreed with the audit screen would be worse than no report at all.
+// ---------------------------------------------------------------------------------------------
+
+/** Time ranges the Audit Trail offers. Deliberately NOT the shared Lookback service: on a
+ *  caseload dashboard '30 days' is the unfiltered baseline because every pending case falls inside
+ *  it, but the audit log spans the whole retained history, so that convention made the event count
+ *  DROP when you widened from '30 days' to 'QTD'. Here every option means exactly what it says and
+ *  'All' is the default. */
+export type AuditRange = 'today' | '7d' | '30d' | '90d' | '12m' | 'all';
+export const AUDIT_RANGES: { id: AuditRange; label: string; days: number | null }[] = [
+  { id: 'today', label: 'Today', days: 0 },
+  { id: '7d', label: '7 days', days: 6 },
+  { id: '30d', label: '30 days', days: 29 },
+  { id: '90d', label: '90 days', days: 89 },
+  { id: '12m', label: '12 months', days: 364 },
+  { id: 'all', label: 'All history', days: null },
+];
+
+/** Earliest and latest event actually retained, plus the count — so the screen can state the real
+ *  span instead of implying the log starts wherever the current filter starts. */
+export function auditSpan(events: AuditEvent[] = AUDIT_EVENTS): { from: string; to: string; count: number } {
+  if (!events.length) return { from: '—', to: '—', count: 0 };
+  return { from: eventDate(events[0].timestamp), to: eventDate(events[events.length - 1].timestamp), count: events.length };
+}
+
+export interface UserActivityRow {
+  userId: string; name: string; role: AccessRole; department: string;
+  mfaEnrolled: boolean; lastAccessReview: string;
+  events: number; sessions: number; phi: number; exports: number; exportedRows: number;
+  offHours: number; failedLogins: number; deniedAccess: number; breakGlass: number; externalIp: number;
+  lastActivity: string;
+  signals: string[];
+}
+/** Per-account activity review — the HIPAA §164.308(a)(1)(ii)(D) evidence, in one place. */
+export function userActivityRollup(events: AuditEvent[], users: SystemUser[] = SYSTEM_USERS): UserActivityRow[] {
+  return users.map((u) => {
+    const mine = events.filter((e) => e.actorId === u.userId);
+    const row: UserActivityRow = {
+      userId: u.userId, name: u.name, role: u.role, department: u.department,
+      mfaEnrolled: u.mfaEnrolled, lastAccessReview: u.lastAccessReview,
+      events: mine.length,
+      sessions: new Set(mine.map((e) => e.sessionId)).size,
+      phi: mine.filter((e) => e.phi).length,
+      exports: mine.filter((e) => e.category === 'Data Export').length,
+      exportedRows: mine.filter((e) => e.category === 'Data Export').reduce((s, e) => s + Number(e.after ?? 0), 0),
+      offHours: mine.filter((e) => isOffHours(e.timestamp)).length,
+      failedLogins: mine.filter((e) => e.action === 'Failed sign-in attempt').length,
+      deniedAccess: mine.filter((e) => e.outcome === 'Denied').length,
+      breakGlass: mine.filter((e) => e.action.startsWith('Break-the-glass')).length,
+      externalIp: mine.filter((e) => isExternalIp(e.sourceIp)).length,
+      lastActivity: mine.length ? mine[mine.length - 1].timestamp.replace('T', ' ') : '',
+      signals: [],
+    };
+    if (row.breakGlass > 0) row.signals.push('break-the-glass');
+    if (row.externalIp > 0) row.signals.push('external IP');
+    if (!u.mfaEnrolled) row.signals.push('no MFA');
+    if (row.failedLogins >= 2) row.signals.push('repeated failed sign-ins');
+    if (row.offHours > 0 && row.events > 0 && row.offHours / row.events > 0.15) row.signals.push('off-hours pattern');
+    if (row.exports >= 8) row.signals.push('high export volume');
+    return row;
+  }).sort((a, b) => b.signals.length - a.signals.length || b.events - a.events);
+}
+
+export interface SodConflictRow { ruleId: string; rule: string; citation: string; subject: string; detail: string; eventIds: string[]; }
+export interface SodResult { rule: SodRule; conflicts: SodConflictRow[]; }
+/** Every SOD rule evaluated against the supplied event window. A clean rule returns an empty
+ *  conflict list — which is an auditable statement about the events examined, not a green tick. */
+export function evaluateSod(events: AuditEvent[], users: SystemUser[] = SYSTEM_USERS): SodResult[] {
+  return SOD_RULES.map((rule) => {
+    const conflicts: SodConflictRow[] = [];
+    const add = (subject: string, detail: string, eventIds: string[]) =>
+      conflicts.push({ ruleId: rule.id, rule: rule.name, citation: rule.citation, subject, detail, eventIds });
+
+    if (rule.id === 'SOD-1') {
+      const determinationBy = new Map<string, string>();
+      events.filter((e) => e.action === 'Determination recorded').forEach((e) => determinationBy.set(e.entityId, e.actorId));
+      events.filter((e) => e.entityType === 'Appeal').forEach((e) => {
+        if (determinationBy.get(e.entityId) === e.actorId) {
+          add(e.actor, `${e.actor} reviewed the appeal on ${e.entityId} after recording its original determination`, [e.eventId]);
+        }
+      });
+    }
+    if (rule.id === 'SOD-2') {
+      const approvals = new Set(events.filter((e) => e.action === 'Configuration change approved').map((e) => e.correlationId));
+      events.filter((e) => e.action === 'Configuration change published').forEach((e) => {
+        if (!approvals.has(e.correlationId)) {
+          add(e.actor, `${e.entityId} — "${e.field}" changed to "${e.after}" by ${e.actor} with no independent approval on ${e.correlationId}`, [e.eventId]);
+        }
+      });
+    }
+    if (rule.id === 'SOD-3') {
+      const clinical: AccessRole[] = ['Medical Director', 'Appeals Reviewer'];
+      events.filter((e) => e.action === 'Determination recorded' && e.after === 'Denied').forEach((e) => {
+        if (!clinical.includes(e.actorRole)) {
+          add(e.actor, `${e.entityId} denied by ${e.actor} (${e.actorRole}) — medical-necessity denials require a qualified clinician`, [e.eventId]);
+        }
+      });
+    }
+    if (rule.id === 'SOD-4') {
+      const admins = new Set(users.filter((u) => u.role === 'System Administrator').map((u) => u.userId));
+      const seen = new Set<string>();
+      events.filter((e) => admins.has(e.actorId) && e.phi).forEach((e) => {
+        if (seen.has(e.actorId)) return;
+        seen.add(e.actorId);
+        add(e.actor, `${e.actor} holds administrator rights and accessed PHI (${e.entityId})`, [e.eventId]);
+      });
+    }
+    return { rule, conflicts };
+  });
+}
+
+/** Days since an account's entitlements were last attested, against the 90-day policy cycle. */
+export const ATTESTATION_CYCLE_DAYS = 90;
+export function attestationAgeDays(u: SystemUser): number {
+  return Math.round((TODAY.getTime() - new Date(`${u.lastAccessReview}T00:00:00`).getTime()) / 86400000);
 }

@@ -2,15 +2,17 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
 import {
-  AUDIT_EVENTS, AuditEvent, AuditCategory, AuditChannel, SYSTEM_USERS, SystemUser, AccessRole,
-  PERMISSIONS, Permission, PERMISSION_MATRIX, SOD_RULES, COMPLIANCE_REGISTER, ComplianceRequirement, registerCounts,
+  AUDIT_EVENTS, AuditEvent, AuditCategory, AuditChannel, AuditEntityType, AuditOutcome,
+  SYSTEM_USERS, SystemUser, AccessRole,
+  PERMISSIONS, Permission, PERMISSION_MATRIX, COMPLIANCE_REGISTER, ComplianceRequirement, registerCounts,
   verifyChain, isOffHours, isExternalIp, eventDate,
+  AUDIT_RANGES, AuditRange, auditSpan, userActivityRollup, UserActivityRow,
+  evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
 } from '../data/audit-trail';
 import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
-import { Lookback } from '../shared/lookback';
-import { LobFilter } from '../shared/lob-filter';
-import { daysAgo } from '../data/case-fields';
+import { LOBS, daysAgo } from '../data/case-fields';
+import { compareRows, caretFor, SortDir } from '../shared/sort';
 
 interface TabDef { key: string; label: string; }
 const TAB_DEFS: TabDef[] = [
@@ -22,6 +24,9 @@ const TAB_DEFS: TabDef[] = [
 
 const CATEGORIES: AuditCategory[] = ['Access', 'Clinical Decision', 'Case Management', 'Correspondence', 'Administrative', 'Configuration', 'Security', 'Data Export'];
 const CHANNELS: AuditChannel[] = ['Web UI', 'API', 'Batch Interface', 'Fax / OCR Intake', 'System Rule'];
+const ENTITY_TYPES: AuditEntityType[] = ['Authorization', 'CM Case', 'Member', 'Appeal', 'Report', 'User Account', 'Configuration'];
+const OUTCOMES: AuditOutcome[] = ['Success', 'Denied', 'Failed'];
+const PAGE_SIZE = 50;
 
 const EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Role', 'Category', 'Action', 'Entity Type', 'Entity ID', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
 function eventRow(e: AuditEvent): (string | number)[] {
@@ -30,14 +35,18 @@ function eventRow(e: AuditEvent): (string | number)[] {
     e.phi ? 'Yes' : 'No', e.outcome, e.recordHash];
 }
 
-interface UserActivity {
-  user: SystemUser;
-  events: number; sessions: number; phi: number; exports: number;
-  offHours: number; failedLogins: number; deniedAccess: number; breakGlass: number; externalIp: number;
-  lastActivity: string;
-  flags: string[];
+/** Sort keys for the inline trail table — a flattened view of AuditEvent so compareRows() has
+ *  plain scalars to work with (and so "Record" sorts by entity type then id, which is what a
+ *  reader scanning that column actually wants). */
+interface TrailRow {
+  timestamp: string; actor: string; action: string; record: string; channel: string; outcome: string; ev: AuditEvent;
 }
-interface SodConflict { ruleId: string; rule: string; citation: string; subject: string; detail: string; eventIds: string[]; }
+function trailRow(e: AuditEvent): TrailRow {
+  return { timestamp: e.timestamp, actor: e.actor, action: e.action, record: `${e.entityType} ${e.entityId}`, channel: e.channel, outcome: e.outcome, ev: e };
+}
+
+interface InventoryRow extends SystemUser { mfa: string; reviewAge: number; }
+type InvKey = 'name' | 'role' | 'department' | 'mfa' | 'reviewAge' | 'lastLogin';
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
@@ -46,6 +55,29 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   standalone: true,
   imports: [FormsModule, DecimalPipe],
   template: `
+    <!-- This module carries its own Range/LOB control rather than the shared dashboard period bar:
+         on a caseload tab '30 days' is the unfiltered baseline, but the audit log spans the whole
+         retained history, so that convention made the count FALL when you widened to QTD. -->
+    <div class="scopebar">
+      <span class="sc-lab">Range</span>
+      <div class="seg">
+        @for (r of ranges; track r.id) {
+          <button [class.on]="range() === r.id" (click)="setRange(r.id)">{{ r.label }}</button>
+        }
+      </div>
+      <span class="sc-lab">LOB</span>
+      <div class="seg">
+        <button [class.on]="lob() === 'all'" (click)="setLob('all')">All LOBs</button>
+        @for (l of lobs; track l) {
+          <button [class.on]="lob() === l" (click)="setLob(l)">{{ l }}</button>
+        }
+      </div>
+      <span class="span-note">
+        Retained log: <b>{{ span.count | number }}</b> events, {{ span.from }} → {{ span.to }}.
+        @if (range() !== 'all') { <a class="lnk" (click)="setRange('all')">Show entire history</a> }
+      </span>
+    </div>
+
     <nav class="subtabs">
       @for (t of tabs; track t.key) {
         <button class="subtab" [class.active]="sel() === t.key" (click)="sel.set(t.key)">{{ t.label }}</button>
@@ -67,8 +99,8 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
         <div class="tile-row">
           <div class="tile" (click)="drillEvents('All Events', scopedEvents(), 'all')">
-            <div class="tile-val">{{ scopedEvents().length | number }}</div><div class="tile-lab">Events in Window</div>
-            <div class="tile-sub">{{ windowLabel() }}</div>
+            <div class="tile-val">{{ scopedEvents().length | number }}</div><div class="tile-lab">Events in Range</div>
+            <div class="tile-sub">{{ rangeLabel() }}</div>
           </div>
           <div class="tile" (click)="drillEvents('PHI Access & Disclosure', phiEvents(), 'phi')">
             <div class="tile-val">{{ phiEvents().length | number }}</div><div class="tile-lab">PHI Access Events</div>
@@ -92,37 +124,68 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
         <div class="panel mt-6">
           <div class="panel-pad filters">
-            <input class="search" type="text" placeholder="Search actor, action, entity, correlation ID…" [ngModel]="q()" (ngModelChange)="q.set($event)" />
-            <select [value]="cat()" (change)="cat.set($any($event.target).value)">
+            <input class="search" type="text" placeholder="Search actor, action, entity, correlation ID, IP…" [ngModel]="q()" (ngModelChange)="setQ($event)" />
+            <select [value]="cat()" (change)="setCat($any($event.target).value)">
               <option value="all">All categories</option>
               @for (c of categories; track c) { <option [value]="c">{{ c }}</option> }
             </select>
-            <select [value]="chan()" (change)="chan.set($any($event.target).value)">
+            <select [value]="chan()" (change)="setChan($any($event.target).value)">
               <option value="all">All channels</option>
               @for (c of channels; track c) { <option [value]="c">{{ c }}</option> }
             </select>
-            <label class="chk"><input type="checkbox" [checked]="phiOnly()" (change)="phiOnly.set($any($event.target).checked)" /> PHI only</label>
-            <span class="count">{{ filteredEvents().length | number }} event(s)</span>
+            <select [value]="entity()" (change)="setEntity($any($event.target).value)">
+              <option value="all">All record types</option>
+              @for (t of entityTypes; track t) { <option [value]="t">{{ t }}</option> }
+            </select>
+            <select [value]="actor()" (change)="setActor($any($event.target).value)">
+              <option value="all">All actors</option>
+              @for (u of actorOptions; track u.userId) { <option [value]="u.userId">{{ u.name }}</option> }
+            </select>
+            <select [value]="outcome()" (change)="setOutcome($any($event.target).value)">
+              <option value="all">Any outcome</option>
+              @for (o of outcomes; track o) { <option [value]="o">{{ o }}</option> }
+            </select>
+            <label class="chk"><input type="checkbox" [checked]="phiOnly()" (change)="setPhiOnly($any($event.target).checked)" /> PHI only</label>
+            <label class="chk"><input type="checkbox" [checked]="offHoursOnly()" (change)="setOffHoursOnly($any($event.target).checked)" /> Off-hours only</label>
+            @if (filtersActive()) { <button class="btn outline sm" (click)="clearFilters()">Clear</button> }
+            <span class="count">{{ filteredEvents().length | number }} of {{ scopedEvents().length | number }}</span>
           </div>
           <table class="z-table">
-            <thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Record</th><th>Change</th><th>Channel</th><th>Outcome</th></tr></thead>
+            <thead><tr>
+              <th class="srt" (click)="sortBy('timestamp')">Timestamp{{ caret('timestamp') }}</th>
+              <th class="srt" (click)="sortBy('actor')">Actor{{ caret('actor') }}</th>
+              <th class="srt" (click)="sortBy('action')">Action{{ caret('action') }}</th>
+              <th class="srt" (click)="sortBy('record')">Record{{ caret('record') }}</th>
+              <th>Change</th>
+              <th class="srt" (click)="sortBy('channel')">Channel{{ caret('channel') }}</th>
+              <th class="srt" (click)="sortBy('outcome')">Outcome{{ caret('outcome') }}</th>
+            </tr></thead>
             <tbody>
-              @for (e of pagedEvents(); track e.eventId) {
-                <tr class="clk" (click)="openEvent(e)">
-                  <td class="mono">{{ e.timestamp.replace('T', ' ') }}@if (isOff(e.timestamp)) { <span class="chip amber">off-hours</span> }</td>
-                  <td class="strong">{{ e.actor }}<div class="sub">{{ e.actorRole }}</div></td>
-                  <td>{{ e.action }}<div class="sub">{{ e.category }}</div></td>
-                  <td class="mono">{{ e.entityId }}<div class="sub">{{ e.entityType }}@if (e.phi) { · <span class="phi">PHI</span> }</div></td>
-                  <td>@if (e.field) { <span class="sub">{{ e.field }}:</span> <span class="was">{{ e.before ?? '—' }}</span> → <b>{{ e.after }}</b> } @else { <span class="sub">—</span> }</td>
-                  <td>{{ e.channel }}</td>
-                  <td><span class="badge" [class.green]="e.outcome==='Success'" [class.red]="e.outcome==='Failed'" [class.amber]="e.outcome==='Denied'">{{ e.outcome }}</span></td>
+              @for (r of pagedRows(); track r.ev.eventId) {
+                <tr class="clk" (click)="openEvent(r.ev)">
+                  <td class="mono">{{ r.ev.timestamp.replace('T', ' ') }}@if (isOff(r.ev.timestamp)) { <span class="chip amber">off-hours</span> }</td>
+                  <td class="strong">{{ r.ev.actor }}<div class="sub">{{ r.ev.actorRole }}</div></td>
+                  <td>{{ r.ev.action }}<div class="sub">{{ r.ev.category }}</div></td>
+                  <td class="mono">{{ r.ev.entityId }}<div class="sub">{{ r.ev.entityType }}@if (r.ev.phi) { · <span class="phi">PHI</span> }</div></td>
+                  <td>@if (r.ev.field) { <span class="sub">{{ r.ev.field }}:</span> <span class="was">{{ r.ev.before ?? '—' }}</span> → <b>{{ r.ev.after }}</b> } @else { <span class="sub">—</span> }</td>
+                  <td>{{ r.ev.channel }}</td>
+                  <td><span class="badge" [class.green]="r.ev.outcome==='Success'" [class.red]="r.ev.outcome==='Failed'" [class.amber]="r.ev.outcome==='Denied'">{{ r.ev.outcome }}</span></td>
                 </tr>
               } @empty { <tr><td colspan="7" class="empty">No events match these filters.</td></tr> }
             </tbody>
           </table>
-          @if (filteredEvents().length > pagedEvents().length) {
-            <div class="foot-note panel-pad">Showing the {{ pagedEvents().length }} most recent of {{ filteredEvents().length | number }} —
-              <a class="lnk" (click)="drillEvents('Filtered Audit Trail', filteredEvents(), 'filtered')">open the full set</a>.</div>
+          @if (filteredEvents().length) {
+            <div class="pager panel-pad">
+              <span class="pg-note">Showing {{ pageStart() | number }}–{{ pageEnd() | number }} of {{ filteredEvents().length | number }}</span>
+              <div class="pg-actions">
+                <button class="btn outline sm" [disabled]="page() === 0" (click)="page.set(0)">« First</button>
+                <button class="btn outline sm" [disabled]="page() === 0" (click)="page.set(page() - 1)">‹ Prev</button>
+                <span class="pg-of">Page {{ page() + 1 | number }} of {{ pageCount() | number }}</span>
+                <button class="btn outline sm" [disabled]="page() >= pageCount() - 1" (click)="page.set(page() + 1)">Next ›</button>
+                <button class="btn outline sm" [disabled]="page() >= pageCount() - 1" (click)="page.set(pageCount() - 1)">Last »</button>
+                <button class="btn outline sm" (click)="drillEvents('Filtered Audit Trail', filteredEvents(), 'filtered')">Open all in explorer</button>
+              </div>
+            </div>
           }
         </div>
       }
@@ -131,7 +194,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       @case ('activity') {
         <div class="tab-head">
           <div><h2>User Activity Monitoring</h2>
-            <span class="section-note">Per-account activity review — the evidence behind HIPAA §164.308(a)(1)(ii)(D). Signals are relative to the selected lookback window.</span></div>
+            <span class="section-note">Per-account activity review — the evidence behind HIPAA §164.308(a)(1)(ii)(D). Signals are relative to the selected range.</span></div>
           <button class="btn outline sm" (click)="exportActivity()">Export</button>
         </div>
 
@@ -165,16 +228,31 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         </div>
 
         <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Activity by Account</h3>
-            <span class="section-note sm">Click an account to open its own trail</span></div>
+          <div class="panel-pad filters">
+            <h3 class="pt">Activity by Account</h3>
+            <input class="search sm" type="text" placeholder="Search account or role…" [ngModel]="aq()" (ngModelChange)="aq.set($event)" />
+            <label class="chk"><input type="checkbox" [checked]="flaggedOnly()" (change)="flaggedOnly.set($any($event.target).checked)" /> Flagged only</label>
+            <span class="count">{{ activity().length }} account(s)</span>
+          </div>
           <table class="z-table">
-            <thead><tr><th>Account</th><th>Role</th><th class="num">Events</th><th class="num">PHI</th><th class="num">Off-Hours</th>
-              <th class="num">Failed</th><th class="num">Denied</th><th class="num">BTG</th><th class="num">Exports</th><th>Last Activity</th><th>Signals</th></tr></thead>
+            <thead><tr>
+              <th class="srt" (click)="sortAct('name')">Account{{ caretAct('name') }}</th>
+              <th class="srt" (click)="sortAct('role')">Role{{ caretAct('role') }}</th>
+              <th class="srt num" (click)="sortAct('events')">Events{{ caretAct('events') }}</th>
+              <th class="srt num" (click)="sortAct('phi')">PHI{{ caretAct('phi') }}</th>
+              <th class="srt num" (click)="sortAct('offHours')">Off-Hours{{ caretAct('offHours') }}</th>
+              <th class="srt num" (click)="sortAct('failedLogins')">Failed{{ caretAct('failedLogins') }}</th>
+              <th class="srt num" (click)="sortAct('deniedAccess')">Denied{{ caretAct('deniedAccess') }}</th>
+              <th class="srt num" (click)="sortAct('breakGlass')">BTG{{ caretAct('breakGlass') }}</th>
+              <th class="srt num" (click)="sortAct('exports')">Exports{{ caretAct('exports') }}</th>
+              <th class="srt" (click)="sortAct('lastActivity')">Last Activity{{ caretAct('lastActivity') }}</th>
+              <th>Signals</th>
+            </tr></thead>
             <tbody>
-              @for (a of activity(); track a.user.userId) {
+              @for (a of activity(); track a.userId) {
                 <tr class="clk" (click)="drillUser(a)">
-                  <td class="strong">{{ a.user.name }}<div class="sub mono">{{ a.user.userId }}</div></td>
-                  <td>{{ a.user.role }}</td>
+                  <td class="strong">{{ a.name }}<div class="sub mono">{{ a.userId }}</div></td>
+                  <td>{{ a.role }}</td>
                   <td class="num">{{ a.events | number }}</td>
                   <td class="num">{{ a.phi | number }}</td>
                   <td class="num"><b [class.warn]="a.offHours > 0">{{ a.offHours }}</b></td>
@@ -183,9 +261,9 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                   <td class="num"><b [class.hot]="a.breakGlass > 0">{{ a.breakGlass }}</b></td>
                   <td class="num">{{ a.exports }}</td>
                   <td class="mono">{{ a.lastActivity || '—' }}</td>
-                  <td>@for (f of a.flags; track f) { <span class="chip amber">{{ f }}</span> } @if (!a.flags.length) { <span class="sub">—</span> }</td>
+                  <td>@for (f of a.signals; track f) { <span class="chip amber">{{ f }}</span> } @if (!a.signals.length) { <span class="sub">—</span> }</td>
                 </tr>
-              }
+              } @empty { <tr><td colspan="11" class="empty">No accounts match this filter.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -212,7 +290,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           <div class="tile" (click)="drillAccounts('Attestation Overdue', attestationOverdue(), 'attestation')">
             <div class="tile-ic" [class.hot]="attestationOverdue().length > 0"></div>
             <div class="tile-val">{{ attestationOverdue().length }}</div><div class="tile-lab">Entitlement Reviews Overdue</div>
-            <div class="tile-sub">90-day cycle</div>
+            <div class="tile-sub">{{ cycleDays }}-day cycle</div>
           </div>
           <div class="tile" (click)="sel.set('compliance')">
             <div class="tile-ic" [class.hot]="sodConflicts().length > 0"></div>
@@ -231,7 +309,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                   <td class="strong">{{ r.rule.name }}<div class="sub">{{ r.rule.detail }}</div></td>
                   <td class="sub">{{ r.rule.citation }}</td>
                   <td><span class="badge" [class.green]="!r.conflicts.length" [class.red]="r.conflicts.length > 0">{{ r.conflicts.length ? r.conflicts.length + ' conflict(s)' : 'No conflicts' }}</span></td>
-                  <td>@if (r.conflicts.length) { {{ r.conflicts[0].detail }}@if (r.conflicts.length > 1) { <span class="sub"> +{{ r.conflicts.length - 1 }} more</span> } } @else { <span class="sub">Control passing across {{ scopedEvents().length | number }} events in window</span> }</td>
+                  <td>@if (r.conflicts.length) { {{ r.conflicts[0].detail }}@if (r.conflicts.length > 1) { <span class="sub"> +{{ r.conflicts.length - 1 }} more</span> } } @else { <span class="sub">Control passing across {{ scopedEvents().length | number }} events in range</span> }</td>
                 </tr>
               }
             </tbody>
@@ -258,20 +336,31 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         </div>
 
         <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Account Inventory</h3></div>
+          <div class="panel-pad filters"><h3 class="pt">Account Inventory</h3>
+            <input class="search sm" type="text" placeholder="Search account, role, department…" [ngModel]="gq()" (ngModelChange)="gq.set($event)" />
+            <span class="count">{{ inventory().length }} account(s)</span>
+          </div>
           <table class="z-table">
-            <thead><tr><th>Account</th><th>Role</th><th>Department</th><th>MFA</th><th>Last Entitlement Review</th><th>Last Sign-in</th><th>Status</th></tr></thead>
+            <thead><tr>
+              <th class="srt" (click)="sortInv('name')">Account{{ caretInv('name') }}</th>
+              <th class="srt" (click)="sortInv('role')">Role{{ caretInv('role') }}</th>
+              <th class="srt" (click)="sortInv('department')">Department{{ caretInv('department') }}</th>
+              <th class="srt" (click)="sortInv('mfa')">MFA{{ caretInv('mfa') }}</th>
+              <th class="srt" (click)="sortInv('reviewAge')">Last Entitlement Review{{ caretInv('reviewAge') }}</th>
+              <th class="srt" (click)="sortInv('lastLogin')">Last Sign-in{{ caretInv('lastLogin') }}</th>
+              <th>Status</th>
+            </tr></thead>
             <tbody>
-              @for (u of accounts; track u.userId) {
+              @for (u of inventory(); track u.userId) {
                 <tr class="clk" (click)="drillAccountTrail(u)">
                   <td class="strong">{{ u.name }}<div class="sub mono">{{ u.userId }}</div></td>
                   <td>{{ u.role }}</td><td class="sub">{{ u.department }}</td>
-                  <td><span class="badge" [class.green]="u.mfaEnrolled" [class.red]="!u.mfaEnrolled">{{ u.mfaEnrolled ? 'Enrolled' : 'Password only' }}</span></td>
-                  <td class="mono">{{ u.lastAccessReview }}@if (overdue(u)) { <span class="chip amber">{{ ageDays(u.lastAccessReview) }}d</span> }</td>
+                  <td><span class="badge" [class.green]="u.mfaEnrolled" [class.red]="!u.mfaEnrolled">{{ u.mfa }}</span></td>
+                  <td class="mono">{{ u.lastAccessReview }}@if (u.reviewAge > cycleDays) { <span class="chip amber">{{ u.reviewAge }}d</span> }</td>
                   <td class="mono">{{ u.lastLogin }}</td>
                   <td><span class="badge green">{{ u.status }}</span></td>
                 </tr>
-              }
+              } @empty { <tr><td colspan="7" class="empty">No accounts match this search.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -333,6 +422,22 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   `,
   styles: [`
     :host { display: block; }
+
+    .scopebar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 14px; margin-bottom: 12px;
+      background: var(--gray-50, #f9fafb); border: 1px solid var(--border); border-radius: var(--radius);
+    }
+    .sc-lab { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--gray-500); }
+    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #fff; }
+    .seg button {
+      border: 0; background: transparent; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+      color: var(--gray-500); font-weight: 600; white-space: nowrap;
+    }
+    .seg button.on { background: var(--teal-600); color: #fff; }
+    .span-note { margin-left: auto; font-size: 12px; color: var(--gray-500); }
+    .span-note b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
     .tab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
     .tab-head h2 { margin: 0 0 2px; }
     .head-actions { display: flex; gap: 8px; }
@@ -352,10 +457,20 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .tile-sub { font-size: 10.5px; color: var(--gray-500); opacity: .8; }
 
     .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .filters .search { flex: 1 1 280px; min-width: 220px; }
-    .filters select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 12.5px; background: #fff; }
-    .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--gray-500); }
-    .count { margin-left: auto; font-size: 12px; color: var(--gray-500); font-variant-numeric: tabular-nums; }
+    .filters .search { flex: 1 1 240px; min-width: 190px; }
+    .filters .search.sm { flex: 0 1 240px; }
+    .filters select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 12.5px; background: #fff; max-width: 190px; }
+    .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--gray-500); white-space: nowrap; }
+    .count { margin-left: auto; font-size: 12px; color: var(--gray-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    .srt { cursor: pointer; user-select: none; white-space: nowrap; }
+    .srt:hover { color: var(--teal-700); }
+
+    .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--border); }
+    .pg-note { font-size: 12.5px; color: var(--gray-500); font-variant-numeric: tabular-nums; }
+    .pg-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .pg-of { font-size: 12.5px; color: var(--gray-500); font-variant-numeric: tabular-nums; padding: 0 4px; }
+    .pg-actions .btn[disabled] { opacity: .45; cursor: default; }
 
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
     .sub { font-size: 11px; color: var(--gray-500); }
@@ -370,7 +485,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .ctl { max-width: 380px; line-height: 1.45; }
     .next { margin-top: 4px; font-size: 11.5px; color: var(--teal-700); }
     .lnk { color: var(--teal-700); font-weight: 600; cursor: pointer; text-decoration: underline; }
-    .foot-note { font-size: 11.5px; color: var(--gray-500); }
     .empty { text-align: center; color: var(--gray-500); padding: 26px; }
 
     .matrix-wrap { overflow-x: auto; }
@@ -385,51 +499,110 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 export class AuditTraceability {
   private ix = inject(Interaction);
   private exporter = inject(Exporter);
-  private lookback = inject(Lookback);
-  private lobFilter = inject(LobFilter);
 
   readonly tabs = TAB_DEFS;
   readonly sel = signal('trail');
   readonly categories = CATEGORIES;
   readonly channels = CHANNELS;
+  readonly entityTypes = ENTITY_TYPES;
+  readonly outcomes = OUTCOMES;
   readonly permissions = PERMISSIONS;
   readonly roles = Object.keys(PERMISSION_MATRIX) as AccessRole[];
   readonly accounts = SYSTEM_USERS;
+  readonly actorOptions = [...SYSTEM_USERS].sort((a, b) => a.name.localeCompare(b.name));
   readonly register = COMPLIANCE_REGISTER;
+  readonly ranges = AUDIT_RANGES;
+  readonly lobs = LOBS;
+  readonly cycleDays = ATTESTATION_CYCLE_DAYS;
+  /** The whole retained log, independent of any filter — so the screen can always state how much
+   *  history exists rather than leaving the current window to imply it. */
+  readonly span = auditSpan();
 
-  readonly q = signal('');
-  readonly cat = signal<'all' | AuditCategory>('all');
-  readonly chan = signal<'all' | AuditChannel>('all');
-  readonly phiOnly = signal(false);
+  // ---- scope: this module's own controls, not the shared dashboard period bar ----
+  readonly range = signal<AuditRange>('all');
+  readonly lob = signal<string>('all');
+  readonly rangeLabel = computed(() => AUDIT_RANGES.find((r) => r.id === this.range())?.label ?? 'All history');
+  setRange(r: AuditRange) { this.range.set(r); this.page.set(0); }
+  setLob(l: string) { this.lob.set(l); this.page.set(0); }
 
-  /** '30d' is the unfiltered baseline (same convention the module Audit tabs use); narrower
-   *  periods and QTD actually window the trail by event date. LOB narrows to events carrying that
-   *  line of business — infrastructure events (sign-ins, config) have no LOB and stay visible,
-   *  because hiding them would misrepresent the trail. */
-  readonly windowLabel = computed(() => this.lookback.period() === '30d' ? 'all retained events' : `last ${this.lookback.windowDays() + 1} day(s)`);
   readonly scopedEvents = computed(() => {
-    const period = this.lookback.period();
-    const days = period === '30d' ? undefined : this.lookback.windowDays();
-    const lob = this.lobFilter.value();
+    const days = AUDIT_RANGES.find((r) => r.id === this.range())?.days ?? null;
+    const lob = this.lob();
     return AUDIT_EVENTS.filter((e) => {
-      if (days !== undefined) { const d = daysAgo(eventDate(e.timestamp)); if (d < 0 || d > days) return false; }
+      if (days !== null) { const d = daysAgo(eventDate(e.timestamp)); if (d < 0 || d > days) return false; }
+      // Infrastructure events (sign-ins, config changes, account admin) carry no LOB. They stay
+      // visible under an LOB filter — hiding them would misrepresent the trail, not narrow it.
       if (lob !== 'all' && e.lob !== null && e.lob !== lob) return false;
       return true;
     });
   });
 
+  // ---- trail filters ----
+  readonly q = signal('');
+  readonly cat = signal<'all' | AuditCategory>('all');
+  readonly chan = signal<'all' | AuditChannel>('all');
+  readonly entity = signal<'all' | AuditEntityType>('all');
+  readonly actor = signal<'all' | string>('all');
+  readonly outcome = signal<'all' | AuditOutcome>('all');
+  readonly phiOnly = signal(false);
+  readonly offHoursOnly = signal(false);
+  readonly page = signal(0);
+
+  /** Every filter setter resets paging — narrowing the results otherwise strands you on a page
+   *  number the new result set no longer has. */
+  private reset() { this.page.set(0); }
+  setQ(v: string) { this.q.set(v); this.reset(); }
+  setCat(v: 'all' | AuditCategory) { this.cat.set(v); this.reset(); }
+  setChan(v: 'all' | AuditChannel) { this.chan.set(v); this.reset(); }
+  setEntity(v: 'all' | AuditEntityType) { this.entity.set(v); this.reset(); }
+  setActor(v: string) { this.actor.set(v); this.reset(); }
+  setOutcome(v: 'all' | AuditOutcome) { this.outcome.set(v); this.reset(); }
+  setPhiOnly(v: boolean) { this.phiOnly.set(v); this.reset(); }
+  setOffHoursOnly(v: boolean) { this.offHoursOnly.set(v); this.reset(); }
+  readonly filtersActive = computed(() =>
+    !!this.q() || this.cat() !== 'all' || this.chan() !== 'all' || this.entity() !== 'all' ||
+    this.actor() !== 'all' || this.outcome() !== 'all' || this.phiOnly() || this.offHoursOnly());
+  clearFilters() {
+    this.q.set(''); this.cat.set('all'); this.chan.set('all'); this.entity.set('all');
+    this.actor.set('all'); this.outcome.set('all'); this.phiOnly.set(false); this.offHoursOnly.set(false);
+    this.reset();
+  }
+
   readonly filteredEvents = computed(() => {
     const q = this.q().trim().toLowerCase();
-    const cat = this.cat(); const chan = this.chan(); const phi = this.phiOnly();
+    const cat = this.cat(), chan = this.chan(), ent = this.entity(), act = this.actor(), out = this.outcome();
+    const phi = this.phiOnly(), off = this.offHoursOnly();
     return this.scopedEvents().filter((e) =>
       (cat === 'all' || e.category === cat) &&
       (chan === 'all' || e.channel === chan) &&
+      (ent === 'all' || e.entityType === ent) &&
+      (act === 'all' || e.actorId === act) &&
+      (out === 'all' || e.outcome === out) &&
       (!phi || e.phi) &&
-      (!q || [e.eventId, e.actor, e.actorRole, e.action, e.entityId, e.entityType, e.correlationId, e.reasonCode ?? '', e.sourceIp, e.after ?? '']
+      (!off || isOffHours(e.timestamp)) &&
+      (!q || [e.eventId, e.actor, e.actorRole, e.action, e.entityId, e.entityType, e.correlationId, e.reasonCode ?? '', e.sourceIp, e.after ?? '', e.sessionId]
         .some((v) => String(v).toLowerCase().includes(q))));
   });
-  /** Newest first, capped — the full set goes to the Explorer rather than the page. */
-  readonly pagedEvents = computed(() => [...this.filteredEvents()].reverse().slice(0, 120));
+
+  // ---- trail sorting ----
+  readonly sortKey = signal<keyof TrailRow | ''>('timestamp');
+  readonly sortDir = signal<SortDir>(-1); // newest first
+  sortBy(k: keyof TrailRow) {
+    if (this.sortKey() === k) this.sortDir.set(this.sortDir() === 1 ? -1 : 1);
+    else { this.sortKey.set(k); this.sortDir.set(k === 'timestamp' ? -1 : 1); }
+    this.reset();
+  }
+  caret(k: keyof TrailRow) { return caretFor(this.sortKey(), k, this.sortDir()); }
+  readonly sortedRows = computed(() => compareRows(this.filteredEvents().map(trailRow), this.sortKey(), this.sortDir()));
+
+  // ---- paging: the whole history is walkable here, not just the newest slice ----
+  readonly pageCount = computed(() => Math.max(1, Math.ceil(this.filteredEvents().length / PAGE_SIZE)));
+  readonly pagedRows = computed(() => {
+    const start = Math.min(this.page(), this.pageCount() - 1) * PAGE_SIZE;
+    return this.sortedRows().slice(start, start + PAGE_SIZE);
+  });
+  readonly pageStart = computed(() => this.filteredEvents().length ? Math.min(this.page(), this.pageCount() - 1) * PAGE_SIZE + 1 : 0);
+  readonly pageEnd = computed(() => Math.min((Math.min(this.page(), this.pageCount() - 1) + 1) * PAGE_SIZE, this.filteredEvents().length));
 
   readonly phiEvents = computed(() => this.scopedEvents().filter((e) => e.phi));
   readonly decisionEvents = computed(() => this.scopedEvents().filter((e) => e.category === 'Clinical Decision'));
@@ -450,40 +623,45 @@ export class AuditTraceability {
   readonly exportedRows = computed(() => this.exportEventsList().reduce((s, e) => s + Number(e.after ?? 0), 0));
   readonly activeUsers = computed(() => new Set(this.signIns().map((e) => e.actorId)).size);
 
-  readonly activity = computed((): UserActivity[] => {
-    const evs = this.scopedEvents();
-    return SYSTEM_USERS.map((user) => {
-      const mine = evs.filter((e) => e.actorId === user.userId);
-      const a: UserActivity = {
-        user, events: mine.length,
-        sessions: new Set(mine.map((e) => e.sessionId)).size,
-        phi: mine.filter((e) => e.phi).length,
-        exports: mine.filter((e) => e.category === 'Data Export').length,
-        offHours: mine.filter((e) => isOffHours(e.timestamp)).length,
-        failedLogins: mine.filter((e) => e.action === 'Failed sign-in attempt').length,
-        deniedAccess: mine.filter((e) => e.outcome === 'Denied').length,
-        breakGlass: mine.filter((e) => e.action.startsWith('Break-the-glass')).length,
-        externalIp: mine.filter((e) => isExternalIp(e.sourceIp)).length,
-        lastActivity: mine.length ? mine[mine.length - 1].timestamp.replace('T', ' ') : '',
-        flags: [],
-      };
-      if (a.breakGlass > 0) a.flags.push('break-the-glass');
-      if (a.externalIp > 0) a.flags.push('external IP');
-      if (!user.mfaEnrolled) a.flags.push('no MFA');
-      if (a.failedLogins >= 2) a.flags.push('repeated failed sign-ins');
-      if (a.offHours > 0 && a.events > 0 && a.offHours / a.events > 0.15) a.flags.push('off-hours pattern');
-      if (a.exports >= 8) a.flags.push('high export volume');
-      return a;
-    }).sort((x, y) => y.flags.length - x.flags.length || y.events - x.events);
+  readonly aq = signal('');
+  readonly flaggedOnly = signal(false);
+  readonly actSortKey = signal<keyof UserActivityRow | ''>('events');
+  readonly actSortDir = signal<SortDir>(-1);
+  sortAct(k: keyof UserActivityRow) {
+    if (this.actSortKey() === k) this.actSortDir.set(this.actSortDir() === 1 ? -1 : 1);
+    // Text columns read best A→Z on first click; count columns read best highest-first.
+    else { this.actSortKey.set(k); this.actSortDir.set(k === 'name' || k === 'role' ? 1 : -1); }
+  }
+  caretAct(k: keyof UserActivityRow) { return caretFor(this.actSortKey(), k, this.actSortDir()); }
+  readonly activity = computed(() => {
+    const q = this.aq().trim().toLowerCase();
+    const rows = userActivityRollup(this.scopedEvents()).filter((a) =>
+      (!this.flaggedOnly() || a.signals.length > 0) &&
+      (!q || [a.name, a.userId, a.role, a.department].some((v) => v.toLowerCase().includes(q))));
+    return compareRows(rows, this.actSortKey(), this.actSortDir());
   });
 
   // ---- Governance ----
   readonly roleCount = computed(() => new Set(SYSTEM_USERS.map((u) => u.role)).size);
   readonly noMfa = computed(() => SYSTEM_USERS.filter((u) => !u.mfaEnrolled));
   readonly mfaCoverage = computed(() => Math.round(((SYSTEM_USERS.length - this.noMfa().length) / SYSTEM_USERS.length) * 100));
-  ageDays(iso: string) { return daysAgo(iso); }
-  overdue(u: SystemUser) { return daysAgo(u.lastAccessReview) > 90; }
-  readonly attestationOverdue = computed(() => SYSTEM_USERS.filter((u) => this.overdue(u)));
+  readonly attestationOverdue = computed(() => SYSTEM_USERS.filter((u) => attestationAgeDays(u) > ATTESTATION_CYCLE_DAYS));
+
+  readonly gq = signal('');
+  readonly invSortKey = signal<InvKey | ''>('name');
+  readonly invSortDir = signal<SortDir>(1);
+  sortInv(k: InvKey) {
+    if (this.invSortKey() === k) this.invSortDir.set(this.invSortDir() === 1 ? -1 : 1);
+    else { this.invSortKey.set(k); this.invSortDir.set(k === 'reviewAge' ? -1 : 1); }
+  }
+  caretInv(k: InvKey) { return caretFor(this.invSortKey(), k, this.invSortDir()); }
+  readonly inventory = computed((): InventoryRow[] => {
+    const q = this.gq().trim().toLowerCase();
+    const rows: InventoryRow[] = SYSTEM_USERS
+      .filter((u) => !q || [u.name, u.userId, u.role, u.department].some((v) => v.toLowerCase().includes(q)))
+      .map((u) => ({ ...u, mfa: u.mfaEnrolled ? 'Enrolled' : 'Password only', reviewAge: attestationAgeDays(u) }));
+    return compareRows(rows, this.invSortKey() as keyof InventoryRow | '', this.invSortDir());
+  });
 
   matrix(role: AccessRole, p: string): string { return PERMISSION_MATRIX[role]?.[p as Permission] ?? '—'; }
   verdict(role: AccessRole, p: string): 'yes' | 'no' | 'limited' {
@@ -492,47 +670,7 @@ export class AuditTraceability {
     return v.includes('—') || v.includes('only') ? 'limited' : 'yes';
   }
 
-  /** Every SOD rule is evaluated against the live trail rather than asserted. */
-  readonly sodResults = computed(() => {
-    const evs = this.scopedEvents();
-    return SOD_RULES.map((rule) => {
-      const conflicts: SodConflict[] = [];
-      if (rule.id === 'SOD-1') {
-        // The appeal reviewer must differ from whoever recorded the original determination. Every
-        // appeal event in the trail is checked against its case's determination actor.
-        const determinationBy = new Map<string, string>();
-        evs.filter((e) => e.action === 'Determination recorded').forEach((e) => determinationBy.set(e.entityId, e.actorId));
-        evs.filter((e) => e.entityType === 'Appeal').forEach((e) => {
-          if (determinationBy.get(e.entityId) === e.actorId) {
-            conflicts.push({ ruleId: rule.id, rule: rule.name, citation: rule.citation, subject: e.actor, detail: `${e.actor} reviewed the appeal on ${e.entityId} after recording its original determination`, eventIds: [e.eventId] });
-          }
-        });
-      }
-      if (rule.id === 'SOD-2') {
-        const approvals = new Set(evs.filter((e) => e.action === 'Configuration change approved').map((e) => e.correlationId));
-        evs.filter((e) => e.action === 'Configuration change published').forEach((e) => {
-          if (!approvals.has(e.correlationId)) {
-            conflicts.push({ ruleId: rule.id, rule: rule.name, citation: rule.citation, subject: e.actor, detail: `${e.entityId} — "${e.field}" changed to "${e.after}" by ${e.actor} with no independent approval on ${e.correlationId}`, eventIds: [e.eventId] });
-          }
-        });
-      }
-      if (rule.id === 'SOD-3') {
-        const clinical: AccessRole[] = ['Medical Director', 'Appeals Reviewer'];
-        evs.filter((e) => e.action === 'Determination recorded' && e.after === 'Denied').forEach((e) => {
-          if (!clinical.includes(e.actorRole)) {
-            conflicts.push({ ruleId: rule.id, rule: rule.name, citation: rule.citation, subject: e.actor, detail: `${e.entityId} denied by ${e.actor} (${e.actorRole}) — medical-necessity denials require a qualified clinician`, eventIds: [e.eventId] });
-          }
-        });
-      }
-      if (rule.id === 'SOD-4') {
-        const admins = new Set(SYSTEM_USERS.filter((u) => u.role === 'System Administrator').map((u) => u.userId));
-        const offenders = new Map<string, AuditEvent>();
-        evs.filter((e) => admins.has(e.actorId) && e.phi).forEach((e) => { if (!offenders.has(e.actorId)) offenders.set(e.actorId, e); });
-        offenders.forEach((e) => conflicts.push({ ruleId: rule.id, rule: rule.name, citation: rule.citation, subject: e.actor, detail: `${e.actor} holds administrator rights and accessed PHI (${e.entityId})`, eventIds: [e.eventId] }));
-      }
-      return { rule, conflicts };
-    });
-  });
+  readonly sodResults = computed(() => evaluateSod(this.scopedEvents()));
   readonly sodConflicts = computed(() => this.sodResults().flatMap((r) => r.conflicts));
 
   // ---- Compliance register ----
@@ -554,7 +692,7 @@ export class AuditTraceability {
   drillEvents(title: string, evs: AuditEvent[], slugName: string) {
     const rows = [...evs].reverse();
     this.ix.openExplorer({
-      title, context: `${rows.length.toLocaleString()} audit event(s)`,
+      title, context: `${rows.length.toLocaleString()} audit event(s) · ${this.rangeLabel()}`,
       columns: EVENT_COLUMNS, rows: rows.map(eventRow), exportName: `audit-trail-${slugName}_2026-07-17`,
     });
   }
@@ -587,25 +725,25 @@ export class AuditTraceability {
       }],
     });
   }
-  drillUser(a: UserActivity) {
-    this.drillEvents(`Activity — ${a.user.name}`, this.scopedEvents().filter((e) => e.actorId === a.user.userId), `user-${slug(a.user.userId)}`);
+  drillUser(a: UserActivityRow) {
+    this.drillEvents(`Activity — ${a.name}`, this.scopedEvents().filter((e) => e.actorId === a.userId), `user-${slug(a.userId)}`);
   }
-  drillAccountTrail(u: SystemUser) {
+  drillAccountTrail(u: { userId: string; name: string }) {
     this.drillEvents(`Activity — ${u.name}`, this.scopedEvents().filter((e) => e.actorId === u.userId), `user-${slug(u.userId)}`);
   }
   drillAccounts(title: string, us: SystemUser[], slugName: string) {
     this.ix.openExplorer({
       title, context: `${us.length} account(s)`,
       columns: ['Account', 'User ID', 'Access Role', 'Department', 'MFA', 'Last Entitlement Review', 'Days Since Review', 'Last Sign-in', 'Status'],
-      rows: us.map((u) => [u.name, u.userId, u.role, u.department, u.mfaEnrolled ? 'Enrolled' : 'Password only', u.lastAccessReview, daysAgo(u.lastAccessReview), u.lastLogin, u.status]),
+      rows: us.map((u) => [u.name, u.userId, u.role, u.department, u.mfaEnrolled ? 'Enrolled' : 'Password only', u.lastAccessReview, attestationAgeDays(u), u.lastLogin, u.status]),
       exportName: `audit-accounts-${slugName}_2026-07-17`,
     });
   }
-  drillSod(r: { rule: { id: string; name: string }; conflicts: SodConflict[] }) {
+  drillSod(r: SodResult) {
     this.ix.openExplorer({
-      title: `${r.rule.id} — ${r.rule.name}`, context: `${r.conflicts.length} conflict(s) detected in the current window`,
+      title: `${r.rule.id} — ${r.rule.name}`, context: `${r.conflicts.length} conflict(s) detected in ${this.rangeLabel().toLowerCase()}`,
       columns: ['Rule', 'Subject', 'Detail', 'Citation', 'Event ID'],
-      rows: r.conflicts.map((c) => [c.ruleId, c.subject, c.detail, c.citation, c.eventIds.join(', ')]),
+      rows: r.conflicts.map((c: SodConflictRow) => [c.ruleId, c.subject, c.detail, c.citation, c.eventIds.join(', ')]),
       exportName: `audit-sod-${slug(r.rule.id)}_2026-07-17`,
     });
   }
@@ -621,14 +759,14 @@ export class AuditTraceability {
   exportEvents() {
     this.exporter.open({
       title: 'Audit Trail', name: 'audit-trail_2026-07-17',
-      columns: EVENT_COLUMNS, rows: [...this.filteredEvents()].reverse().map(eventRow),
+      columns: EVENT_COLUMNS, rows: this.sortedRows().map((r) => eventRow(r.ev)),
     });
   }
   exportActivity() {
     this.exporter.open({
       title: 'User Activity Monitoring', name: 'audit-user-activity_2026-07-17',
-      columns: ['Account', 'User ID', 'Role', 'Events', 'Sessions', 'PHI Events', 'Off-Hours', 'Failed Sign-ins', 'Denied Access', 'Break-the-Glass', 'Exports', 'External IP', 'Last Activity', 'Signals'],
-      rows: this.activity().map((a) => [a.user.name, a.user.userId, a.user.role, a.events, a.sessions, a.phi, a.offHours, a.failedLogins, a.deniedAccess, a.breakGlass, a.exports, a.externalIp, a.lastActivity || '—', a.flags.join('; ') || '—']),
+      columns: ['Account', 'User ID', 'Role', 'Events', 'Sessions', 'PHI Events', 'Off-Hours', 'Failed Sign-ins', 'Denied Access', 'Break-the-Glass', 'Exports', 'Rows Exported', 'External IP', 'Last Activity', 'Signals'],
+      rows: this.activity().map((a) => [a.name, a.userId, a.role, a.events, a.sessions, a.phi, a.offHours, a.failedLogins, a.deniedAccess, a.breakGlass, a.exports, a.exportedRows, a.externalIp, a.lastActivity || '—', a.signals.join('; ') || '—']),
     });
   }
   exportGovernance() {
