@@ -222,12 +222,18 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .irr-row { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     .tile-row.no-bottom { padding-bottom: 4px; }
     .tile {
+      position: relative;
       display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
       border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
       cursor: pointer; background: #fff; transition: border-color .15s, box-shadow .15s;
     }
     .tile:hover { box-shadow: var(--shadow); }
-    .tile-ic.hot { width: 10px; height: 10px; border-radius: 999px; background: var(--amber); }
+        /* The attention dot is positioned, not stacked. As a flow item it contributed its own height
+       plus a flex gap, so any tile carrying one pushed its number ~16px below the tiles beside it
+       and the row lost its baseline. In the corner it reads as a status marker and every figure in
+       the row starts at the same height whether or not it is flagged. */
+    .tile-ic { position: absolute; top: 10px; right: 11px; }
+    .tile-ic.hot { width: 9px; height: 9px; border-radius: 999px; background: var(--amber); }
     .tile-val { font-size: 22px; font-weight: 700; color: var(--ink); }
     .tile-lab { font-size: 11px; color: var(--gray-500); font-weight: 600; line-height: 1.3; }
 
