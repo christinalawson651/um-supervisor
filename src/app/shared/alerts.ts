@@ -21,6 +21,35 @@ import { AI_DECISIONS, AI_TARGETS, aiSummary, calibration } from '../data/ai-ove
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
+/** Where a signal is meant to go when it fires, and how quickly someone is expected to have looked.
+ *
+ *  Stated honestly: this is the ROUTING CONFIGURATION, not a delivery mechanism. The rules, owners
+ *  and review windows below are real and auditable — "what alerts exist and who receives them" is a
+ *  question every security reviewer asks, and until now the answer was nowhere. What does not exist
+ *  is anything that leaves the platform: no mail, no page, no ticket. That remains REQ-13, and the
+ *  register says so rather than this table implying otherwise. */
+export interface NotificationRule {
+  signal: string;
+  severity: AlertSeverity;
+  owner: string;
+  reviewWindow: string;
+  destination: string;
+  delivery: 'In-app only';
+}
+export const NOTIFICATION_RULES: NotificationRule[] = [
+  { signal: 'Confidence band outside calibration tolerance', severity: 'critical', owner: 'Clinical Content', reviewWindow: '5 business days', destination: 'Clinical content queue', delivery: 'In-app only' },
+  { signal: 'Segregation-of-duty exception', severity: 'critical', owner: 'Compliance', reviewWindow: '1 business day', destination: 'Compliance queue', delivery: 'In-app only' },
+  { signal: 'Account authenticating without MFA', severity: 'critical', owner: 'IT Operations', reviewWindow: '1 business day', destination: 'IT operations queue', delivery: 'In-app only' },
+  { signal: 'Authorization past its regulatory deadline', severity: 'critical', owner: 'UM Leadership', reviewWindow: 'Same day', destination: 'UM supervisor queue', delivery: 'In-app only' },
+  { signal: 'Member consent lapsed', severity: 'critical', owner: 'CM Leadership', reviewWindow: 'Same day', destination: 'CM supervisor queue', delivery: 'In-app only' },
+  { signal: 'Break-the-glass access granted', severity: 'warning', owner: 'Compliance', reviewWindow: '5 business days', destination: 'Compliance queue', delivery: 'In-app only' },
+  { signal: 'Decision agreement below target', severity: 'warning', owner: 'Clinical Content', reviewWindow: 'Monthly review', destination: 'Clinical content queue', delivery: 'In-app only' },
+  { signal: 'Override rate above ceiling', severity: 'warning', owner: 'Clinical Content', reviewWindow: 'Monthly review', destination: 'Clinical content queue', delivery: 'In-app only' },
+  { signal: 'Entitlement review overdue', severity: 'warning', owner: 'IT Operations', reviewWindow: '10 business days', destination: 'IT operations queue', delivery: 'In-app only' },
+  { signal: 'Segment awaiting certified disposition', severity: 'warning', owner: 'Compliance', reviewWindow: 'Quarterly review', destination: 'Compliance queue', delivery: 'In-app only' },
+  { signal: 'Restore request approaching retrieval SLA', severity: 'info', owner: 'Platform Engineering', reviewWindow: 'Within SLA', destination: 'Platform queue', delivery: 'In-app only' },
+];
+
 export interface Alert {
   id: string;
   severity: AlertSeverity;

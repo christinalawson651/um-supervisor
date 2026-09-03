@@ -6,6 +6,7 @@ import {
   SYSTEM_USERS, SystemUser, AccessRole,
   PERMISSIONS, Permission, PERMISSION_MATRIX, COMPLIANCE_REGISTER, ComplianceRequirement, registerCounts,
   verifyChain, isOffHours, isExternalIp, eventDate, governanceSection,
+  POLICY_RULES, resolvePolicy, stateOf, marketOf, STATES_BY_LOB,
   AUDIT_RANGES, AuditRange, auditSpan, userActivityRollup, UserActivityRow,
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest, RetentionPolicy,
@@ -17,6 +18,7 @@ import { Exporter } from '../shared/exporter';
 import { LOBS, daysAgo } from '../data/case-fields';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Disposition, DispositionCertificate, DISPOSITION_APPROVERS } from '../shared/disposition';
+import { NOTIFICATION_RULES } from '../shared/alerts';
 import { DashboardData } from '../data/dashboard-data';
 import {
   AI_DECISIONS, AiDecisionRecord, AiOutcome, OverrideReason, OVERRIDE_REASONS, MODEL_ATTRIBUTABLE,
@@ -652,6 +654,53 @@ const govSection = governanceSection;
         </div>
 
         <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Policy Resolution — Market, State &amp; Line of Business</h3>
+            <span class="section-note sm">Which policy governs a case, and on what basis. Two plans in two states can sit under the same line of business and be governed by different policy, so the SELECTION is logged as its own step — a trail recording which criteria were applied without recording why those criteria answers half the question. Every determination carries a <em>Policy version resolved</em> event with the inputs, the version and the basis.</span></div>
+          <div class="scroll">
+            <table class="z-table">
+              <thead><tr><th>Line of Business</th><th>State</th><th>Market</th><th>Policy Version</th><th class="num">Determinations</th><th>Basis</th><th>Citation</th></tr></thead>
+              <tbody>
+                @for (p of policyRules; track p.lob + p.state) {
+                  <tr class="clk" (click)="drillPolicy(p.lob, p.state)">
+                    <td class="strong">{{ p.lob }}</td>
+                    <td class="mono">{{ p.state }}</td>
+                    <td class="sub">{{ market(p.state) }}</td>
+                    <td class="mono">{{ p.policyVersion }}<span class="chip" [class.amber]="p.stateRule">{{ p.stateRule ? 'state rule' : 'national' }}</span></td>
+                    <td class="num">{{ policyCount(p.lob, p.state) }}</td>
+                    <td>{{ p.basis }}</td>
+                    <td class="sub">{{ p.citation }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Notification Rules</h3>
+            <span class="section-note sm">What each signal is, who owns it, and how quickly someone is expected to have looked.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Signal</th><th>Severity</th><th>Owner</th><th>Review Window</th><th>Destination</th><th>Delivery</th></tr></thead>
+            <tbody>
+              @for (r of notificationRules; track r.signal) {
+                <tr>
+                  <td class="strong">{{ r.signal }}</td>
+                  <td><span class="badge" [class.red]="r.severity==='critical'" [class.amber]="r.severity==='warning'" [class.green]="r.severity==='info'">{{ r.severity }}</span></td>
+                  <td>{{ r.owner }}</td>
+                  <td class="sub">{{ r.reviewWindow }}</td>
+                  <td class="sub">{{ r.destination }}</td>
+                  <td><span class="badge amber">{{ r.delivery }}</span></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          <div class="finding panel-pad">
+            <b>Known gap — REQ-13</b>
+            This is the routing configuration, not a delivery mechanism. Every rule here is real and auditable, and each signal reaches the Inbox and opens the screen that owns it — but nothing leaves the platform. No mail, no page, no ticket. Anyone relying on being told rather than on looking would not be told.
+          </div>
+        </div>
+
+        <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Role → Permission Matrix</h3>
             <span class="section-note sm">Constraints matter more than the yes/no — "own caseload only" is a different control than an unconditional grant.</span></div>
           <div class="matrix-wrap">
@@ -1172,6 +1221,19 @@ export class AuditTraceability {
   // ---- AI oversight ----
   readonly targets = AI_TARGETS;
   readonly gates = PRODUCTION_CONFIG;
+  readonly policyRules = POLICY_RULES;
+  readonly notificationRules = NOTIFICATION_RULES;
+  market(state: string) { return marketOf(state); }
+  private policyEvents(lob: string, state: string) {
+    const pol = resolvePolicy(lob, state);
+    return this.scopedEvents().filter((e) => e.action === 'Policy version resolved'
+      && e.after === pol.policyVersion && (e.before ?? '').startsWith(`${lob} · ${state}`));
+  }
+  policyCount(lob: string, state: string) { return this.policyEvents(lob, state).length; }
+  drillPolicy(lob: string, state: string) {
+    const pol = resolvePolicy(lob, state);
+    this.drillEvents(`Policy ${pol.policyVersion} — ${lob} · ${state}`, this.policyEvents(lob, state), `policy-${slug(pol.policyVersion)}`);
+  }
   readonly agents = AGENTS;
   /** Scoped by the module's own Range/LOB controls, same as everything else on this module. */
   readonly aiRows = computed(() => {

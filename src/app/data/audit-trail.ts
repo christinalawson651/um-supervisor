@@ -82,6 +82,65 @@ export const USER_BY_NAME = new Map(SYSTEM_USERS.map((u) => [u.name, u]));
 const AI_BY_AUTH = new Map(AI_DECISIONS.map((r) => [r.authId, r]));
 
 // ---------------------------------------------------------------------------------------------
+// Policy resolution — market, state and line of business
+// ---------------------------------------------------------------------------------------------
+// "How do you ensure the correct criteria, policy version, market, state and line-of-business rules
+// were applied to this case?" is a question about the SELECTION, not the criteria. Two plans in two
+// states can sit under the same line of business and be governed by different policy, and a trail
+// that records which criteria were applied without recording why THOSE criteria answers only half
+// of it.
+//
+// So policy resolution is modelled as its own auditable step: the inputs that determined the
+// selection, the policy version it resolved to, and the basis. State and market are deterministic
+// per member, the same way every other attribute in this demo is.
+
+export const STATES_BY_LOB: Record<string, string[]> = {
+  'Medicaid': ['TX', 'FL', 'GA'],
+  'Medicare Advantage': ['TX', 'FL', 'AZ'],
+  'Commercial PPO': ['TX', 'IL'],
+  'ACA Exchange': ['FL', 'GA'],
+};
+const MARKET_BY_STATE: Record<string, string> = {
+  TX: 'TX — Central', FL: 'FL — South', GA: 'GA — Metro Atlanta', AZ: 'AZ — Maricopa', IL: 'IL — Chicagoland',
+};
+
+export function stateOf(authId: string, lob: string): string {
+  const pool = STATES_BY_LOB[lob] ?? ['TX'];
+  // Not `n % pool.length`: the line of business is itself `n % 4`, so within one LOB every case
+  // shares a residue and a two-state pool collapsed to a single state — every Commercial PPO case
+  // landed in Texas and none in Illinois. Hashing breaks the shared modulus.
+  return pool[parseInt(digest(authId + '|state').slice(0, 4), 16) % pool.length];
+}
+export function marketOf(state: string): string { return MARKET_BY_STATE[state] ?? state; }
+
+export interface PolicyRule {
+  lob: string; state: string; policyVersion: string; basis: string; citation: string;
+  /** True where a state rule displaces the national policy. Carried as a flag rather than inferred
+   *  from the wording of `basis` — "no state override" contains the word override, and a chip that
+   *  reads the prose gets that backwards. */
+  stateRule: boolean;
+}
+/** Which policy governs a case. State overrides exist where a state Medicaid programme or DOI rule
+ *  is stricter than the national line-of-business policy — that is the case an auditor probes,
+ *  because applying the national policy in a state that has its own is a real finding. */
+export const POLICY_RULES: PolicyRule[] = [
+  { lob: 'Medicaid', state: 'TX', policyVersion: 'MCD-TX v3.1', basis: 'State Medicaid programme rules override the national policy', citation: 'TX HHSC UM policy · 42 CFR §438.210' , stateRule: true },
+  { lob: 'Medicaid', state: 'FL', policyVersion: 'MCD-FL v2.8', basis: 'State Medicaid programme rules override the national policy', citation: 'FL AHCA UM policy · 42 CFR §438.210' , stateRule: true },
+  { lob: 'Medicaid', state: 'GA', policyVersion: 'MCD-GA v2.4', basis: 'State Medicaid programme rules override the national policy', citation: 'GA DCH UM policy · 42 CFR §438.210' , stateRule: true },
+  { lob: 'Medicare Advantage', state: 'TX', policyVersion: 'MA-NAT v5.0', basis: 'National Medicare Advantage policy — no state override', citation: '42 CFR §422.101 · NCD/LCD' , stateRule: false },
+  { lob: 'Medicare Advantage', state: 'FL', policyVersion: 'MA-NAT v5.0', basis: 'National Medicare Advantage policy — no state override', citation: '42 CFR §422.101 · NCD/LCD' , stateRule: false },
+  { lob: 'Medicare Advantage', state: 'AZ', policyVersion: 'MA-NAT v5.0', basis: 'National Medicare Advantage policy — no state override', citation: '42 CFR §422.101 · NCD/LCD' , stateRule: false },
+  { lob: 'Commercial PPO', state: 'TX', policyVersion: 'COM-TX v1.9', basis: 'State insurance-department mandate applies over the group policy', citation: 'TX DOI mandate · ERISA §2560.503-1' , stateRule: true },
+  { lob: 'Commercial PPO', state: 'IL', policyVersion: 'COM-NAT v4.2', basis: 'Group policy — no state mandate engaged', citation: 'ERISA §2560.503-1' , stateRule: false },
+  { lob: 'ACA Exchange', state: 'FL', policyVersion: 'ACA-EHB-FL v2.2', basis: 'State essential health benefits benchmark plan', citation: '45 CFR §156.110 · ACA §2719' , stateRule: true },
+  { lob: 'ACA Exchange', state: 'GA', policyVersion: 'ACA-EHB-GA v2.0', basis: 'State essential health benefits benchmark plan', citation: '45 CFR §156.110 · ACA §2719' , stateRule: true },
+];
+export function resolvePolicy(lob: string, state: string): PolicyRule {
+  return POLICY_RULES.find((r) => r.lob === lob && r.state === state)
+    ?? { lob, state, policyVersion: 'UNRESOLVED', basis: 'No policy matched this line of business and state', citation: '—', stateRule: false };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Audit events
 // ---------------------------------------------------------------------------------------------
 export type AuditCategory =
@@ -183,9 +242,52 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
     actorRole: arrival === 'API' ? 'Interface Service Account' : intake.role,
     sourceIp: arrival === 'API' ? '172.19.4.11' : ipFor(intake, i),
   }));
+  // The source document and what was pulled out of it. Without this the trail can show which
+  // criteria were applied but not what they were applied TO — and "trace the determination from the
+  // source document through the extracted data" is the first thing an auditor asks to walk.
+  const pages = 4 + (i % 9);
+  const fields = 18 + (i % 7);
+  const extractSeed = parseInt(digest(c.authId + 'extract').slice(0, 2), 16) % 100;
+  const lowConfidenceFields = extractSeed < 12 ? 1 + (i % 2) : 0;
+  const extractConfidence = (0.88 + ((100 - extractSeed) % 12) / 100).toFixed(2);
+  out.push(base({
+    timestamp: stamp(submitted, 0, 484 + (i % 300)), category: 'Case Management',
+    action: 'Source document received', channel: arrival, field: 'Document',
+    after: `${arrival === 'Fax / OCR Intake' ? 'Fax' : 'Upload'} — clinical packet, ${pages} pages`,
+    reasonCode: 'DOC-RECEIVED',
+  }));
+  out.push(base({
+    timestamp: stamp(submitted, 0, 488 + (i % 300)), category: 'Clinical Decision',
+    action: 'Document fields extracted', channel: 'System Rule',
+    actor: 'svc_trucare_hl7', actorId: USER_BY_NAME.get('svc_trucare_hl7')!.userId, actorRole: 'Interface Service Account',
+    sourceIp: '172.19.4.11', field: 'Extraction',
+    after: `${fields - lowConfidenceFields}/${fields} fields at or above threshold · confidence ${extractConfidence}`,
+    reasonCode: 'extractor · v0.2.0',
+  }));
+  if (lowConfidenceFields > 0) {
+    out.push(base({
+      timestamp: stamp(submitted, 0, 490 + (i % 300)), category: 'Clinical Decision',
+      action: 'Extracted field below threshold — routed for verification', channel: 'System Rule',
+      actor: 'svc_trucare_hl7', actorId: USER_BY_NAME.get('svc_trucare_hl7')!.userId, actorRole: 'Interface Service Account',
+      sourceIp: '172.19.4.11', field: 'Extraction', after: `${lowConfidenceFields} field(s) held for human verification`,
+      reasonCode: 'EXTRACT-LOW-CONFIDENCE', outcome: 'Denied',
+    }));
+  }
   out.push(base({
     timestamp: stamp(submitted, 0, 495 + (i % 300)), category: 'Access', action: 'Member eligibility verified',
     entityType: 'Member', entityId: memberId, field: null,
+  }));
+  // Which policy governs this case, and on what basis — the selection step, logged separately from
+  // the criteria that selection produced.
+  const st = stateOf(c.authId, lob);
+  const pol = resolvePolicy(lob, st);
+  out.push(base({
+    timestamp: stamp(submitted, 0, 498 + (i % 300)), category: 'Clinical Decision',
+    action: 'Policy version resolved', channel: 'System Rule',
+    actor: 'svc_trucare_hl7', actorId: USER_BY_NAME.get('svc_trucare_hl7')!.userId, actorRole: 'Interface Service Account',
+    sourceIp: '172.19.4.11', field: 'Policy',
+    before: `${lob} · ${st} · ${marketOf(st)}`, after: pol.policyVersion,
+    reasonCode: pol.basis,
   }));
 
   if (c.tags.includes('auto')) {
@@ -464,7 +566,9 @@ export function contentHash(input: string): string { return digest(input); }
 
 export type GovernanceSection = 'Decision lineage' | 'Human actions' | 'Execution';
 const DECISION_LINEAGE = new Set([
-  'AI recommendation generated', 'Clinical criteria applied', 'Auto-approval rule applied', 'Member eligibility verified',
+  'Document fields extracted', 'Extracted field below threshold — routed for verification',
+  'Policy version resolved', 'Clinical criteria applied', 'AI recommendation generated', 'Auto-approval rule applied',
+  'Member eligibility verified',
 ]);
 const HUMAN_ACTIONS = new Set([
   'AI recommendation overridden', 'Determination recorded', 'Medical Director review completed',
@@ -543,7 +647,7 @@ export interface ComplianceRequirement {
 }
 
 export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
-  { id: 'REQ-01', domain: 'Audit Trail', requirement: 'Record and examine activity in systems containing ePHI', citation: 'HIPAA §164.312(b)', control: 'Every create/read/update on an auth, CM case, member, or appeal writes an immutable event with actor, role, timestamp, channel, source IP and correlation ID.', evidence: 'Audit Trail tab — filter by entity or actor', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
+  { id: 'REQ-01', domain: 'Audit Trail', requirement: 'Record and examine activity in systems containing ePHI', citation: 'HIPAA §164.312(b)', control: 'Every create/read/update on an auth, CM case, member, or appeal writes an immutable event with actor, role, timestamp, channel, source IP and correlation ID — including the source document, the fields extracted from it with their confidence, and the policy version the case resolved to. A determination reads back as a governance record in three sections: decision lineage, human actions, execution.', evidence: 'Audit Trail tab — filter by entity or actor', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
   { id: 'REQ-02', domain: 'Retention & Integrity', requirement: 'Audit records are tamper-evident and retained for the required period', citation: 'HIPAA §164.316(b)(2) · CMS 10-year', control: 'Events are hash-chained in timestamp order, and each sealed archive segment chains to the next, so the chain stays continuous across the archive boundary. Retention is configured per record class and every change to it is itself logged.', evidence: 'Audit Trail — Verify chain · Retention & Archive — Verify archive chain', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
   { id: 'REQ-03', domain: 'User Activity', requirement: 'Regular review of information-system activity', citation: 'HIPAA §164.308(a)(1)(ii)(D)', control: 'Per-user activity rollups with off-hours, external-IP, failed sign-in, unassigned-record and bulk-export signals.', evidence: 'User Activity tab · Reports → User Activity Review', status: 'Partial', priority: 'P1', gap: 'Review is available on demand but there is no scheduled attestation that a named reviewer looked at it, and no sign-off record.', nextStep: 'Add a monthly activity-review task with reviewer sign-off captured as its own audit event.', owner: 'Compliance' },
   { id: 'REQ-04', domain: 'User Activity', requirement: 'Break-the-glass access is justified and reviewed', citation: 'HIPAA §164.308(a)(4) — minimum necessary', control: 'Out-of-scope record access is denied by default; emergent access requires a reason code and is logged as PHI disclosure.', evidence: 'User Activity — Break-the-glass', status: 'Partial', priority: 'P1', gap: 'Reason codes are captured but free-text justification is not required, and nothing forces a follow-up review within a set window.', nextStep: 'Require narrative justification at the point of access and auto-route each event to Compliance for 5-day review.', owner: 'Compliance' },
@@ -551,11 +655,11 @@ export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
   { id: 'REQ-06', domain: 'Access Governance', requirement: 'Periodic entitlement review and attestation', citation: 'SOC 2 CC6.2 · HIPAA §164.308(a)(3)(ii)(B)', control: 'Each account carries a last-attested date surfaced against a 90-day cycle.', evidence: 'Governance & Access — attestation status', status: 'Partial', priority: 'P1', gap: 'Attestation is tracked but not enforced — an account past its cycle keeps full access.', nextStep: 'Escalate at 90 days and auto-suspend entitlements at 120 unless re-attested.', owner: 'IT Operations' },
   { id: 'REQ-07', domain: 'Access Governance', requirement: 'Segregation of duties between decision and appeal', citation: '42 CFR §438.406(b)(2) · §422.590', control: 'The appeal assignment check compares the appeal reviewer against the original determination actor recorded in the audit trail.', evidence: 'Governance & Access — SOD conflicts', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'UM Operations' },
   { id: 'REQ-08', domain: 'Access Governance', requirement: 'Multi-factor authentication on all accounts with PHI access', citation: 'HIPAA Security Rule (proposed) · SOC 2 CC6.1', control: 'MFA enrollment is tracked per account and recorded on each sign-in event.', evidence: 'Governance & Access — MFA coverage', status: 'Gap', priority: 'P1', gap: 'A minority of accounts still authenticate with password only, including at least one with standing PHI access.', nextStep: 'Enforce MFA at the identity provider and disable password-only sign-in for every clinical role.', owner: 'IT Operations' },
-  { id: 'REQ-09', domain: 'Audit Trail', requirement: 'Automated determinations are traceable to the rule version that produced them', citation: 'NCQA UM 2 · CMS delegation oversight', control: 'Auto-approval events carry the firing rule and version as the reason code, and rule changes are themselves logged with before/after.', evidence: 'Audit Trail — filter Configuration', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Clinical Content' },
+  { id: 'REQ-09', domain: 'Audit Trail', requirement: 'Automated determinations are traceable to the rule version that produced them', citation: 'NCQA UM 2 · CMS delegation oversight', control: 'Auto-approval events carry the firing rule and version as the reason code, and rule changes are themselves logged with before/after.', evidence: 'Audit Trail — governance record · Governance & Access — policy resolution', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Clinical Content' },
   { id: 'REQ-10', domain: 'Reporting & Extracts', requirement: 'Produce program-audit universes on request within the required window', citation: 'CMS Program Audit — ODAG / CDAG', control: 'Reports module generates filtered, dated extracts with provenance; audit-trail extracts are exportable per entity or actor.', evidence: 'Reports → Audit & Traceability (7 extracts) · Audit Trail export', status: 'Partial', priority: 'P2', gap: 'Extracts are not yet shaped to the CMS ODAG/CDAG record layouts, so a universe request still needs manual reformatting.', nextStep: 'Add ODAG/CDAG universe templates with field-level mapping and a record-count reconciliation page.', owner: 'Reporting' },
   { id: 'REQ-11', domain: 'Reporting & Extracts', requirement: 'Delegated-entity oversight reporting to the plan', citation: 'CMS 42 CFR §422.504(i) · NCQA DEL', control: 'A single Delegation Oversight Packet assembles the standard artifact set — volume and turnaround, UM inter-rater reliability, CM file audit, AI governance and calibration, access and segregation of duties, chain integrity, retention and disposition — behind a cover page carrying scope, coverage and a content stamp, with the open findings and an attestation block included rather than omitted.', evidence: 'Reports → Audit & Traceability → Delegation Oversight Packet', status: 'Met', priority: 'P2', gap: null, nextStep: null, owner: 'Compliance' },
   { id: 'REQ-12', domain: 'Retention & Integrity', requirement: 'Audit data is exportable to the plan\'s own SIEM / long-term store', citation: 'SOC 2 CC7.2 · plan security requirements', control: 'Audit events export as CSV on demand.', evidence: 'Audit Trail — Export', status: 'Gap', priority: 'P2', gap: 'No streaming or scheduled feed — a plan wanting continuous ingestion into its own SIEM has to pull manually.', nextStep: 'Expose an append-only audit event API and a nightly signed batch feed.', owner: 'Platform Engineering' },
-  { id: 'REQ-13', domain: 'User Activity', requirement: 'Alerting on anomalous access patterns', citation: 'SOC 2 CC7.2 · HIPAA §164.308(a)(6)', control: 'Anomaly signals are computed and displayed.', evidence: 'User Activity — flagged users', status: 'Gap', priority: 'P2', gap: 'Signals are visible in the dashboard only — nothing notifies anyone when a threshold is crossed.', nextStep: 'Define thresholds per signal and route breaches to Compliance as a work item, not just a tile.', owner: 'Compliance' },
+  { id: 'REQ-13', domain: 'User Activity', requirement: 'Alerting on anomalous access', citation: 'SOC 2 CC7.2 · HIPAA §164.308(a)(6)', control: 'Every signal has a named owner, a severity and a review window in the notification rules, and reaches the Inbox where it opens the screen that owns it.', evidence: 'Governance & Access — notification rules · Inbox', status: 'Partial', priority: 'P2', gap: 'Routing is configured and signals surface in the app, but nothing leaves the platform — no mail, no page, no ticket. Anyone relying on being told rather than on looking would not be told.', nextStep: 'Wire the configured destinations to real delivery, and treat a signal past its review window as an exception in its own right.', owner: 'Compliance' },
   { id: 'REQ-14', domain: 'Audit Trail', requirement: 'Member-facing disclosure accounting', citation: 'HIPAA §164.528', control: 'PHI disclosure events (letters, exports, break-the-glass) are individually flagged in the trail.', evidence: 'Audit Trail — PHI filter', status: 'Partial', priority: 'P3', gap: 'The underlying events exist, but there is no per-member accounting-of-disclosures report a member request could be answered with.', nextStep: 'Add a member-scoped disclosure report covering the trailing 6 years.', owner: 'Compliance' },
   { id: 'REQ-15', domain: 'Retention & Integrity', requirement: 'Retention schedule defined and applied per record class', citation: '42 CFR §422.504(d) · HIPAA §164.316(b)(2)(i)', control: 'Six record classes each carry their own retention period, legal basis and disposition action; the archive segment index shows the purge-eligible date every sealed period resolves to.', evidence: 'Retention & Archive — retention schedule', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Compliance' },
   { id: 'REQ-16', domain: 'Retention & Integrity', requirement: 'Legal hold suspends disposition', citation: 'FRCP 37(e) · plan litigation-hold policy', control: 'A hold on a segment is a hard precondition on disposition, not a warning: the disposal action refuses outright and names the hold that stopped it, regardless of the retention date.', evidence: 'Retention & Archive — Dispose on a held segment', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Compliance' },
