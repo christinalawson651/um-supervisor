@@ -19,8 +19,9 @@ import { Disposition, DispositionCertificate, DISPOSITION_APPROVERS } from '../s
 import { DashboardData } from '../data/dashboard-data';
 import {
   AI_DECISIONS, AiDecisionRecord, AiOutcome, OverrideReason, OVERRIDE_REASONS, MODEL_ATTRIBUTABLE,
-  AI_TARGETS, MODEL_VERSIONS, aiScope, aiSummary, calibration, CalibrationRow, drift,
+  AI_TARGETS, PRODUCTION_CONFIG, AGENTS, aiScope, aiSummary, calibration, CalibrationRow, drift,
   overrideReasons, reviewerConcordance, concordanceBy, pendMix, modelMix, PendReason,
+  confidenceDistribution, flagMix, InvestigationFlag,
 } from '../data/ai-oversight';
 
 interface TabDef { key: string; label: string; }
@@ -219,10 +220,20 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
             <div class="tile-val">{{ ai().autoCleared | number }}</div><div class="tile-lab">Auto-Cleared</div>
             <div class="tile-sub">{{ ai().autoClearedPct }}% of volume</div>
           </div>
-          <div class="tile" (click)="drillAi('Concordant — AI Matched the Determination', concordantRows(), 'concordant')">
-            <div class="tile-ic" [class.hot]="ai().concordancePct < targets.concordancePct"></div>
-            <div class="tile-val">{{ ai().concordancePct }}%</div><div class="tile-lab">Concordance</div>
-            <div class="tile-sub">target ≥ {{ targets.concordancePct }}%</div>
+          <div class="tile" (click)="drillAi('Decision Agreement — Model Matched the Determination', concordantRows(), 'agreement')">
+            <div class="tile-ic" [class.hot]="ai().decisionAgreementPct < targets.decisionAgreementPct"></div>
+            <div class="tile-val">{{ ai().decisionAgreementPct }}%</div><div class="tile-lab">Decision Agreement</div>
+            <div class="tile-sub">target ≥ {{ targets.decisionAgreementPct }}%</div>
+          </div>
+          <div class="tile" (click)="drillAi('Ungrounded Verdicts', ungroundedRows(), 'ungrounded')">
+            <div class="tile-ic" [class.hot]="ai().groundednessPct < targets.groundednessPct"></div>
+            <div class="tile-val">{{ ai().groundednessPct }}%</div><div class="tile-lab">Groundedness</div>
+            <div class="tile-sub">verdict supported by its cited source · target ≥ {{ targets.groundednessPct }}%</div>
+          </div>
+          <div class="tile" (click)="drillAi('Panel Splits', panelSplitRows(), 'panel-split')">
+            <div class="tile-ic" [class.hot]="ai().convergencePct < targets.convergencePct"></div>
+            <div class="tile-val">{{ ai().convergencePct }}%</div><div class="tile-lab">Convergence</div>
+            <div class="tile-sub">{{ ai().panelRuns }} panel runs · target ≥ {{ targets.convergencePct }}%</div>
           </div>
           <div class="tile" (click)="drillAi('Clinician Overrides', overriddenRows(), 'overrides')">
             <div class="tile-ic" [class.hot]="ai().overrideRatePct > targets.maxOverrideRatePct"></div>
@@ -239,17 +250,90 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
             <div class="tile-sub">{{ ai().pendedPctOfVolume }}% of volume stopped for a human</div>
           </div>
           <div class="tile" (click)="drillAi('Determinations', aiRows(), 'confidence')">
-            <div class="tile-val">{{ ai().meanConfidence }}%</div><div class="tile-lab">Mean Confidence</div>
+            <div class="tile-val">{{ ai().avgConfidence.toFixed(2) }}</div><div class="tile-lab">Avg Confidence</div>
             <div class="tile-sub">{{ ai().panelRatePct }}% adjudicated by panel</div>
+          </div>
+          <div class="tile" (click)="drillAi('Flagged for Investigation', flaggedRows(), 'flagged')">
+            <div class="tile-ic" [class.hot]="ai().flagged > 0"></div>
+            <div class="tile-val">{{ ai().flagged }}</div><div class="tile-lab">Flagged by the Gates</div>
+            <div class="tile-sub">low confidence · panel split · ungrounded</div>
           </div>
           <div class="tile" (click)="drillAi('Determinations', aiRows(), 'spend')">
             <div class="tile-val">\${{ ai().avgCostPerCase.toFixed(2) }}</div><div class="tile-lab">Avg Cost / Case</div>
-            <div class="tile-sub">{{ ai().tokensPerCase | number }} tokens · {{ ai().avgLatencySec }}s</div>
+            <div class="tile-sub">{{ ai().tokensPerCase | number }} tokens · P95 {{ ai().p95LatencySec }}s</div>
           </div>
           <div class="tile" (click)="drillAi('Determinations', aiRows(), 'tokens')">
             <div class="tile-val">{{ tokensLabel() }}</div><div class="tile-lab">Tokens</div>
             <div class="tile-sub">\${{ ai().inferenceSpend.toFixed(2) }} inference spend</div>
           </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Confidence Distribution</h3>
+            <span class="section-note sm">Determinations by confidence band. Below {{ gates.autoPendGate.toFixed(2) }} is auto-pended for review — the gate keeps low-confidence approvals out of production; at or above {{ gates.autoApproveGate.toFixed(2) }} a determination is eligible to auto-clear.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Band</th><th class="num">Determinations</th><th class="agree-col">Share</th><th>Gate</th></tr></thead>
+            <tbody>
+              @for (b of distribution(); track b.band) {
+                <tr class="clk" (click)="drillBandRaw(b.band)">
+                  <td class="strong mono">{{ b.band }}</td>
+                  <td class="num">{{ b.n | number }}</td>
+                  <td class="agree-col">
+                    <span class="mbar"><span class="teal" [style.width.%]="b.pct"></span></span>
+                    <span class="mpct">{{ b.pct }}%</span>
+                  </td>
+                  <td class="sub">
+                    @if (b.band === '< 0.70') { auto-pended }
+                    @else if (b.band === '0.70–0.80') { below auto-approve gate }
+                    @else { eligible to auto-clear }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Cases to Investigate</h3>
+            <span class="section-note sm">Flagged by the gates. These are the determinations an ML Ops or compliance reviewer opens first — click through to the run ledger.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Flag</th><th class="num">Determinations</th><th class="num">% of Volume</th><th>What it means</th></tr></thead>
+            <tbody>
+              @for (f of flags(); track f.flag) {
+                <tr class="clk" (click)="drillFlag(f.flag)">
+                  <td class="strong">{{ f.flag }}</td>
+                  <td class="num">{{ f.count }}</td>
+                  <td class="num">{{ f.pct }}%</td>
+                  <td class="sub">
+                    @if (f.flag === 'low confidence') { Scored below the {{ gates.autoPendGate.toFixed(2) }} pend gate }
+                    @else if (f.flag === 'panel split') { The panel did not converge on one answer }
+                    @else { The verdict was not fully supported by its cited source }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Per-Agent Latency &amp; Errors</h3>
+            <span class="section-note sm">The {{ agents.length }} LLM agents in the flow. Measured by the runtime rather than derived here — a case pool cannot tell you where a step spent its time.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Agent</th><th class="num">P95</th><th class="num">Error Rate</th><th class="agree-col">Share of P95 Path</th></tr></thead>
+            <tbody>
+              @for (a of agents; track a.agent) {
+                <tr>
+                  <td class="strong mono">{{ a.agent }}</td>
+                  <td class="num">{{ a.p95Sec }}s</td>
+                  <td class="num"><b [class.warn]="a.errorPct >= 0.5">{{ a.errorPct }}%</b></td>
+                  <td class="agree-col">
+                    <span class="mbar"><span class="teal" [style.width.%]="agentSharePct(a.p95Sec)"></span></span>
+                    <span class="mpct">{{ agentSharePct(a.p95Sec) }}%</span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
         </div>
 
         <div class="panel mt-6">
@@ -276,7 +360,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           <div class="panel-pad tbl-head"><h3 class="pt">Models Used</h3>
             <span class="section-note sm">A panel is convened when one pass is not enough — an adverse direction or a soft score. It costs more per case; this is where you see whether it buys anything.</span></div>
           <table class="z-table">
-            <thead><tr><th>Models</th><th>Panel</th><th class="num">Runs</th><th class="num">Tokens / Case</th><th class="num">Avg Cost</th><th class="num">Avg Latency</th><th class="num">Concordance</th></tr></thead>
+            <thead><tr><th>Models</th><th>Panel</th><th class="num">Runs</th><th class="num">Tokens / Case</th><th class="num">Avg Cost</th><th class="num">Avg Latency</th><th class="num">Decision Agreement</th></tr></thead>
             <tbody>
               @for (m of models(); track m.modelsUsed + m.panel) {
                 <tr>
@@ -286,7 +370,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                   <td class="num">{{ m.tokensPerCase | number }}</td>
                   <td class="num">\${{ m.avgCost.toFixed(2) }}</td>
                   <td class="num">{{ m.avgLatencySec }}s</td>
-                  <td class="num"><b [class.warn]="m.concordancePct < targets.concordancePct">{{ m.concordancePct }}%</b></td>
+                  <td class="num"><b [class.warn]="m.agreementPct < targets.decisionAgreementPct">{{ m.agreementPct }}%</b></td>
                 </tr>
               }
             </tbody>
@@ -295,7 +379,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Confidence Calibration</h3>
-            <span class="section-note sm">A band claiming {{ 92 }}% should be right about {{ 92 }}% of the time. Observed agreement against the claim is the evidence a confidence score is or is not reliable — the number itself proves nothing. Tolerance ±{{ targets.maxCalibrationDeviationPts }} points.</span></div>
+            <span class="section-note sm">The confidence distribution above shows how often the model is sure. This shows whether being sure means anything: a band claiming 0.95 should be right about 95% of the time. Observed agreement against the claim is the evidence a score is or is not reliable — the number alone proves nothing. Tolerance ±{{ targets.maxCalibrationDeviationPts }} points.</span></div>
           <table class="z-table">
             <thead><tr><th>Confidence Band</th><th class="num">Determinations</th><th class="num">Claimed</th><th class="num">Observed</th><th class="num">Deviation</th><th>Verdict</th></tr></thead>
             <tbody>
@@ -304,8 +388,12 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                   <td class="strong">{{ c.band }}</td>
                   <td class="num">{{ c.n | number }}</td>
                   <td class="num">{{ c.claimed }}%</td>
-                  <td class="num">{{ c.observed }}%</td>
-                  <td class="num"><b [class.warn]="c.adequate && c.deviation < 0" [class.good]="c.adequate && c.deviation >= 0">{{ c.deviation > 0 ? '+' : '' }}{{ c.deviation }} pts</b></td>
+                  <td class="num">@if (c.adequate) { {{ c.observed }}% } @else { <span class="sub">n={{ c.n }}</span> }</td>
+                  <td class="num">
+                    @if (c.adequate) {
+                      <b [class.warn]="c.deviation < 0" [class.good]="c.deviation >= 0">{{ c.deviation > 0 ? '+' : '' }}{{ c.deviation }} pts</b>
+                    } @else { <span class="sub">not reported</span> }
+                  </td>
                   <td><span class="badge"
                         [class.green]="c.verdict === 'Calibrated'"
                         [class.red]="c.verdict === 'Overconfident'"
@@ -317,37 +405,39 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           @if (overconfidentBands().length) {
             <div class="finding panel-pad">
               <b>Finding</b>
-              The {{ overconfidentBands().join(', ') }} band{{ overconfidentBands().length > 1 ? 's are' : ' is' }} overconfident — it agrees with the clinician less often than its score claims. Scores in that range should not be treated as stronger evidence than the band below it until this closes. Tracked as REQ-20.
+              The {{ overconfidentBands().join(', ') }} band{{ overconfidentBands().length > 1 ? 's are' : ' is' }} over-confident — it agrees with the clinician less often than its score claims. Scores in that range should not be treated as stronger evidence than the band below it until this closes. Tracked as REQ-20.
             </div>
           }
         </div>
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Concordance Over Time</h3>
-            <span class="section-note sm">Drift shows up here before it shows up anywhere a member would notice. Model version in force is shown against each month.</span></div>
+            <span class="section-note sm">Symphony's three drift series — agreement, groundedness and confidence — by month against what was serving.</span></div>
           <!-- Chronological, and deliberately not sortable: a drift series read in any order other
                than time is no longer a drift series. -->
           <table class="z-table">
             <thead><tr>
-              <th>Month</th><th class="num">Determinations</th><th>Model Version</th>
-              <th class="num">Mean Confidence</th><th class="agree-col">Concordance</th>
+              <th>Month</th><th class="num">Determinations</th><th>Serving</th>
+              <th class="num">Avg Confidence</th><th class="num">Groundedness</th><th class="agree-col">Decision Agreement</th>
             </tr></thead>
             <tbody>
               @for (d of driftRows(); track d.month) {
                 <tr>
                   <td class="strong mono">{{ d.month }}</td>
                   <td class="num">{{ d.n }}</td>
-                  <td class="mono">{{ d.modelVersion }}</td>
-                  <td class="num">{{ d.meanConfidence }}%</td>
+                  <td class="mono">{{ gates.model }}</td>
+                  <td class="num">{{ d.avgConfidence.toFixed(2) }}</td>
+                  <td class="num"><b [class.warn]="d.groundednessPct < targets.groundednessPct">{{ d.groundednessPct }}%</b></td>
                   <td class="agree-col">
-                    <span class="mbar"><span [class.amber]="d.concordancePct < targets.concordancePct" [class.teal]="d.concordancePct >= targets.concordancePct" [style.width.%]="d.concordancePct"></span></span>
-                    <span class="mpct" [class.warn]="d.concordancePct < targets.concordancePct">{{ d.concordancePct }}%</span>
+                    <span class="mbar"><span [class.amber]="d.agreementPct < targets.decisionAgreementPct" [class.teal]="d.agreementPct >= targets.decisionAgreementPct" [style.width.%]="d.agreementPct"></span></span>
+                    <span class="mpct" [class.warn]="d.agreementPct < targets.decisionAgreementPct">{{ d.agreementPct }}%</span>
                     @if (d.n < targets.minBandSample) { <span class="chip amber">thin month</span> }
                   </td>
                 </tr>
-              } @empty { <tr><td colspan="5" class="empty">No scored determinations in range.</td></tr> }
+              } @empty { <tr><td colspan="6" class="empty">No scored determinations in range.</td></tr> }
             </tbody>
           </table>
+          <div class="foot-note panel-pad">A sustained drop on any of these three is the early signal to re-test and recalibrate before it reaches a member.</div>
         </div>
 
         <div class="panel mt-6">
@@ -388,10 +478,10 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                   <td class="num"><b [class.warn]="r.overrides > 0">{{ r.overrides }}</b></td>
                   <td class="agree-col">
                     @if (r.adequate) {
-                      <span class="mbar"><span [class.amber]="r.pct < targets.concordancePct" [class.teal]="r.pct >= targets.concordancePct" [style.width.%]="r.pct"></span></span>
-                      <span class="mpct" [class.warn]="r.pct < targets.concordancePct">{{ r.pct }}%</span>
+                      <span class="mbar"><span [class.amber]="r.pct < targets.decisionAgreementPct" [class.teal]="r.pct >= targets.decisionAgreementPct" [style.width.%]="r.pct"></span></span>
+                      <span class="mpct" [class.warn]="r.pct < targets.decisionAgreementPct">{{ r.pct }}%</span>
                     } @else {
-                      <span class="sub">n={{ r.scored }} — below the {{ targets.minBandSample }}-determination floor, no rate reported</span>
+                      <span class="sub">n={{ r.scored }} — below the {{ targets.minReviewerSample }}-determination floor, no rate reported</span>
                     }
                   </td>
                 </tr>
@@ -402,15 +492,15 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Where Agreement Breaks Down</h3>
-            <span class="section-note sm">Grouped by the procedure the criteria govern — this is what tells the clinical content team which policy to look at. Groups below {{ targets.minBandSample / 2 }} scored determinations are omitted; a sample of three says nothing.</span></div>
+            <span class="section-note sm">Grouped by the procedure the criteria govern — this is what tells the clinical content team which policy to look at. Groups below {{ targets.minReviewerSample / 2 }} scored determinations are omitted; a sample of three says nothing.</span></div>
           <table class="z-table">
-            <thead><tr><th>Procedure / Criteria</th><th class="num">Scored</th><th class="num">Concordance</th><th class="num">Override Rate</th></tr></thead>
+            <thead><tr><th>Procedure / Criteria</th><th class="num">Scored</th><th class="num">Decision Agreement</th><th class="num">Override Rate</th></tr></thead>
             <tbody>
               @for (g of byCriteria(); track g.key) {
                 <tr class="clk" (click)="drillCriteria(g.key)">
                   <td class="strong">{{ g.key }}</td>
                   <td class="num">{{ g.n }}</td>
-                  <td class="num"><b [class.warn]="g.concordancePct < targets.concordancePct">{{ g.concordancePct }}%</b></td>
+                  <td class="num"><b [class.warn]="g.concordancePct < targets.decisionAgreementPct">{{ g.concordancePct }}%</b></td>
                   <td class="num">{{ g.overrideRatePct }}%</td>
                 </tr>
               }
@@ -419,19 +509,15 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         </div>
 
         <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Model Versions in Force</h3>
-            <span class="section-note sm">A determination can only be re-explained against the model that produced it, so versions are retained the same way criteria versions are.</span></div>
+          <div class="panel-pad tbl-head"><h3 class="pt">Production Config — What's Serving Live</h3>
+            <span class="section-note sm">A determination can only be re-explained against what produced it, so the serving configuration is retained the same way criteria versions are. Changes here are governed like any other configuration change — versioned, independently approved, logged with before and after.</span></div>
           <table class="z-table">
-            <thead><tr><th>Version</th><th>In Force</th><th class="num">Determinations Scored</th><th>Change</th></tr></thead>
+            <thead><tr><th>Setting</th><th>Value</th><th class="num">Determinations Scored</th></tr></thead>
             <tbody>
-              @for (m of modelVersions; track m.version) {
-                <tr>
-                  <td class="strong mono">{{ m.version }}</td>
-                  <td class="mono">{{ m.from }} → {{ m.to ?? 'current' }}</td>
-                  <td class="num">{{ scoredByVersion(m.version) | number }}</td>
-                  <td class="sub">{{ m.note }}</td>
-                </tr>
-              }
+              <tr><td class="strong">Workflow</td><td class="mono">{{ gates.workflow }}</td><td class="num">{{ ai().total | number }}</td></tr>
+              <tr><td class="strong">Med-necessity bundle</td><td class="mono">{{ gates.bundle }}<div class="sub">promoted {{ gates.bundlePromoted }}</div></td><td class="num">{{ ai().total | number }}</td></tr>
+              <tr><td class="strong">Model</td><td class="mono">{{ gates.model }}</td><td class="num">{{ ai().total | number }}</td></tr>
+              <tr><td class="strong">Confidence gate</td><td class="mono">≥ {{ gates.autoApproveGate.toFixed(2) }} auto-approve · &lt; {{ gates.autoPendGate.toFixed(2) }} auto-pend</td><td class="num">{{ ai().autoCleared | number }} auto-cleared</td></tr>
             </tbody>
           </table>
         </div>
@@ -1074,7 +1160,8 @@ export class AuditTraceability {
 
   // ---- AI oversight ----
   readonly targets = AI_TARGETS;
-  readonly modelVersions = MODEL_VERSIONS;
+  readonly gates = PRODUCTION_CONFIG;
+  readonly agents = AGENTS;
   /** Scoped by the module's own Range/LOB controls, same as everything else on this module. */
   readonly aiRows = computed(() => {
     const days = AUDIT_RANGES.find((r) => r.id === this.range())?.days ?? null;
@@ -1097,8 +1184,8 @@ export class AuditTraceability {
    *  fragments each procedure three ways and leaves samples of three or four, which say nothing.
    *  Groups below the band sample floor are dropped for the same reason. */
   readonly byCriteria = computed(() =>
-    concordanceBy(this.aiRows(), (r) => r.procedure).filter((g) => g.n >= AI_TARGETS.minBandSample / 2).slice(0, 12));
-  readonly concordantRows = computed(() => this.aiRows().filter((r) => r.concordant));
+    concordanceBy(this.aiRows(), (r) => r.procedure).filter((g) => g.n >= AI_TARGETS.minReviewerSample / 2).slice(0, 12));
+  readonly concordantRows = computed(() => this.aiRows().filter((r) => r.agreed));
   readonly overriddenRows = computed(() => this.aiRows().filter((r) => r.outcome === 'Overridden'));
   readonly modelAttributableRows = computed(() => this.overriddenRows().filter((r) => r.overrideReason && MODEL_ATTRIBUTABLE.includes(r.overrideReason)));
   readonly pendedRows = computed(() => this.aiRows().filter((r) => r.pended));
@@ -1111,7 +1198,23 @@ export class AuditTraceability {
     const total = this.overriddenRows().length;
     return total ? Math.round((count / total) * 100) : 0;
   }
-  scoredByVersion(v: string): number { return this.aiRows().filter((r) => r.modelVersion === v).length; }
+  readonly distribution = computed(() => confidenceDistribution(this.aiRows()));
+  readonly flags = computed(() => flagMix(this.aiRows()));
+  readonly flaggedRows = computed(() => this.aiRows().filter((r) => r.flags.length > 0));
+  readonly ungroundedRows = computed(() => this.aiRows().filter((r) => !r.grounded));
+  readonly panelSplitRows = computed(() => this.aiRows().filter((r) => r.panel && !r.converged));
+  /** Each agent's P95 as a share of the summed path — a rough read on where the time goes. P95s do
+   *  not add up to an end-to-end P95, so this is presented as a share, never as a total. */
+  agentSharePct(p95: number): number {
+    const total = AGENTS.reduce((s, a) => s + a.p95Sec, 0);
+    return total ? Math.round((p95 / total) * 100) : 0;
+  }
+  drillFlag(flag: InvestigationFlag) {
+    this.drillAi(`Flagged — ${flag}`, this.aiRows().filter((r) => r.flags.includes(flag)), `flag-${slug(flag)}`);
+  }
+  drillBandRaw(band: string) {
+    this.drillAi(`Confidence Band ${band}`, this.aiRows().filter((r) => r.band === band), `dist-${slug(band)}`);
+  }
 
   readonly revSortKey = signal<'reviewer' | 'scored' | 'agreed' | 'overrides' | 'pct' | ''>('pct');
   readonly revSortDir = signal<SortDir>(1);
@@ -1125,13 +1228,16 @@ export class AuditTraceability {
   /** Run-ledger column set, in Symphony's order and its words: member, policy, outcome, agents,
    *  models used, then the audit-specific columns and the run's cost. */
   private readonly AI_COLUMNS = ['Auth', 'Member', 'Policy', 'LOB', 'Outcome', 'Pend Reason', 'Agents', 'Models Used', 'Panel',
-    'Recommendation', 'Confidence', 'Band', 'Final Determination', 'Concordant', 'Override Reason', 'Overridden By', 'Reviewer',
-    'Tokens', 'Cost', 'Latency', 'Model Version', 'Criteria Set', 'Scored', 'Decided'];
+    'Recommendation', 'Confidence', 'Band', 'Final Determination', 'Agreed', 'Grounded', 'Converged', 'Flags',
+    'Override Reason', 'Overridden By', 'Reviewer', 'Tokens', 'Cost', 'Latency', 'Workflow', 'Bundle', 'Model',
+    'Criteria Set', 'Scored', 'Decided'];
   private aiRow(r: AiDecisionRecord): (string | number)[] {
     return [r.authId, r.member, r.procedure, r.lob, r.outcome, r.pendReason ?? '—', `${r.agentsCompleted}/${r.agentsTotal}`,
-      r.modelsUsed, r.panel ? 'panel' : '—', r.recommendation, `${r.confidence}%`, r.band, r.finalDecision,
-      r.concordant ? 'Yes' : 'No', r.overrideReason ?? '—', r.overriddenBy ?? '—', r.reviewer,
-      r.tokens, `$${r.cost.toFixed(2)}`, `${r.latencySec}s`, r.modelVersion, r.criteriaSet, r.scoredDate, r.decidedDate];
+      r.modelsUsed, r.panel ? 'panel' : '—', r.recommendation, r.confidence.toFixed(2), r.band, r.finalDecision,
+      r.agreed ? 'Yes' : 'No', `${r.groundedMet}/${r.groundedTotal}`, r.panel ? (r.converged ? 'Yes' : 'SPLIT') : '—',
+      r.flags.join('; ') || '—', r.overrideReason ?? '—', r.overriddenBy ?? '—', r.reviewer,
+      r.tokens, `$${r.cost.toFixed(2)}`, `${r.latencySec}s`, r.workflowVersion, r.bundle, r.model,
+      r.criteriaSet, r.scoredDate, r.decidedDate];
   }
   /** Column 0 is 'Auth' rather than 'Auth ID' on purpose — these are compliance records, so the
    *  Explorer treats them as informational and offers no Reassign/Balance/Escalate, the same

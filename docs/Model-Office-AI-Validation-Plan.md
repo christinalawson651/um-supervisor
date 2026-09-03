@@ -34,8 +34,8 @@ The live evidence for all of it is on **Audit & Traceability → AI Oversight**,
 Statistical validity is the part that most often gets waved through, so it is stated explicitly.
 
 - **Stratify by**: line of business, service category (inpatient / outpatient / behavioral / pharmacy / DME), and determination type (approval / partial / denial). Denials and partials are over-sampled deliberately — they carry the appeal and regulatory exposure.
-- **Minimum N per confidence band: 20.** Below that a band is reported as *insufficient sample*, never as pass or fail. This is enforced in the product, not just in policy.
-- **Minimum N per reviewer: 20** before a per-clinician agreement rate is reported at all.
+- **Minimum N per confidence band: 40.** Below that a band is reported as *insufficient sample* — no observed rate, no deviation — never as pass or fail. Enforced in the product, not just in policy. A band holding thirty determinations swings ten points on sampling alone, and a swing that size read as a finding sends someone chasing noise.
+- **Minimum N per reviewer: 12** before a per-clinician agreement rate is reported at all. Deliberately lower than the band floor: a clinician with a dozen scored determinations is a meaningful read on that person, where a confidence band with a dozen is not a meaningful read on a model. Different questions, different thresholds.
 - **Overall minimum: 400 scored determinations**, or one full month of production-representative volume, whichever is larger.
 - **Blinding:** the reviewer cohort for the concordance test should not see the confidence score at scoring time (see §5), or the test measures anchoring rather than agreement.
 
@@ -45,27 +45,29 @@ Statistical validity is the part that most often gets waved through, so it is st
 
 | Metric | Threshold | Rationale |
 |---|---|---|
-| **Concordance** (AI recommendation matches final determination) | **≥ 90%** | Below this the model is generating more review work than it saves |
+| **Decision agreement** (recommendation matches final determination) | **≥ 90%** | Below this the model is generating more review work than it saves |
 | **Calibration deviation**, any adequately-sampled band | **within ±5 points** | A score that does not mean what it says is worse than no score |
 | **No band over-confident** by more than 5 points | **required** | Over-confidence at the top of the range is the failure mode that actually causes harm |
 | **Override rate** | **≤ 15%** of reviewed determinations | Higher suggests the model is not fit for the population |
 | **Model-attributable overrides** | **≤ 5%** of reviewed determinations | Separates model defect from legitimate clinical divergence |
-| **Escalation rate** (low confidence routed to MD) | **≤ 12%** | Higher and the model is deferring rather than deciding |
-| **Adverse-determination concordance** | **≥ 90%**, measured separately | A denial is where being wrong costs the most |
+| **Groundedness** (verdict supported by its cited source) | **≥ 90%** | An unsupported verdict cannot be defended in an appeal |
+| **Convergence** (panel reaches one answer) | **≥ 80%** | A split panel means the flow has no settled position |
+| **Adverse-determination agreement** | **≥ 90%**, measured separately | A denial is where being wrong costs the most |
 | **Auto-approval false-positive rate** | **0 tolerated defects** on the validation set | An auto-approval nobody reviewed has no human backstop |
 
-**A single over-confident band fails the gate**, even if overall concordance passes. Aggregate concordance can mask a band that is confidently wrong — which is precisely the condition the current build surfaces.
+**A single over-confident band fails the gate**, even if overall concordance passes. Aggregate agreement can mask a band that is confidently wrong — which is precisely the condition the current build surfaces.
 
 ### Current state against these criteria
 Measured on the demo dataset, as of the build in front of you:
 
-- Concordance **87%** — **fails** the 90% gate
-- 95%+ band claims 97%, observes 83% — **−14 points, over-confident, fails**
-- Override rate 12% — passes
-- Escalation rate 6% — passes
-- Model-attributable overrides 7 of 153 reviewed (5%) — at the line
+- Decision agreement **85%** — **fails** the 90% gate
+- 0.90–1.00 band claims 0.95, observes 86% — **−9 points, over-confident, fails**
+- Groundedness **89%** — marginally below the 90% line
+- Convergence **84%** — passes
+- Override rate **17%** — **fails** the 15% ceiling
+- Avg confidence **0.83**, P95 latency **15.3s**
 
-The two failures are the same failure: the top confidence band is carrying 121 of 247 determinations and is running 14 points hot, which drags aggregate concordance under target. That is the finding, and it is what a Model Office gate exists to catch.
+The failures share a root: the top confidence band carries 85 of 247 determinations and runs nine points hot, which drags decision agreement under target and pushes the override rate over its ceiling. That is the finding, and catching it is what a Model Office gate exists for.
 
 ---
 

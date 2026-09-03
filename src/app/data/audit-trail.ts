@@ -216,8 +216,8 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
         action: 'AI recommendation generated', channel: 'System Rule',
         actor: 'svc_trucare_hl7', actorId: USER_BY_NAME.get('svc_trucare_hl7')!.userId, actorRole: 'Interface Service Account',
         sourceIp: '172.19.4.11', field: 'AI Recommendation',
-        after: `${ai.recommendation} · ${ai.confidence}% confidence`,
-        reasonCode: `${ai.modelVersion} · ${ai.criteriaSet}`,
+        after: `${ai.recommendation} · confidence ${ai.confidence.toFixed(2)} · grounded ${ai.groundedMet}/${ai.groundedTotal}`,
+        reasonCode: `${ai.model} · ${ai.workflowVersion} · ${ai.criteriaSet}`,
       }));
     }
     if (c.tags.includes('rfi')) {
@@ -253,7 +253,7 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
             timestamp: stamp(submitted, 3 + (i % 4), 636 + (i % 160)), category: 'Clinical Decision',
             action: 'AI recommendation overridden', actor: ov.name, actorId: ov.userId, actorRole: ov.role,
             sourceIp: ipFor(ov, i), field: 'AI Recommendation',
-            before: `${ai.recommendation} · ${ai.confidence}% confidence`, after: c.decision,
+            before: `${ai.recommendation} · confidence ${ai.confidence.toFixed(2)}`, after: c.decision,
             reasonCode: ai.overrideReason ?? 'OVERRIDE',
           }));
         }
