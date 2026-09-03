@@ -5,7 +5,7 @@ import {
   AUDIT_EVENTS, AuditEvent, AuditCategory, AuditChannel, AuditEntityType, AuditOutcome,
   SYSTEM_USERS, SystemUser, AccessRole,
   PERMISSIONS, Permission, PERMISSION_MATRIX, COMPLIANCE_REGISTER, ComplianceRequirement, registerCounts,
-  verifyChain, isOffHours, isExternalIp, eventDate,
+  verifyChain, isOffHours, isExternalIp, eventDate, governanceSection,
   AUDIT_RANGES, AuditRange, auditSpan, userActivityRollup, UserActivityRow,
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest, RetentionPolicy,
@@ -61,6 +61,7 @@ interface InventoryRow extends SystemUser { mfa: string; reviewAge: number; }
 type InvKey = 'name' | 'role' | 'department' | 'mfa' | 'reviewAge' | 'lastLogin';
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+const govSection = governanceSection;
 
 @Component({
   selector: 'app-audit-traceability',
@@ -1463,6 +1464,21 @@ export class AuditTraceability {
     else this.ix.toast(`Hash chain intact — ${r.verified.toLocaleString()} events verified, no gaps or alterations.`);
   }
 
+  /** The per-determination view, in Symphony's shape: every agent step, every human action, every
+   *  executed action, ordered by section then time — the governance record rather than a log. */
+  drillGovernanceRecord(entityId: string, correlationId: string) {
+    const order: Record<string, number> = { 'Decision lineage': 0, 'Human actions': 1, 'Execution': 2 };
+    const evs = AUDIT_EVENTS.filter((x) => x.correlationId === correlationId)
+      .sort((a, b) => order[governanceSection(a)] - order[governanceSection(b)] || a.timestamp.localeCompare(b.timestamp));
+    this.ix.openExplorer({
+      title: `Governance Record — ${entityId}`,
+      context: `${evs.length} event(s) · every agent step, every human action, every executed action`,
+      columns: ['Section', ...EVENT_COLUMNS],
+      rows: evs.map((e) => [governanceSection(e), ...eventRow(e)]),
+      exportName: `governance-record-${slug(entityId)}_2026-07-17`,
+    });
+  }
+
   drillEvents(title: string, evs: AuditEvent[], slugName: string) {
     const rows = [...evs].reverse();
     this.ix.openExplorer({
@@ -1478,6 +1494,7 @@ export class AuditTraceability {
       fields: [
         { label: 'Category', value: e.category },
         { label: 'Record', value: `${e.entityType} ${e.entityId}` },
+        { label: 'Governance Section', value: govSection(e) },
         { label: 'Member', value: e.memberId ?? '—' },
         { label: 'Line of Business', value: e.lob ?? '—' },
         { label: 'Field Changed', value: e.field ?? '—' },
@@ -1494,8 +1511,8 @@ export class AuditTraceability {
       ],
       note: `This record is chained to the event before it. Altering any field above changes this record's hash and every hash after it, which is what makes the alteration detectable — run "Verify chain" on the Audit Trail tab to re-walk it.`,
       actions: [{
-        label: 'Lineage', tone: 'teal',
-        run: () => this.drillEvents(`Lineage — ${e.entityId}`, AUDIT_EVENTS.filter((x) => x.correlationId === e.correlationId), slug(e.entityId)),
+        label: 'Governance record', tone: 'teal',
+        run: () => this.drillGovernanceRecord(e.entityId, e.correlationId),
       }],
     });
   }

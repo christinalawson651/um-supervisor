@@ -451,6 +451,26 @@ function buildEvents(): AuditEvent[] {
 
 export const AUDIT_EVENTS: AuditEvent[] = buildEvents();
 
+/** Symphony's Audit view presents a determination's record in three sections — the AI's work, what
+ *  a human did about it, and what actually fired as a result — and calls the whole thing a
+ *  governance record. A flat event list carries the same information but makes a reviewer do the
+ *  sorting, so the same three sections are derived here and shown as a column on the lineage drill.
+ *  Anything unrecognised stays in Execution rather than being dropped: an event with no section is
+ *  still an event that happened. */
+export type GovernanceSection = 'Decision lineage' | 'Human actions' | 'Execution';
+const DECISION_LINEAGE = new Set([
+  'AI recommendation generated', 'Clinical criteria applied', 'Auto-approval rule applied', 'Member eligibility verified',
+]);
+const HUMAN_ACTIONS = new Set([
+  'AI recommendation overridden', 'Determination recorded', 'Medical Director review completed',
+  'Case opened for review', 'Case routed to Medical Director', 'Break-the-glass access granted',
+]);
+export function governanceSection(e: AuditEvent): GovernanceSection {
+  if (DECISION_LINEAGE.has(e.action)) return 'Decision lineage';
+  if (HUMAN_ACTIONS.has(e.action)) return 'Human actions';
+  return 'Execution';
+}
+
 /** Re-walks the chain and reports the first break, if any. Backs the "Verify chain" action —
  *  the point of the demo is that this is a check anyone can run, not a claim on a slide. */
 export function verifyChain(events: AuditEvent[] = AUDIT_EVENTS): { verified: number; brokenAt: string | null } {
