@@ -12,10 +12,10 @@ import { Icon } from './icon';
   template: `
     @if (alerts.open()) {
       <div class="scrim" (click)="alerts.close()"></div>
-      <aside class="panel" role="dialog" aria-label="Inbox">
+      <aside class="panel" role="dialog" aria-label="Notifications">
         <header class="head">
           <div>
-            <h3>Inbox</h3>
+            <h3>Notifications</h3>
             <p class="sub">
               {{ alerts.count() }} open signal{{ alerts.count() === 1 ? '' : 's' }} across your modules
               @if (alerts.criticalCount()) { · <b class="crit">{{ alerts.criticalCount() }} critical</b> }

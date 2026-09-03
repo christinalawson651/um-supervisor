@@ -67,7 +67,7 @@ const TAB_DEFS: TabDef[] = [
 const RAIL = [
   { icon: 'barchart', label: 'Dashboard', active: true, badge: 0 },
   { icon: 'users', label: 'Members', active: false, badge: 0 },
-  { icon: 'inbox', label: 'Inbox', active: false, badge: 28 },
+  { icon: 'inbox', label: 'Inbox', active: false, badge: 0 },
   { icon: 'clock', label: 'Schedule', active: false, badge: 0 },
   { icon: 'folder', label: 'Reports', active: false, badge: 0 },
   { icon: 'barchart', label: 'Analytics', active: false, badge: 0 },
@@ -131,11 +131,6 @@ export class Shell {
   readonly kpiCollapsed = signal(false); // collapsible for screen real estate
 
   @ViewChild('tabbar') private tabbarEl?: ElementRef<HTMLElement>;
-  /** Inbox carries the live alert count; every other rail badge stays as authored. */
-  railBadge(item: { label: string; badge: number }): number {
-    return item.label === 'Inbox' ? this.alerts.count() : item.badge;
-  }
-
   scrollTabs(delta: number) {
     this.tabbarEl?.nativeElement.scrollBy({ left: delta, behavior: 'smooth' });
   }
@@ -184,7 +179,6 @@ export class Shell {
   }
 
   railClick(item: { label: string; active: boolean }) {
-    if (item.label === 'Inbox') { this.alerts.toggle(); return; }
     if (item.active) return;
     this.ix.toast(`${item.label} module isn't part of this demo build.`, 'info');
   }

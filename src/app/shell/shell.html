@@ -6,7 +6,7 @@
       <button class="rail-item" [class.active]="item.active" (click)="railClick(item)">
         <span class="rail-ic">
           <z-icon [name]="item.icon" [size]="20" [stroke]="1.8"></z-icon>
-          @if (railBadge(item)) { <span class="rail-badge" [class.crit]="item.label === 'Inbox' && alerts.criticalCount() > 0">{{ railBadge(item) }}</span> }
+          @if (item.badge) { <span class="rail-badge">{{ item.badge }}</span> }
         </span>
         <span class="rail-label">{{ item.label }}</span>
       </button>
@@ -21,6 +21,11 @@
       <span class="spacer"></span>
       <span class="online"><span class="dot"></span>
         <z-icon name="wifi" [size]="14" [stroke]="1.8"></z-icon> Online</span>
+      <button class="bell" [class.has-crit]="alerts.criticalCount() > 0" (click)="alerts.toggle()"
+        [attr.aria-label]="'Notifications — ' + alerts.count() + ' open'">
+        <z-icon name="bell" [size]="17" [stroke]="1.8"></z-icon>
+        @if (alerts.count()) { <span class="bell-badge">{{ alerts.count() }}</span> }
+      </button>
       <button class="btn outline" (click)="openHistory()">
         <z-icon name="clock" [size]="14"></z-icon> History
         @if (data.history().length) { <span class="hbadge">{{ data.history().length }}</span> }

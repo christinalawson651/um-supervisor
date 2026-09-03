@@ -212,3 +212,24 @@
 
 /* ---------- content ---------- */
 .content { padding: 22px 28px 40px; }
+
+
+/* ---- notifications bell ----------------------------------------------------
+   Sits in the top bar rather than on the rail so the count is in peripheral
+   vision on every screen, not behind a click. Distinct from History beside it:
+   History is what happened this session, the bell is what is open now. */
+.topbar .bell {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: 999px; background: #fff;
+  color: var(--gray-500); cursor: pointer; transition: color .15s, border-color .15s;
+}
+.topbar .bell:hover { color: var(--teal-700); border-color: var(--teal-600); }
+.topbar .bell:focus-visible { outline: 2px solid var(--teal-600); outline-offset: 2px; }
+.topbar .bell-badge {
+  position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 999px; background: var(--teal-600); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 17px; text-align: center;
+  border: 2px solid #fff; font-variant-numeric: tabular-nums;
+}
+.topbar .bell.has-crit .bell-badge { background: var(--red, #c0392b); }
