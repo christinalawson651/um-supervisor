@@ -37,6 +37,10 @@ import {
   eventDate, verifyChain,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, RESTORE_REQUESTS, archiveSummary, verifyArchiveChain,
 } from './audit-trail';
+import {
+  AI_DECISIONS, AiDecisionRecord, AI_TARGETS, MODEL_VERSIONS, MODEL_ATTRIBUTABLE,
+  aiSummary, calibration, drift, overrideReasons, reviewerConcordance, concordanceBy,
+} from './ai-oversight';
 
 export const UM_QUEUE_NAMES = ['Intake', 'Clinical Review', 'MD Review', 'RFI Pending', 'OON Review', 'Concurrent Review', 'Pending P2P'];
 export const UM_TEAMS = ['Inpatient Review', 'Outpatient Review', 'Complex & Concurrent'];
@@ -845,6 +849,50 @@ export const AUDIT_REPORTS: ReportDef[] = [
           ] },
         { title: 'Role → Permission Matrix', columns: ['Permission', ...AUDIT_ROLE_KEYS],
           rows: PERMISSIONS.map((p) => [p, ...AUDIT_ROLE_KEYS.map((r) => (PERMISSION_MATRIX as any)[r][p] ?? '—')]) },
+      ];
+    },
+  },
+  {
+    id: 'audit-ai-oversight', module: 'generic', group: AUDIT_GROUP, title: 'AI Oversight & Concordance',
+    description: 'Every machine-influenced determination: what the model recommended, at what confidence and on which model version, what the clinician decided, and where they diverged — with confidence calibration, drift, override attribution and per-clinician agreement.',
+    staticNote: 'Confidence calibration compares each band\'s claimed accuracy against the agreement actually observed. A band running below its claim is over-confident, and scores in that range should not be treated as stronger evidence than the band beneath it.',
+    dimension: { label: 'Outcome', options: [ALL, 'Auto-approved', 'Accepted', 'Overridden', 'Escalated to MD'] },
+    tables: (ctx) => {
+      const lobs = !ctx.lob || ctx.lob === ALL ? null : (Array.isArray(ctx.lob) ? ctx.lob : [ctx.lob]);
+      const rows: AiDecisionRecord[] = AI_DECISIONS.filter((r) => {
+        if (lobs && lobs.length && !lobs.includes(r.lob)) return false;
+        if (ctx.days !== undefined && daysAgo(r.decidedDate) > ctx.days) return false;
+        if (ctx.dimension && ctx.dimension !== ALL && r.outcome !== ctx.dimension) return false;
+        return true;
+      });
+      const sum = aiSummary(rows);
+      const overridden = rows.filter((r) => r.outcome === 'Overridden');
+      return [
+        { title: 'Oversight Summary', columns: ['Measure', 'Value', 'Governance Target'], rows: [
+          ['Determinations scored', sum.total, '—'],
+          ['Straight-through auto-approvals', sum.autoApproved, '—'],
+          ['Clinician-reviewed', sum.reviewed, '—'],
+          ['Concordance (AI matched final determination)', `${sum.concordancePct}%`, `>= ${AI_TARGETS.concordancePct}%`],
+          ['Override rate', `${sum.overrideRatePct}%`, `<= ${AI_TARGETS.maxOverrideRatePct}%`],
+          ['Model-attributable overrides', sum.modelAttributable, 'trend to zero'],
+          ['Escalation rate (low confidence to MD)', `${sum.escalationRatePct}%`, `<= ${AI_TARGETS.maxEscalationRatePct}%`],
+          ['Mean confidence', `${sum.meanConfidence}%`, '—'],
+        ] },
+        { title: 'Confidence Calibration', columns: ['Band', 'Determinations', 'Claimed Accuracy', 'Observed Agreement', 'Deviation (pts)', 'Verdict'],
+          rows: calibration(rows).map((c) => [c.band, c.n, `${c.claimed}%`, `${c.observed}%`, c.deviation, c.verdict]) },
+        { title: 'Concordance Over Time', columns: ['Month', 'Determinations', 'Model Version', 'Mean Confidence', 'Concordance'],
+          rows: drift(rows).map((d) => [d.month, d.n, d.modelVersion, `${d.meanConfidence}%`, `${d.concordancePct}%`]) },
+        { title: 'Override Reasons', columns: ['Reason', 'Overrides', 'Attribution'],
+          rows: overrideReasons(rows).map((r) => [r.reason, r.count, r.modelAttributable ? 'Model' : 'Clinical']) },
+        { title: 'Agreement by Clinician', columns: ['Clinician', 'Scored', 'Agreed', 'Agreement %', 'Overrides', 'Sample Adequate'],
+          rows: reviewerConcordance(rows).map((r) => [r.reviewer, r.scored, r.agreed, r.pct, r.overrides, r.adequate ? 'Yes' : 'No']) },
+        { title: 'Agreement by Procedure', columns: ['Procedure / Criteria', 'Scored', 'Concordance %', 'Override Rate %'],
+          rows: concordanceBy(rows, (r) => r.procedure).filter((g) => g.n >= AI_TARGETS.minBandSample / 2).map((g) => [g.key, g.n, g.concordancePct, g.overrideRatePct]) },
+        { title: 'Model Versions in Force', columns: ['Version', 'From', 'To', 'Determinations Scored', 'Change'],
+          rows: MODEL_VERSIONS.map((m) => [m.version, m.from, m.to ?? 'current', rows.filter((r) => r.modelVersion === m.version).length, m.note]) },
+        { title: 'Override Detail', columns: ['Auth', 'Member', 'LOB', 'Procedure', 'Model Version', 'AI Recommendation', 'Confidence', 'Final Determination', 'Override Reason', 'Attribution', 'Overridden By', 'Decided'],
+          rows: overridden.map((r) => [r.authId, r.member, r.lob, r.procedure, r.modelVersion, r.recommendation, `${r.confidence}%`,
+            r.finalDecision, r.overrideReason ?? '—', r.overrideReason && MODEL_ATTRIBUTABLE.includes(r.overrideReason) ? 'Model' : 'Clinical', r.overriddenBy ?? '—', r.decidedDate]) },
       ];
     },
   },

@@ -15,10 +15,16 @@ import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
 import { LOBS, daysAgo } from '../data/case-fields';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
+import {
+  AI_DECISIONS, AiDecisionRecord, AiOutcome, OverrideReason, OVERRIDE_REASONS, MODEL_ATTRIBUTABLE,
+  AI_TARGETS, MODEL_VERSIONS, aiScope, aiSummary, calibration, CalibrationRow, drift,
+  overrideReasons, reviewerConcordance, concordanceBy,
+} from '../data/ai-oversight';
 
 interface TabDef { key: string; label: string; }
 const TAB_DEFS: TabDef[] = [
   { key: 'trail', label: 'Audit Trail' },
+  { key: 'ai', label: 'AI Oversight' },
   { key: 'activity', label: 'User Activity Monitoring' },
   { key: 'governance', label: 'Governance & Access Controls' },
   { key: 'retention', label: 'Retention & Archive' },
@@ -191,6 +197,162 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
               </div>
             </div>
           }
+        </div>
+      }
+
+      <!-- ============================ AI OVERSIGHT ============================ -->
+      @case ('ai') {
+        <div class="tab-head">
+          <div><h2>AI Oversight</h2>
+            <span class="section-note">What the model recommended, how sure it said it was, what the clinician decided instead, and whether the score can be trusted. Every determination the model touched — {{ aiRows().length | number }} in range.</span></div>
+          <button class="btn outline sm" (click)="exportAi()">Export</button>
+        </div>
+
+        <div class="tile-row">
+          <div class="tile" (click)="drillAi('AI-Scored Determinations', aiRows(), 'all')">
+            <div class="tile-val">{{ ai().total | number }}</div><div class="tile-lab">Determinations Scored</div>
+            <div class="tile-sub">{{ ai().autoApproved }} straight-through · {{ ai().reviewed }} reviewed</div>
+          </div>
+          <div class="tile" (click)="drillAi('Concordant — AI Matched the Determination', concordantRows(), 'concordant')">
+            <div class="tile-ic" [class.hot]="ai().concordancePct < targets.concordancePct"></div>
+            <div class="tile-val">{{ ai().concordancePct }}%</div><div class="tile-lab">Concordance</div>
+            <div class="tile-sub">target ≥ {{ targets.concordancePct }}%</div>
+          </div>
+          <div class="tile" (click)="drillAi('Clinician Overrides', overriddenRows(), 'overrides')">
+            <div class="tile-ic" [class.hot]="ai().overrideRatePct > targets.maxOverrideRatePct"></div>
+            <div class="tile-val">{{ ai().overrideRatePct }}%</div><div class="tile-lab">Override Rate</div>
+            <div class="tile-sub">{{ ai().overridden }} of {{ ai().reviewed }} reviewed · target ≤ {{ targets.maxOverrideRatePct }}%</div>
+          </div>
+          <div class="tile" (click)="drillAi('Model-Attributable Overrides', modelAttributableRows(), 'model-attributable')">
+            <div class="tile-ic" [class.hot]="ai().modelAttributable > 0"></div>
+            <div class="tile-val">{{ ai().modelAttributable }}</div><div class="tile-lab">Model-Attributable Overrides</div>
+            <div class="tile-sub">the ones that are the model's fault</div>
+          </div>
+          <div class="tile" (click)="drillAi('Escalated to Medical Director', escalatedRows(), 'escalated')">
+            <div class="tile-ic" [class.hot]="ai().escalationRatePct > targets.maxEscalationRatePct"></div>
+            <div class="tile-val">{{ ai().escalationRatePct }}%</div><div class="tile-lab">Escalation Rate</div>
+            <div class="tile-sub">low confidence routed to MD · target ≤ {{ targets.maxEscalationRatePct }}%</div>
+          </div>
+          <div class="tile" (click)="drillAi('Straight-Through Auto-Approvals', autoRows(), 'auto')">
+            <div class="tile-val">{{ ai().meanConfidence }}%</div><div class="tile-lab">Mean Confidence</div>
+            <div class="tile-sub">{{ ai().autoApproved }} auto-approved</div>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Confidence Calibration</h3>
+            <span class="section-note sm">A band claiming {{ 92 }}% should be right about {{ 92 }}% of the time. Observed agreement against the claim is the evidence a confidence score is or is not reliable — the number itself proves nothing. Tolerance ±{{ targets.maxCalibrationDeviationPts }} points.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Confidence Band</th><th class="num">Determinations</th><th class="num">Claimed</th><th class="num">Observed</th><th class="num">Deviation</th><th>Verdict</th></tr></thead>
+            <tbody>
+              @for (c of calib(); track c.band) {
+                <tr class="clk" (click)="drillBand(c)">
+                  <td class="strong">{{ c.band }}</td>
+                  <td class="num">{{ c.n | number }}</td>
+                  <td class="num">{{ c.claimed }}%</td>
+                  <td class="num">{{ c.observed }}%</td>
+                  <td class="num"><b [class.warn]="c.adequate && c.deviation < 0" [class.good]="c.adequate && c.deviation >= 0">{{ c.deviation > 0 ? '+' : '' }}{{ c.deviation }} pts</b></td>
+                  <td><span class="badge"
+                        [class.green]="c.verdict === 'Calibrated'"
+                        [class.red]="c.verdict === 'Overconfident'"
+                        [class.amber]="c.verdict === 'Underconfident' || c.verdict === 'Insufficient sample'">{{ c.verdict }}</span></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          @if (overconfidentBands().length) {
+            <div class="finding panel-pad">
+              <b>Finding</b>
+              The {{ overconfidentBands().join(', ') }} band{{ overconfidentBands().length > 1 ? 's are' : ' is' }} overconfident — it agrees with the clinician less often than its score claims. Scores in that range should not be treated as stronger evidence than the band below it until this closes. Tracked as REQ-20.
+            </div>
+          }
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Concordance Over Time</h3>
+            <span class="section-note sm">Drift shows up here before it shows up anywhere a member would notice. Model version in force is shown against each month.</span></div>
+          <div class="ilist">
+            @for (d of driftRows(); track d.month) {
+              <div class="irow">
+                <div class="ilab">{{ d.month }}<span class="cite">{{ d.modelVersion }} · n={{ d.n }}</span></div>
+                <div class="ibar-track"><div class="ibar-fill" [class.amber]="d.concordancePct < targets.concordancePct" [class.teal]="d.concordancePct >= targets.concordancePct" [style.width.%]="d.concordancePct"></div></div>
+                <div class="icount">{{ d.concordancePct }}% · conf {{ d.meanConfidence }}%</div>
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Why Clinicians Overrode</h3>
+            <span class="section-note sm">An override rate on its own says nothing. The reason code is what separates "the model is wrong about this population" from "the clinical picture changed after it scored" — only the first is a model problem.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Reason</th><th class="num">Overrides</th><th class="num">% of Overrides</th><th>Attribution</th></tr></thead>
+            <tbody>
+              @for (r of reasons(); track r.reason) {
+                <tr class="clk" (click)="drillReason(r.reason)">
+                  <td class="strong">{{ r.reason }}</td>
+                  <td class="num">{{ r.count }}</td>
+                  <td class="num">{{ reasonPct(r.count) }}%</td>
+                  <td><span class="badge" [class.red]="r.modelAttributable" [class.green]="!r.modelAttributable">{{ r.modelAttributable ? 'Model' : 'Clinical' }}</span></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Agreement by Clinician</h3>
+            <span class="section-note sm">A reviewer below the group is not necessarily wrong — they may be catching what the model misses. This is a signal to look at, never a score to manage someone by.</span></div>
+          <div class="ilist">
+            @for (r of byReviewer(); track r.reviewer) {
+              <div class="irow clk" (click)="drillReviewer(r.reviewer)">
+                <div class="ilab">{{ r.reviewer }}<span class="cite">{{ r.overrides }} override(s)</span></div>
+                @if (r.adequate) {
+                  <div class="ibar-track"><div class="ibar-fill" [class.amber]="r.pct < targets.concordancePct" [class.teal]="r.pct >= targets.concordancePct" [style.width.%]="r.pct"></div></div>
+                  <div class="icount">{{ r.agreed }}/{{ r.scored }} · {{ r.pct }}%</div>
+                } @else {
+                  <div class="ibar-track"><div class="ibar-fill gray" style="width:100%"></div></div>
+                  <div class="icount muted">n={{ r.scored }} · insufficient</div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Where Agreement Breaks Down</h3>
+            <span class="section-note sm">Grouped by the procedure the criteria govern — this is what tells the clinical content team which policy to look at. Groups below {{ targets.minBandSample / 2 }} scored determinations are omitted; a sample of three says nothing.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Procedure / Criteria</th><th class="num">Scored</th><th class="num">Concordance</th><th class="num">Override Rate</th></tr></thead>
+            <tbody>
+              @for (g of byCriteria(); track g.key) {
+                <tr class="clk" (click)="drillCriteria(g.key)">
+                  <td class="strong">{{ g.key }}</td>
+                  <td class="num">{{ g.n }}</td>
+                  <td class="num"><b [class.warn]="g.concordancePct < targets.concordancePct">{{ g.concordancePct }}%</b></td>
+                  <td class="num">{{ g.overrideRatePct }}%</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Model Versions in Force</h3>
+            <span class="section-note sm">A determination can only be re-explained against the model that produced it, so versions are retained the same way criteria versions are.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Version</th><th>In Force</th><th class="num">Determinations Scored</th><th>Change</th></tr></thead>
+            <tbody>
+              @for (m of modelVersions; track m.version) {
+                <tr>
+                  <td class="strong mono">{{ m.version }}</td>
+                  <td class="mono">{{ m.from }} → {{ m.to ?? 'current' }}</td>
+                  <td class="num">{{ scoredByVersion(m.version) | number }}</td>
+                  <td class="sub">{{ m.note }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
         </div>
       }
 
@@ -625,6 +787,12 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .hot { color: var(--red, #c0392b); }
     .chip { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--gray-100); color: var(--gray-500); }
     .chip.amber { background: #fdf3e3; color: #9a6400; }
+    .good { color: var(--teal-700); }
+    .finding {
+      border-left: 3px solid var(--amber); margin: 0 20px 18px; padding: 10px 0 10px 14px;
+      font-size: 13px; line-height: 1.55; color: var(--ink); max-width: 76ch;
+    }
+    .finding b { display: block; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: #9a6400; margin-bottom: 2px; }
     .clk { cursor: pointer; }
     .ctl { max-width: 380px; line-height: 1.45; }
     .next { margin-top: 4px; font-size: 11.5px; color: var(--teal-700); }
@@ -784,6 +952,71 @@ export class AuditTraceability {
       (!q || [a.name, a.userId, a.role, a.department].some((v) => v.toLowerCase().includes(q))));
     return compareRows(rows, this.actSortKey(), this.actSortDir());
   });
+
+  // ---- AI oversight ----
+  readonly targets = AI_TARGETS;
+  readonly modelVersions = MODEL_VERSIONS;
+  /** Scoped by the module's own Range/LOB controls, same as everything else on this module. */
+  readonly aiRows = computed(() => {
+    const days = AUDIT_RANGES.find((r) => r.id === this.range())?.days ?? null;
+    return aiScope(this.lob(), days === null ? undefined : days);
+  });
+  readonly ai = computed(() => aiSummary(this.aiRows()));
+  readonly calib = computed(() => calibration(this.aiRows()));
+  readonly overconfidentBands = computed(() => this.calib().filter((c) => c.verdict === 'Overconfident').map((c) => c.band));
+  readonly driftRows = computed(() => drift(this.aiRows()));
+  readonly reasons = computed(() => overrideReasons(this.aiRows()));
+  readonly byReviewer = computed(() => reviewerConcordance(this.aiRows()));
+  /** Grouped by the procedure the criteria govern, not by criteria-set version — versioning
+   *  fragments each procedure three ways and leaves samples of three or four, which say nothing.
+   *  Groups below the band sample floor are dropped for the same reason. */
+  readonly byCriteria = computed(() =>
+    concordanceBy(this.aiRows(), (r) => r.procedure).filter((g) => g.n >= AI_TARGETS.minBandSample / 2).slice(0, 12));
+  readonly concordantRows = computed(() => this.aiRows().filter((r) => r.concordant));
+  readonly overriddenRows = computed(() => this.aiRows().filter((r) => r.outcome === 'Overridden'));
+  readonly modelAttributableRows = computed(() => this.overriddenRows().filter((r) => r.overrideReason && MODEL_ATTRIBUTABLE.includes(r.overrideReason)));
+  readonly escalatedRows = computed(() => this.aiRows().filter((r) => r.outcome === 'Escalated to MD'));
+  readonly autoRows = computed(() => this.aiRows().filter((r) => r.autoApproved));
+  reasonPct(count: number): number {
+    const total = this.overriddenRows().length;
+    return total ? Math.round((count / total) * 100) : 0;
+  }
+  scoredByVersion(v: string): number { return this.aiRows().filter((r) => r.modelVersion === v).length; }
+
+  private readonly AI_COLUMNS = ['Auth', 'Member', 'LOB', 'Procedure', 'Model Version', 'Criteria Set', 'AI Recommendation', 'Confidence', 'Band', 'Final Determination', 'Concordant', 'Outcome', 'Override Reason', 'Overridden By', 'Reviewer', 'Scored', 'Decided'];
+  private aiRow(r: AiDecisionRecord): (string | number)[] {
+    return [r.authId, r.member, r.lob, r.procedure, r.modelVersion, r.criteriaSet, r.recommendation, `${r.confidence}%`, r.band,
+      r.finalDecision, r.concordant ? 'Yes' : 'No', r.outcome, r.overrideReason ?? '—', r.overriddenBy ?? '—', r.reviewer, r.scoredDate, r.decidedDate];
+  }
+  /** Column 0 is 'Auth' rather than 'Auth ID' on purpose — these are compliance records, so the
+   *  Explorer treats them as informational and offers no Reassign/Balance/Escalate, the same
+   *  treatment the IRR log gets. */
+  drillAi(title: string, rows: AiDecisionRecord[], slugName: string) {
+    this.ix.openExplorer({
+      title, context: `${rows.length.toLocaleString()} AI-scored determination(s) · ${this.rangeLabel()}`,
+      columns: this.AI_COLUMNS, rows: rows.map((r) => this.aiRow(r)),
+      exportName: `ai-oversight-${slugName}_2026-07-17`, memberColumn: 1,
+    });
+  }
+  drillBand(c: CalibrationRow) {
+    this.drillAi(`Confidence Band ${c.band} — claimed ${c.claimed}%, observed ${c.observed}%`,
+      this.aiRows().filter((r) => r.band === c.band), `band-${slug(c.band)}`);
+  }
+  drillReason(reason: OverrideReason) {
+    this.drillAi(`Overrides — ${reason}`, this.overriddenRows().filter((r) => r.overrideReason === reason), `reason-${slug(reason)}`);
+  }
+  drillReviewer(reviewer: string) {
+    this.drillAi(`AI Agreement — ${reviewer}`, this.aiRows().filter((r) => r.reviewer === reviewer), `reviewer-${slug(reviewer)}`);
+  }
+  drillCriteria(key: string) {
+    this.drillAi(`AI Agreement — ${key}`, this.aiRows().filter((r) => r.criteriaSet === key), `criteria-${slug(key)}`);
+  }
+  exportAi() {
+    this.exporter.open({
+      title: 'AI Oversight', name: 'ai-oversight_2026-07-17',
+      columns: this.AI_COLUMNS, rows: this.aiRows().map((r) => this.aiRow(r)),
+    });
+  }
 
   // ---- Governance ----
   readonly roleCount = computed(() => new Set(SYSTEM_USERS.map((u) => u.role)).size);

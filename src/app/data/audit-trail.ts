@@ -13,6 +13,7 @@
 import { CASE_POOL, CaseRec, NURSES } from './case-pool';
 import { CM_CASE_POOL, CARE_MANAGERS } from './cm-case-pool';
 import { TODAY, MD_REVIEWERS, lobOf } from './case-fields';
+import { AI_DECISIONS } from './ai-oversight';
 
 // ---------------------------------------------------------------------------------------------
 // Users — the actor roster every event attributes to. Roles here are ACCESS roles (what the system
@@ -74,6 +75,11 @@ function buildUsers(): SystemUser[] {
 }
 export const SYSTEM_USERS: SystemUser[] = buildUsers();
 export const USER_BY_NAME = new Map(SYSTEM_USERS.map((u) => [u.name, u]));
+
+/** The model's recommendation for an authorization, keyed for the event generator below. The trail
+ *  and the AI Oversight tab read the same records, so a determination's audit history can never
+ *  say something different from the oversight metrics. */
+const AI_BY_AUTH = new Map(AI_DECISIONS.map((r) => [r.authId, r]));
 
 // ---------------------------------------------------------------------------------------------
 // Audit events
@@ -200,6 +206,20 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
       action: 'Clinical criteria applied', field: 'Guideline', after: `${c.procedure} — criteria set v${2 + (i % 3)}.0`,
       reasonCode: 'CRIT-APPLIED',
     }));
+    // What the model recommended, at what confidence, from which model version — logged as its own
+    // event so a determination can be traced back to the machine input that preceded it, not just
+    // to the human who signed it.
+    const ai = AI_BY_AUTH.get(c.authId);
+    if (ai) {
+      out.push(base({
+        timestamp: stamp(submitted, 1, 566 + (i % 240)), category: 'Clinical Decision',
+        action: 'AI recommendation generated', channel: 'System Rule',
+        actor: 'svc_trucare_hl7', actorId: USER_BY_NAME.get('svc_trucare_hl7')!.userId, actorRole: 'Interface Service Account',
+        sourceIp: '172.19.4.11', field: 'AI Recommendation',
+        after: `${ai.recommendation} · ${ai.confidence}% confidence`,
+        reasonCode: `${ai.modelVersion} · ${ai.criteriaSet}`,
+      }));
+    }
     if (c.tags.includes('rfi')) {
       out.push(nb({
         timestamp: stamp(submitted, 2, 600 + (i % 200)), category: 'Correspondence',
@@ -223,6 +243,21 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
       // can approve within criteria but cannot deny, so the determination event is attributed to
       // the Medical Director who signed it off, not to the nurse who worked the case. Getting this
       // attribution right is the whole point of SOD-3 on the Governance tab.
+      // A clinician disagreeing with the model is the single most audit-relevant thing that can
+      // happen on a machine-influenced determination, so it is its own event with a structured
+      // reason — before/after carrying what the model said and what the clinician decided instead.
+      if (ai && ai.outcome === 'Overridden' && ai.overriddenBy) {
+        const ov = USER_BY_NAME.get(ai.overriddenBy);
+        if (ov) {
+          out.push(base({
+            timestamp: stamp(submitted, 3 + (i % 4), 636 + (i % 160)), category: 'Clinical Decision',
+            action: 'AI recommendation overridden', actor: ov.name, actorId: ov.userId, actorRole: ov.role,
+            sourceIp: ipFor(ov, i), field: 'AI Recommendation',
+            before: `${ai.recommendation} · ${ai.confidence}% confidence`, after: c.decision,
+            reasonCode: ai.overrideReason ?? 'OVERRIDE',
+          }));
+        }
+      }
       const adverse = c.decision === 'Denied' || c.decision === 'Partial';
       const signer = adverse
         ? USER_BY_NAME.get(MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length]) ?? nurse
@@ -433,7 +468,8 @@ export function verifyChain(events: AuditEvent[] = AUDIT_EVENTS): { verified: nu
 // Governance — entitlements, segregation of duties, access attestation
 // ---------------------------------------------------------------------------------------------
 export const PERMISSIONS = [
-  'View member PHI', 'Approve authorization', 'Deny authorization', 'Override AI recommendation',
+  'View member PHI', 'Approve authorization', 'Deny authorization',
+  'View AI confidence score', 'Override AI recommendation',
   'Reopen closed case', 'Reassign work', 'Export member-level data', 'Publish configuration change', 'Administer user accounts',
 ] as const;
 export type Permission = typeof PERMISSIONS[number];
@@ -442,16 +478,16 @@ export type Permission = typeof PERMISSIONS[number];
  *  yes/no: "Yes — own caseload only" is a materially different control than an unconditional yes,
  *  and it's the distinction an auditor writes up. */
 export const PERMISSION_MATRIX: Record<AccessRole, Partial<Record<Permission, string>>> = {
-  'UM Nurse Reviewer': { 'View member PHI': 'Yes — assigned caseload', 'Approve authorization': 'Yes — within criteria', 'Deny authorization': 'No — MD only', 'Override AI recommendation': 'Yes — reason required', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
-  'Medical Director': { 'View member PHI': 'Yes', 'Approve authorization': 'Yes', 'Deny authorization': 'Yes', 'Override AI recommendation': 'Yes — reason required', 'Reopen closed case': 'Yes', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
-  'UM Supervisor': { 'View member PHI': 'Yes — team caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes', 'Reassign work': 'Yes', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'Approve only', 'Administer user accounts': 'No' },
-  'Care Manager': { 'View member PHI': 'Yes — assigned caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes — own cases', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
-  'CM Supervisor': { 'View member PHI': 'Yes — team caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes', 'Reassign work': 'Yes', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
-  'Appeals Reviewer': { 'View member PHI': 'Yes — appeal scope', 'Approve authorization': 'Yes — appeal outcome', 'Deny authorization': 'Yes — appeal outcome', 'Override AI recommendation': 'Yes — reason required', 'Reopen closed case': 'Yes', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
-  'Intake Coordinator': { 'View member PHI': 'Yes — demographic & eligibility only', 'Approve authorization': 'No', 'Deny authorization': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'Yes — unassigned queue', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
-  'Compliance Analyst': { 'View member PHI': 'Yes — audit scope, read-only', 'Approve authorization': 'No', 'Deny authorization': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
-  'System Administrator': { 'View member PHI': 'No — masked', 'Approve authorization': 'No', 'Deny authorization': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'Yes — with approval', 'Administer user accounts': 'Yes' },
-  'Interface Service Account': { 'View member PHI': 'Yes — transport only', 'Approve authorization': 'Yes — rule-driven', 'Deny authorization': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'UM Nurse Reviewer': { 'View member PHI': 'Yes — assigned caseload', 'Approve authorization': 'Yes — within criteria', 'Deny authorization': 'No — MD only', 'View AI confidence score': 'Yes — after own assessment recorded', 'Override AI recommendation': 'Yes — reason required', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'Medical Director': { 'View member PHI': 'Yes', 'Approve authorization': 'Yes', 'Deny authorization': 'Yes', 'View AI confidence score': 'Yes', 'Override AI recommendation': 'Yes — reason required', 'Reopen closed case': 'Yes', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'UM Supervisor': { 'View member PHI': 'Yes — team caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'Yes — aggregate only', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes', 'Reassign work': 'Yes', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'Approve only', 'Administer user accounts': 'No' },
+  'Care Manager': { 'View member PHI': 'Yes — assigned caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No — not applicable', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes — own cases', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'CM Supervisor': { 'View member PHI': 'Yes — team caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No — not applicable', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes', 'Reassign work': 'Yes', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'Appeals Reviewer': { 'View member PHI': 'Yes — appeal scope', 'Approve authorization': 'Yes — appeal outcome', 'Deny authorization': 'Yes — appeal outcome', 'View AI confidence score': 'No — blinded on appeal', 'Override AI recommendation': 'Yes — reason required', 'Reopen closed case': 'Yes', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'Intake Coordinator': { 'View member PHI': 'Yes — demographic & eligibility only', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'Yes — unassigned queue', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'Compliance Analyst': { 'View member PHI': 'Yes — audit scope, read-only', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'Yes — read-only', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'System Administrator': { 'View member PHI': 'No — masked', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'Yes — with approval', 'Administer user accounts': 'Yes' },
+  'Interface Service Account': { 'View member PHI': 'Yes — transport only', 'Approve authorization': 'Yes — rule-driven', 'Deny authorization': 'No', 'View AI confidence score': 'Yes — rule-driven', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
 };
 
 export interface SodRule { id: string; name: string; detail: string; citation: string; }
@@ -469,7 +505,7 @@ export type ControlStatus = 'Met' | 'Partial' | 'Gap';
 export type Priority = 'P1' | 'P2' | 'P3';
 export interface ComplianceRequirement {
   id: string;
-  domain: 'Audit Trail' | 'User Activity' | 'Access Governance' | 'Reporting & Extracts' | 'Retention & Integrity';
+  domain: 'Audit Trail' | 'User Activity' | 'Access Governance' | 'Reporting & Extracts' | 'Retention & Integrity' | 'AI Governance';
   requirement: string;
   citation: string;
   control: string;            // what the platform does today
@@ -500,6 +536,9 @@ export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
   { id: 'REQ-16', domain: 'Retention & Integrity', requirement: 'Legal hold suspends disposition', citation: 'FRCP 37(e) · plan litigation-hold policy', control: 'A hold reference can be attached to any archive segment and is displayed against its purge-eligible date.', evidence: 'Retention & Archive — legal holds', status: 'Partial', priority: 'P1', gap: 'Holds are recorded and visible, but they are applied by hand and nothing in the platform blocks a disposition job from running against a held segment.', nextStep: 'Make the hold flag a hard precondition on the purge job, and require a named releaser plus a reason to lift one.', owner: 'Compliance' },
   { id: 'REQ-17', domain: 'Retention & Integrity', requirement: 'Defensible disposition — destruction is certified and itself logged', citation: 'HIPAA §164.310(d)(2)(i) · NARA-style disposition practice', control: 'Segments past retention are identified and queued.', evidence: 'Retention & Archive — disposition queue', status: 'Gap', priority: 'P2', gap: 'Nothing produces a certificate of destruction, and a purge would leave no audit event of its own — so after disposition there is no evidence the record ever existed or was lawfully destroyed.', nextStep: 'Emit a signed disposition record per segment (period, event count, terminal hash, approver, date) and write it back into the audit trail as its own event.', owner: 'Platform Engineering' },
   { id: 'REQ-18', domain: 'Retention & Integrity', requirement: 'Archived records are retrievable within the requested window', citation: 'CMS program audit request timelines', control: 'Restore requests from cold storage are tracked with requester, reason, and turnaround against a 5-day retrieval SLA.', evidence: 'Retention & Archive — restore requests', status: 'Partial', priority: 'P2', gap: 'Turnaround is recorded after the fact; nothing alerts when a request is approaching or past the retrieval SLA.', nextStep: 'Surface open restore requests as a work item with an SLA countdown, the same treatment the UM queues get.', owner: 'Platform Engineering' },
+  { id: 'REQ-19', domain: 'AI Governance', requirement: 'Every machine-influenced determination is traceable to the model version and criteria that produced it', citation: 'NCQA UM 2 · emerging Clinical AI governance practice', control: 'The recommendation, its confidence score, the model version and the criteria set are written to the audit trail as their own event before the determination, and an override is logged separately with before/after.', evidence: 'Audit Trail — filter Clinical Decision · AI Oversight tab', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Clinical Content' },
+  { id: 'REQ-20', domain: 'AI Governance', requirement: 'Confidence scores are calibrated and monitored for drift', citation: 'Emerging Clinical AI governance practice · SOC 2 CC7.2', control: 'Observed agreement is measured against each confidence band and against a defined tolerance, and concordance is tracked month over month against the model version in force.', evidence: 'AI Oversight — calibration & drift', status: 'Partial', priority: 'P1', gap: 'Calibration is measured and visible, but nothing alerts when a band drifts outside tolerance — today it is found by someone opening the tab. The 95%+ band is currently running overconfident.', nextStep: 'Alert on any adequately-sampled band exceeding the deviation tolerance, and gate model promotion on the same check.', owner: 'Clinical Content' },
+  { id: 'REQ-21', domain: 'AI Governance', requirement: 'Clinician overrides are captured with a structured reason and reviewed', citation: 'Emerging Clinical AI governance practice · NCQA UM 4', control: 'Overrides require a reason code, and reasons are split between model-attributable findings and legitimate clinical divergence so the override rate can actually be interpreted.', evidence: 'AI Oversight — override reasons', status: 'Partial', priority: 'P2', gap: 'Reasons are coded and reportable, but model-attributable overrides do not route anywhere — there is no loop back to the clinical content team who own the criteria.', nextStep: 'Route model-attributable overrides to Clinical Content as a work item, and report closure alongside the IRR corrective-action loop.', owner: 'Clinical Content' },
 ];
 
 export function registerCounts(rows: ComplianceRequirement[] = COMPLIANCE_REGISTER) {
