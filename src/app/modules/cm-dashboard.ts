@@ -57,8 +57,8 @@ const CM_AI_WIDGETS = [
 // see the memory note on why a literal shared service wasn't worth it for this one flow.
 const CM_BALANCE_STRATEGIES = [
   { label: 'Light — move 1 member from the busiest care manager', n: 1 },
-  { label: 'Standard — rebalance 3 members', n: 3 },
-  { label: 'Aggressive — rebalance 6 members', n: 6 },
+  { label: 'Standard — rebalance 3 cases', n: 3 },
+  { label: 'Aggressive — rebalance 6 cases', n: 6 },
   { label: 'Even out — level everyone toward the team average', n: 5 },
 ];
 const IC_BALANCE_STRATEGIES = [
@@ -1364,7 +1364,7 @@ export class CmDashboard {
     const cases: ReassignCase[] = pending.map((r) => ({ authId: r.id, member: r.member, type: r.source, queue: 'Pending Intake', priority: 'Routine', owner: r.intakeCoordinator ?? 'Unclaimed' }));
     const assignees = this.cmData.referralAssigneeStats();
     this.rx.open({
-      title: 'Assign referrals', cases, nurses: assignees, queueTargets: [],
+      title: 'Assign referrals', noun: 'referral', cases, nurses: assignees, queueTargets: [],
       apply: (ids, target, mode) => {
         if (mode === 'queue') { this.ix.toast('Referrals are assigned directly, not by queue.', 'info'); return; }
         ids.forEach((id) => this.cmData.assignIntakeCoordinator(id, target));
@@ -1436,7 +1436,7 @@ export class CmDashboard {
 
   private openCarePlanCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
-      title, context: context ?? `${cases.length} member(s)`,
+      title, context: context ?? `${cases.length} case(s)`,
       columns: CARE_PLAN_COLUMNS, rows: cases.map(carePlanRow),
       exportName: `cm-careplan-${exportSlug}_2026-07-17`, memberColumn: 1,
     });
@@ -1531,7 +1531,7 @@ export class CmDashboard {
 
   private openProgramCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
-      title, context: context ?? `${cases.length} member(s)`,
+      title, context: context ?? `${cases.length} case(s)`,
       columns: CM_COLUMNS, rows: cases.map(cmToRow),
       exportName: `cm-program-${exportSlug}_2026-07-17`, memberColumn: 1,
     });
@@ -1785,7 +1785,7 @@ export class CmDashboard {
   cmBalanceTeam(t: CmTeamStat) {
     const scope = new Set(t.managers.map((m) => m.name));
     this.ix.choose({
-      title: `Balance ${t.name}`, body: `Choose how aggressively to rebalance members from over-utilized care managers to those with capacity within ${t.name}.`,
+      title: `Balance ${t.name}`, body: `Choose how aggressively to rebalance cases from over-utilized care managers to those with capacity within ${t.name}.`,
       label: 'Balancing strategy', options: CM_BALANCE_STRATEGIES.map((s) => s.label), confirmLabel: 'Continue', tone: 'teal',
       onChoose: (opt) => {
         const strat = CM_BALANCE_STRATEGIES.find((s) => s.label === opt)!;
@@ -1793,7 +1793,7 @@ export class CmDashboard {
         if (!plan.length) { this.ix.toast(`${t.name} is already balanced.`, 'info'); return; }
         this.ix.ask({
           title: `Balance ${plan.length} member${plan.length > 1 ? 's' : ''} in ${t.name}`,
-          body: `Move members from over-utilized care managers to those with capacity within ${t.name}:`,
+          body: `Move cases from over-utilized care managers to those with capacity within ${t.name}:`,
           breakdown: this.summarizeBalance(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
@@ -1843,14 +1843,14 @@ export class CmDashboard {
 
   private openCmCases(title: string, cases: CmCaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
-      title, context: context ?? `${cases.length} member(s)`,
+      title, context: context ?? `${cases.length} case(s)`,
       columns: CM_COLUMNS, rows: cases.map(cmToRow),
       exportName: `cm-${exportSlug}_2026-07-17`, memberColumn: 1,
     });
   }
   openCmActive(c: CmManagerStat) {
     const cases = this.scopedCases().filter((x) => x.careManager === c.name);
-    this.openCmCases(`${c.name} — Active Caseload`, cases, `${slug(c.name)}-active`, `${cases.length} active member(s) · ${c.utilization}% utilized`);
+    this.openCmCases(`${c.name} — Active Caseload`, cases, `${slug(c.name)}-active`, `${cases.length} active case(s) · ${c.utilization}% utilized`);
   }
   openCmFlag(c: CmManagerStat, flag: 'highRisk' | 'highAcuity' | 'highCost' | 'slaAtRisk') {
     const cases = this.scopedCases().filter((x) => x.careManager === c.name && x.tags.includes(flag));
@@ -1869,7 +1869,7 @@ export class CmDashboard {
     const labels: Record<QueueBand, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const cases = this.scopedCases().filter((x) => x.queue === queue && queueBandOf(x) === band);
     this.ix.openExplorer({
-      title: `${queue} — ${labels[band]}`, context: `${cases.length} member(s)`,
+      title: `${queue} — ${labels[band]}`, context: `${cases.length} case(s)`,
       columns: this.QUEUE_COLUMNS, rows: cases.map((c) => this.queueCaseRow(c)),
       exportName: `cm-${slug(queue)}-${slug(band)}_2026-07-17`, memberColumn: 1,
     });
@@ -1895,7 +1895,7 @@ export class CmDashboard {
         { label: 'SLA At-Risk', value: String(c.slaAtRisk), tone: c.slaAtRisk > 0 ? 'amber' : undefined },
         { label: 'Utilization', value: `${c.utilization}%`, tone: c.utilization >= 90 ? 'red' : c.utilization < 80 ? 'green' : 'amber' },
       ],
-      note: c.utilization >= 90 ? 'At or above capacity — consider reassigning members.' : 'Operating within healthy capacity.',
+      note: c.utilization >= 90 ? 'At or above capacity — consider reassigning cases.' : 'Operating within healthy capacity.',
       actions: [
         { label: 'View active caseload', tone: 'teal', run: () => { this.ix.closeDrawer(); this.openCmActive(c); } },
         { label: `Reassign a member from ${c.name.split(',')[0]}`, tone: 'teal', run: () => { this.ix.closeDrawer(); this.cmReassignOne(c); } },
@@ -1911,25 +1911,25 @@ export class CmDashboard {
     const nurses = this.cmManagers().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
     const queueTargets = this.cmQueues().map((q) => ({ name: q.name, count: q.count }));
     this.rx.open({
-      title: 'Reassign care management members', cases, nurses, queueTargets,
+      title: 'Reassign care management cases', noun: 'case', cases, nurses, queueTargets,
       apply: (ids, target, mode) => {
         ids.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
-        this.ix.toast(`${ids.length} member(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
-        this.data.addHistory('swap', mode === 'queue' ? 'CM members moved to queue' : 'CM members reassigned', `${ids.length} member(s) → ${target}`);
+        this.ix.toast(`${ids.length} case(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
+        this.data.addHistory('swap', mode === 'queue' ? 'CM cases moved to queue' : 'CM cases reassigned', `${ids.length} case(s) → ${target}`);
       },
     });
   }
-  /** Row-level Reassign — scoped to one care manager's members, same panel/UX as the bulk version. */
+  /** Row-level Reassign — scoped to one care manager's caseload, same panel/UX as the bulk version. */
   cmReassignOne(c: CmManagerStat) {
     const cases: ReassignCase[] = this.cmData.cases().filter((x) => x.careManager === c.name)
       .map((x) => ({ authId: x.memberId, member: x.member, type: x.program, queue: x.queue ?? 'No Active Queue', priority: x.riskLevel, owner: x.careManager }));
     const nurses = this.cmManagers().filter((m) => m.name !== c.name).map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
     this.rx.open({
-      title: `Reassign a member from ${c.name}`, cases, nurses,
+      title: `Reassign a case from ${c.name}`, noun: 'case', cases, nurses,
       apply: (ids, target, mode) => {
         ids.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
-        this.ix.toast(`${ids.length} member(s) reassigned to ${target}.`);
-        this.data.addHistory('swap', 'CM member reassigned', `${ids.length} member(s) → ${target}`);
+        this.ix.toast(`${ids.length} case(s) reassigned to ${target}.`);
+        this.data.addHistory('swap', 'CM case reassigned', `${ids.length} case(s) → ${target}`);
       },
     });
   }
@@ -1937,7 +1937,7 @@ export class CmDashboard {
    *  CM_BALANCE_STRATEGIES above. */
   cmBalance() {
     this.ix.choose({
-      title: 'Balance workload', body: 'Choose how aggressively to rebalance members from over-utilized care managers to those with capacity.',
+      title: 'Balance workload', body: 'Choose how aggressively to rebalance cases from over-utilized care managers to those with capacity.',
       label: 'Balancing strategy', options: CM_BALANCE_STRATEGIES.map((s) => s.label), confirmLabel: 'Continue', tone: 'teal',
       onChoose: (opt) => {
         const strat = CM_BALANCE_STRATEGIES.find((s) => s.label === opt)!;
@@ -1945,7 +1945,7 @@ export class CmDashboard {
         if (!plan.length) { this.ix.toast('Caseloads are already balanced.', 'info'); return; }
         this.ix.ask({
           title: `Balance ${plan.length} member${plan.length > 1 ? 's' : ''}`,
-          body: 'Move members from over-utilized care managers to those with capacity:',
+          body: 'Move cases from over-utilized care managers to those with capacity:',
           breakdown: this.summarizeBalance(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
@@ -1967,7 +1967,7 @@ export class CmDashboard {
   private summarizeBalance(plan: { from: string; to: string }[]): ConfirmBreakdownRow[] {
     const byTarget = new Map<string, number>();
     plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
-    return [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'member' : 'members', target }));
+    return [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'case' : 'cases', target }));
   }
 
   /** Going-on-PTO handoff — unlike Reassign/Balance this always empties the person out completely,
@@ -1990,7 +1990,7 @@ export class CmDashboard {
           byTarget.set(target, (byTarget.get(target) ?? 0) + 1);
         });
         const breakdown = [...byTarget.entries()].map(([to, n]) => `${n} → ${to}`).join(', ');
-        this.ix.toast(`${cases.length} member(s) redistributed from ${person} for PTO (${start} – ${end}).`);
+        this.ix.toast(`${cases.length} case(s) redistributed from ${person} for PTO (${start} – ${end}).`);
         this.data.addHistory('calendar', 'PTO caseload redistributed', `${person} (${team}), ${start}–${end}: ${breakdown}`);
       },
     });

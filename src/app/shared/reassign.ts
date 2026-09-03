@@ -8,6 +8,11 @@ export interface ReassignConfig {
   title: string;
   cases: ReassignCase[];
   nurses: ReassignNurse[];
+  /** What the caller's domain calls the thing being moved — 'authorization' for UM, 'case' for
+   *  care management, 'referral' for the intake funnel. The panel is shared, so without this it
+   *  told a CM supervisor they were reassigning authorizations. Defaults to 'authorization' so
+   *  existing UM callers are unaffected. */
+  noun?: string;
   /** mode reflects the panel's "Assign to: Assignee / Queue" toggle — 'assignee' means target is a
    *  nurse name (as before); 'queue' means target is one of the queue names (Intake, RFI Pending, etc.). */
   apply: (caseIds: string[], target: string, mode: 'assignee' | 'queue') => void;

@@ -75,7 +75,9 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
             @if (isCaseList() && !isReferralList()) {
               <button class="btn outline sm" (click)="balance(e)">Balance{{ selected().size ? ' selected' : '' }}</button>
             }
-            <button class="btn outline sm" (click)="openAssignmentHistory()">Assignment History</button>
+            @if (isCaseList()) {
+              <button class="btn outline sm" (click)="openAssignmentHistory()">Assignment History</button>
+            }
             <button class="btn outline sm" (click)="exportAll(e)">Export all ({{ filtered().length }})</button>
             <span class="cz-wrap">
               <button class="btn outline sm" (click)="customizing.set(!customizing())">Customize</button>
@@ -240,8 +242,10 @@ export class CaseExplorer {
   readonly isCmList = computed(() => this.ix.explorer()?.columns[0] === 'Member ID');
   readonly isReferralList = computed(() => this.ix.explorer()?.columns[0] === 'Referral ID');
   /** Search placeholder / row-count noun — referrals and CM members aren't "authorizations", and
-   *  informational (non-case) lists like Scheduling/Adherence/Demand drill-downs aren't either. */
-  readonly itemNoun = computed(() => this.isReferralList() ? 'referral' : this.isCmList() ? 'member' : this.isCaseList() ? 'authorization' : 'record');
+   *  informational (non-case) lists like Scheduling/Adherence/Demand drill-downs aren't either.
+   *  Care management works in CASES — a member is the person, the case is the work item — so CM
+   *  drill-downs say "case" rather than borrowing UM's "authorization" or naming the person. */
+  readonly itemNoun = computed(() => this.isReferralList() ? 'referral' : this.isCmList() ? 'case' : this.isCaseList() ? 'authorization' : 'record');
 
   toggleCol(i: number) { this.hiddenCols.update((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; }); }
   readonly visibleCols = computed(() => (this.ix.explorer()?.columns ?? []).map((c, i) => ({ c, i })).filter(({ i }) => !this.hiddenCols().has(i)));
@@ -359,7 +363,7 @@ export class CaseExplorer {
     });
     const nurses = this.data.nurses().map((n) => ({ name: n.name, utilization: n.utilization, active: n.active }));
     this.rx.open({
-      title: `Reassign ${ids.length} authorization${ids.length > 1 ? 's' : ''}`,
+      title: `Reassign ${ids.length} authorization${ids.length > 1 ? 's' : ''}`, noun: 'authorization',
       cases, nurses, preselectAll: true,
       apply: (assignedIds, target, mode) => {
         if (mode === 'queue') {
@@ -393,12 +397,12 @@ export class CaseExplorer {
     const nurses = this.cmData.managerStats().map((m) => ({ name: m.name, utilization: m.utilization, active: m.active }));
     const queueTargets = this.cmData.queues().map((q) => ({ name: q.name, count: q.count }));
     this.rx.open({
-      title: `Reassign ${ids.length} member${ids.length > 1 ? 's' : ''}`,
+      title: `Reassign ${ids.length} case${ids.length > 1 ? 's' : ''}`, noun: 'case',
       cases, nurses, queueTargets, preselectAll: true,
       apply: (assignedIds, target, mode) => {
         assignedIds.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
-        this.ix.toast(`${assignedIds.length} member(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
-        this.data.addHistory('swap', mode === 'queue' ? 'CM members moved to queue' : 'CM members reassigned', `${assignedIds.length} member(s) → ${target}`);
+        this.ix.toast(`${assignedIds.length} case(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
+        this.data.addHistory('swap', mode === 'queue' ? 'CM cases moved to queue' : 'CM cases reassigned', `${assignedIds.length} case(s) → ${target}`);
         this.selected.set(new Set());
       },
     });
@@ -413,9 +417,9 @@ export class CaseExplorer {
   private balanceCm(ids: string[]) {
     if (!ids.length) {
       this.ix.choose({
-        title: 'Balance workload', body: 'Choose how aggressively to rebalance members from over-utilized care managers to those with capacity.',
+        title: 'Balance workload', body: 'Choose how aggressively to rebalance cases from over-utilized care managers to those with capacity.',
         label: 'Balancing strategy',
-        options: ['Light — move 1 member from the busiest care manager', 'Standard — rebalance 3 members', 'Aggressive — rebalance 6 members', 'Even out — level everyone toward the team average'],
+        options: ['Light — move 1 case from the busiest care manager', 'Standard — rebalance 3 cases', 'Aggressive — rebalance 6 cases', 'Even out — level everyone toward the team average'],
         confirmLabel: 'Continue', tone: 'teal',
         onChoose: (opt) => {
           const n = opt.startsWith('Light') ? 1 : opt.startsWith('Standard') ? 3 : opt.startsWith('Aggressive') ? 6 : 5;
@@ -423,14 +427,14 @@ export class CaseExplorer {
           if (!plan.length) { this.ix.toast('Caseloads are already balanced.', 'info'); return; }
           const byTarget = new Map<string, number>();
           plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
-          const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'member' : 'members', target }));
+          const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'case' : 'cases', target }));
           this.ix.ask({
-            title: `Balance ${plan.length} member${plan.length > 1 ? 's' : ''}`,
-            body: 'Move members from over-utilized care managers to those with capacity:',
+            title: `Balance ${plan.length} case${plan.length > 1 ? 's' : ''}`,
+            body: 'Move cases from over-utilized care managers to those with capacity:',
             breakdown, confirmLabel: 'Balance', tone: 'teal',
             onConfirm: () => {
               const moves = plan.map(() => this.cmData.reassignBusiestCase()).filter((m): m is { member: string; from: string; to: string } => !!m);
-              this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} member${moves.length > 1 ? 's' : ''} moved).`);
+              this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} case${moves.length > 1 ? 's' : ''} moved).`);
               this.data.addHistory('balance', 'CM caseload balanced', `${opt.split(' — ')[0]} · ${moves.map((m) => `${m.member} → ${m.to}`).join(', ') || 'no moves'}`);
             },
           });
@@ -449,15 +453,15 @@ export class CaseExplorer {
     });
     const byTarget = new Map<string, number>();
     plan.forEach((p) => byTarget.set(p.to, (byTarget.get(p.to) ?? 0) + 1));
-    const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'member' : 'members', target }));
+    const breakdown = [...byTarget.entries()].map(([target, count]) => ({ count, label: count === 1 ? 'case' : 'cases', target }));
     this.ix.ask({
-      title: `Balance ${ids.length} selected member${ids.length > 1 ? 's' : ''}`,
-      body: 'Move these members to the care managers with the most capacity:',
+      title: `Balance ${ids.length} selected case${ids.length > 1 ? 's' : ''}`,
+      body: 'Move these cases to the care managers with the most capacity:',
       breakdown, confirmLabel: 'Balance', tone: 'teal',
       onConfirm: () => {
         plan.forEach((p) => this.cmData.reassignCase(p.memberId, p.to));
-        this.ix.toast(`${ids.length} member(s) balanced across ${byTarget.size} care manager(s).`);
-        this.data.addHistory('balance', 'Selected members balanced', `${ids.length} member(s) across ${byTarget.size} care manager(s)`);
+        this.ix.toast(`${ids.length} case(s) balanced across ${byTarget.size} care manager(s).`);
+        this.data.addHistory('balance', 'Selected CM cases balanced', `${ids.length} case(s) across ${byTarget.size} care manager(s)`);
         this.selected.set(new Set());
       },
     });
@@ -686,7 +690,7 @@ export class CaseExplorer {
       title: 'Assignment History',
       subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'} & balance event${rows.length === 1 ? '' : 's'} this session`,
       table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
-      note: rows.length ? undefined : 'No authorizations have been reassigned or balanced yet this session.',
+      note: rows.length ? undefined : 'Nothing has been reassigned or balanced yet this session.',
     });
   }
 }

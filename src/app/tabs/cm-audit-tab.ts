@@ -73,7 +73,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     @if (!isHidden('quality')) {
     <div class="panel">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Documentation Quality</h3>
-        <span class="section-note sm">Rubric compliance across the whole caseload, not just the audited sample — {{ scopedCases().length }} member record(s) in scope</span>
+        <span class="section-note sm">Rubric compliance across the whole caseload, not just the audited sample — {{ scopedCases().length }} case(s) in scope</span>
         <z-widget-actions (exportClick)="exportQuality()" (removeClick)="hide('quality')"></z-widget-actions>
       </div>
       <div class="tile-row panel-pad">
@@ -476,7 +476,7 @@ export class CmAuditTab {
   }
   private openCases(title: string, cs: CmCaseRec[], exportSlug: string, context?: string) {
     this.ix.openExplorer({
-      title, context: context ?? `${cs.length} member record(s)`,
+      title, context: context ?? `${cs.length} case(s)`,
       columns: CM_COLUMNS, rows: cs.map(cmToRow), exportName: `cm-audit-${exportSlug}_2026-07-17`, memberColumn: 1,
     });
   }
@@ -500,7 +500,7 @@ export class CmAuditTab {
   drillElementFailures(element: CmAuditElement) {
     const i = CM_AUDIT_ELEMENTS.indexOf(element);
     const cs = this.scopedCases().filter((c) => !scoreElements(c)[i].met);
-    this.openCases(`Not Meeting — ${element}`, cs, `quality-${slug(element)}`, `${cs.length} member record(s) do not meet this rubric element`);
+    this.openCases(`Not Meeting — ${element}`, cs, `quality-${slug(element)}`, `${cs.length} case(s) do not meet this rubric element`);
   }
 
   private openIrr(title: string, rs: CmFileAuditRecord[], exportSlug: string, context?: string) {
@@ -517,7 +517,7 @@ export class CmAuditTab {
     const cs = cmRegBreachesFor(lob, this.scopedCases());
     this.ix.openExplorer({
       title: `${lob} — Assessment / Care Plan Window Breaches`,
-      context: `${cs.length} member(s) missed ${lob}'s assessment or care-plan window`,
+      context: `${cs.length} case(s) missed ${lob}'s assessment or care-plan window`,
       columns: REG_COLUMNS, rows: cs.map(regRow), exportName: `cm-audit-reg-${slug(lob)}_2026-07-17`, memberColumn: 1,
     });
   }
@@ -525,7 +525,7 @@ export class CmAuditTab {
     const below = this.regCompliance().filter((r) => r.pct < this.regTarget).map((r) => r.lob);
     const cs = below.flatMap((lob) => cmRegBreachesFor(lob, this.scopedCases()));
     this.ix.openExplorer({
-      title: 'Window Breaches — Programs Below Target', context: `${cs.length} member record(s)`,
+      title: 'Window Breaches — Programs Below Target', context: `${cs.length} case(s)`,
       columns: REG_COLUMNS, rows: cs.map(regRow), exportName: 'cm-audit-reg-below-target_2026-07-17', memberColumn: 1,
     });
   }
