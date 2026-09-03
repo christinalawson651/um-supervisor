@@ -18,9 +18,9 @@ The live evidence for all of it is on **Audit & Traceability → AI Oversight**,
 
 | # | Criterion | Evidence |
 |---|---|---|
-| E1 | Model version is pinned and immutable for the duration of the test | Version register, `MODEL_VERSIONS` |
+| E1 | The serving configuration is pinned and immutable for the duration of the test | AI Oversight — Production Config |
 | E2 | Criteria sets and policy versions in the test environment match production intent | Configuration Change Log |
-| E3 | Every scored determination writes an audit event carrying recommendation, confidence, model version and criteria set | Audit Trail — Clinical Decision category |
+| E3 | Every scored determination writes an audit event carrying recommendation, confidence, serving model and criteria set | Audit Trail — Clinical Decision category |
 | E4 | Override capture is live, with structured reason codes rather than free text | AI Oversight — override reasons |
 | E5 | A validation population is defined and agreed with Compliance (see §2) | This document, signed |
 | E6 | Reviewers participating are credentialed and their scope of practice is configured | Governance & Access — permission matrix |
@@ -55,7 +55,7 @@ Statistical validity is the part that most often gets waved through, so it is st
 | **Adverse-determination agreement** | **≥ 90%**, measured separately | A denial is where being wrong costs the most |
 | **Auto-approval false-positive rate** | **0 tolerated defects** on the validation set | An auto-approval nobody reviewed has no human backstop |
 
-**A single over-confident band fails the gate**, even if overall concordance passes. Aggregate agreement can mask a band that is confidently wrong — which is precisely the condition the current build surfaces.
+**A single over-confident band fails the gate**, even if overall agreement passes. Aggregate agreement can mask a band that is confidently wrong — which is precisely the condition the current build surfaces.
 
 ### Current state against these criteria
 Measured on the demo dataset, as of the build in front of you:
@@ -73,15 +73,15 @@ The failures share a root: the top confidence band carries 85 of 247 determinati
 
 ## 4. Test design
 
-**4.1 Retrospective concordance.** Score a held-out set of already-decided authorizations and compare against the determination a clinician actually made. Cheap, fast, and the only test that can run before go-live. Weakness: the clinician was not working from the model, so it measures agreement, not influence.
+**4.1 Retrospective agreement.** Score a held-out set of already-decided authorizations and compare against the determination a clinician actually made. Cheap, fast, and the only test that can run before go-live. Weakness: the clinician was not working from the model, so it measures agreement, not influence.
 
-**4.2 Parallel-run (shadow) scoring.** Model scores live cases; recommendation is hidden from the reviewer; concordance measured against what the reviewer decides independently. This is the honest test and should run for at least four weeks. It is also the only way to measure the anchoring effect in §5.
+**4.2 Parallel-run (shadow) scoring.** Model scores live cases; recommendation is hidden from the reviewer; agreement measured against what the reviewer decides independently. This is the honest test and should run for at least four weeks. It is also the only way to measure the anchoring effect in §5.
 
 **4.3 Adversarial / edge review.** Deliberately construct cases at the boundaries — comorbidity combinations, out-of-network, retro requests, members with prior overturned appeals. Small N, clinician-authored, pass/fail rather than statistical.
 
 **4.4 Stability.** Re-score the same population twice and confirm identical output. A recommendation that moves without an input changing cannot be defended in an appeal.
 
-**4.5 Regression on promotion.** Every model version re-runs 4.1 and 4.4 against the prior version's population before promotion, with results attached to the change ticket.
+**4.5 Regression on promotion.** Every promotion — a model, a med-necessity bundle, or a gate threshold — re-runs 4.1 and 4.4 against the prior configuration's population before going live, with results attached to the change ticket.
 
 ---
 
@@ -89,7 +89,7 @@ The failures share a root: the top confidence band carries 85 of 247 determinati
 
 *Should confidence scores be shown to reviewers, hidden, or managed by role?*
 
-There is no settled industry answer, and anyone claiming one is selling something. The trade-off is real in both directions: a displayed score anchors the reviewer and inflates concordance without improving decisions; a hidden score wastes information the reviewer could legitimately use to triage.
+There is no settled industry answer, and anyone claiming one is selling something. The trade-off is real in both directions: a displayed score anchors the reviewer and inflates agreement without improving decisions; a hidden score wastes information the reviewer could legitimately use to triage.
 
 **Position taken in the product today** — role-configured, visible on `Governance & Access Controls → Role → Permission Matrix`:
 
@@ -112,11 +112,14 @@ The reveal-after-assessment pattern for nurse reviewers is the one worth discuss
 |---|---|---|---|
 | Continuous | Recommendation, confidence, model version and override written to the audit trail | Platform | Audit Trail |
 | Monthly | Calibration review — every adequately-sampled band against tolerance | Clinical Content | AI Oversight — calibration |
-| Monthly | Concordance and drift against the model version in force | Clinical Content | AI Oversight — drift |
+| Monthly | Agreement, groundedness and confidence drift against the configuration in force | Clinical Content | AI Oversight — drift |
 | Monthly | Model-attributable overrides routed to the criteria owner and closed | Clinical Content | AI Oversight — override reasons |
 | Quarterly | Per-clinician agreement reviewed as a signal, never as a performance score | UM Leadership | AI Oversight — agreement by clinician |
 | Quarterly | AI governance report to the plan | Compliance | Reports → AI Oversight & Concordance |
+| Quarterly | Per-agent latency and error review across the five agents | Platform | AI Oversight — per-agent |
 | On promotion | Regression + acceptance gate re-run and attached to the change ticket | Clinical Content | Configuration Change Log |
+
+**Vocabulary note.** Decision agreement, groundedness, convergence, the 0–1 confidence scale, the four bands and the two gates are Symphony Studio's, not this document's. The supervisor build's audit view reports the same measures in the same words on the same scale, so a reviewer moving between Symphony's Monitor and the audit module is not being asked to reconcile two vocabularies for one run.
 
 **Known gap (REQ-20):** calibration is measured and visible, but nothing alerts when a band drifts out of tolerance — today it is found by a person opening the tab. Alerting, and gating model promotion on the same check, is the next step.
 
@@ -140,7 +143,7 @@ Model promotion is governed exactly like a criteria or letter-template change: v
 
 ## 8. Open questions for Centene
 
-1. **Thresholds.** Are 90% concordance, ±5 points calibration and ≤15% override the right lines, or does Centene carry its own?
+1. **Thresholds.** Are 90% decision agreement, 90% groundedness, 80% convergence, ±5 points calibration and ≤15% override the right lines, or does Centene carry its own?
 2. **Parallel-run duration.** Is four weeks of shadow scoring acceptable before go-live, or is a longer observation period required?
 3. **Confidence display.** Does Centene have a position on showing scores to reviewers, and does the reveal-after-assessment pattern work operationally?
 4. **Adverse determinations.** Should denials be held to a higher concordance bar than 90%, given the appeal exposure?
@@ -158,6 +161,6 @@ Model promotion is governed exactly like a criteria or letter-template change: v
 | AI Oversight tab | Audit & Traceability → AI Oversight |
 | Exportable governance report | Reports → Audit & Traceability → AI Oversight & Concordance |
 | Recommendation + override events in the case trail | Audit Trail → category *Clinical Decision* |
-| Model version register | AI Oversight → Model Versions in Force |
+| Serving configuration | AI Oversight → Production Config |
 | Confidence visibility by role | Governance & Access Controls → permission matrix |
 | Open AI-governance gaps | Compliance Requirements & Gaps → REQ-19, REQ-20, REQ-21 |
