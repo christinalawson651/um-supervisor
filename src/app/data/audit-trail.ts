@@ -533,8 +533,8 @@ export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
   { id: 'REQ-13', domain: 'User Activity', requirement: 'Alerting on anomalous access patterns', citation: 'SOC 2 CC7.2 · HIPAA §164.308(a)(6)', control: 'Anomaly signals are computed and displayed.', evidence: 'User Activity — flagged users', status: 'Gap', priority: 'P2', gap: 'Signals are visible in the dashboard only — nothing notifies anyone when a threshold is crossed.', nextStep: 'Define thresholds per signal and route breaches to Compliance as a work item, not just a tile.', owner: 'Compliance' },
   { id: 'REQ-14', domain: 'Audit Trail', requirement: 'Member-facing disclosure accounting', citation: 'HIPAA §164.528', control: 'PHI disclosure events (letters, exports, break-the-glass) are individually flagged in the trail.', evidence: 'Audit Trail — PHI filter', status: 'Partial', priority: 'P3', gap: 'The underlying events exist, but there is no per-member accounting-of-disclosures report a member request could be answered with.', nextStep: 'Add a member-scoped disclosure report covering the trailing 6 years.', owner: 'Compliance' },
   { id: 'REQ-15', domain: 'Retention & Integrity', requirement: 'Retention schedule defined and applied per record class', citation: '42 CFR §422.504(d) · HIPAA §164.316(b)(2)(i)', control: 'Six record classes each carry their own retention period, legal basis and disposition action; the archive segment index shows the purge-eligible date every sealed period resolves to.', evidence: 'Retention & Archive — retention schedule', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Compliance' },
-  { id: 'REQ-16', domain: 'Retention & Integrity', requirement: 'Legal hold suspends disposition', citation: 'FRCP 37(e) · plan litigation-hold policy', control: 'A hold reference can be attached to any archive segment and is displayed against its purge-eligible date.', evidence: 'Retention & Archive — legal holds', status: 'Partial', priority: 'P1', gap: 'Holds are recorded and visible, but they are applied by hand and nothing in the platform blocks a disposition job from running against a held segment.', nextStep: 'Make the hold flag a hard precondition on the purge job, and require a named releaser plus a reason to lift one.', owner: 'Compliance' },
-  { id: 'REQ-17', domain: 'Retention & Integrity', requirement: 'Defensible disposition — destruction is certified and itself logged', citation: 'HIPAA §164.310(d)(2)(i) · NARA-style disposition practice', control: 'Segments past retention are identified and queued.', evidence: 'Retention & Archive — disposition queue', status: 'Gap', priority: 'P2', gap: 'Nothing produces a certificate of destruction, and a purge would leave no audit event of its own — so after disposition there is no evidence the record ever existed or was lawfully destroyed.', nextStep: 'Emit a signed disposition record per segment (period, event count, terminal hash, approver, date) and write it back into the audit trail as its own event.', owner: 'Platform Engineering' },
+  { id: 'REQ-16', domain: 'Retention & Integrity', requirement: 'Legal hold suspends disposition', citation: 'FRCP 37(e) · plan litigation-hold policy', control: 'A hold on a segment is a hard precondition on disposition, not a warning: the disposal action refuses outright and names the hold that stopped it, regardless of the retention date.', evidence: 'Retention & Archive — Dispose on a held segment', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Compliance' },
+  { id: 'REQ-17', domain: 'Retention & Integrity', requirement: 'Defensible disposition — destruction is certified and itself logged', citation: 'HIPAA §164.310(d)(2)(i) · NARA-style disposition practice', control: 'Disposition requires an independent countersignature and issues a certificate carrying the period, event count, retained terminal hash, retention basis, method, both signatories and the date — written back into the session history as its own event. The terminal hash survives the events, so the chain the segment closed can still be confirmed.', evidence: 'Retention & Archive — Certificates of Destruction', status: 'Met', priority: 'P2', gap: null, nextStep: null, owner: 'Platform Engineering' },
   { id: 'REQ-18', domain: 'Retention & Integrity', requirement: 'Archived records are retrievable within the requested window', citation: 'CMS program audit request timelines', control: 'Restore requests from cold storage are tracked with requester, reason, and turnaround against a 5-day retrieval SLA.', evidence: 'Retention & Archive — restore requests', status: 'Partial', priority: 'P2', gap: 'Turnaround is recorded after the fact; nothing alerts when a request is approaching or past the retrieval SLA.', nextStep: 'Surface open restore requests as a work item with an SLA countdown, the same treatment the UM queues get.', owner: 'Platform Engineering' },
   { id: 'REQ-19', domain: 'AI Governance', requirement: 'Every machine-influenced determination is traceable to the model version and criteria that produced it', citation: 'NCQA UM 2 · emerging Clinical AI governance practice', control: 'The recommendation, its confidence score, the model version and the criteria set are written to the audit trail as their own event before the determination, and an override is logged separately with before/after.', evidence: 'Audit Trail — filter Clinical Decision · AI Oversight tab', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Clinical Content' },
   { id: 'REQ-20', domain: 'AI Governance', requirement: 'Confidence scores are calibrated and monitored for drift', citation: 'Emerging Clinical AI governance practice · SOC 2 CC7.2', control: 'Observed agreement is measured against each confidence band and against a defined tolerance, and concordance is tracked month over month against the model version in force.', evidence: 'AI Oversight — calibration & drift', status: 'Partial', priority: 'P1', gap: 'Calibration is measured and visible, but nothing alerts when a band drifts outside tolerance — today it is found by someone opening the tab. The 95%+ band is currently running overconfident.', nextStep: 'Alert on any adequately-sampled band exceeding the deviation tolerance, and gate model promotion on the same check.', owner: 'Clinical Content' },
@@ -813,19 +813,22 @@ export interface ArchiveSummary {
   archivedEvents: number; archivedSegments: number; oldestRetained: string;
   totalRetained: number; onHold: number; purgeEligible: number; unverified: number;
 }
-export function archiveSummary(): ArchiveSummary {
+/** Takes the segments still standing rather than reading the constant, so a certified disposition
+ *  actually moves these counts. A screen where destroying a segment leaves the totals unchanged
+ *  would be worse than not offering the action. */
+export function archiveSummary(segments: ArchiveSegment[] = ARCHIVE_SEGMENTS): ArchiveSummary {
   const online = auditSpan();
-  const archivedEvents = ARCHIVE_SEGMENTS.reduce((s, x) => s + x.eventCount, 0);
+  const archivedEvents = segments.reduce((s, x) => s + x.eventCount, 0);
   const today = isoDate(TODAY);
   return {
     onlineEvents: online.count, onlineFrom: online.from, onlineTo: online.to,
-    archivedEvents, archivedSegments: ARCHIVE_SEGMENTS.length,
-    oldestRetained: ARCHIVE_SEGMENTS.length ? ARCHIVE_SEGMENTS[0].periodFrom : online.from,
+    archivedEvents, archivedSegments: segments.length,
+    oldestRetained: segments.length ? segments[0].periodFrom : online.from,
     totalRetained: archivedEvents + online.count,
-    onHold: ARCHIVE_SEGMENTS.filter((s) => s.legalHold).length,
+    onHold: segments.filter((s) => s.legalHold).length,
     // Past its retention date and not held — the disposition queue a reviewer asks to see.
-    purgeEligible: ARCHIVE_SEGMENTS.filter((s) => s.purgeEligible <= today && !s.legalHold).length,
-    unverified: ARCHIVE_SEGMENTS.filter((s) => !s.verified).length,
+    purgeEligible: segments.filter((s) => s.purgeEligible <= today && !s.legalHold).length,
+    unverified: segments.filter((s) => !s.verified).length,
   };
 }
 

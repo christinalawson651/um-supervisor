@@ -8,17 +8,19 @@ import {
   verifyChain, isOffHours, isExternalIp, eventDate,
   AUDIT_RANGES, AuditRange, auditSpan, userActivityRollup, UserActivityRow,
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
-  RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest,
+  RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest, RetentionPolicy,
   archiveSummary, verifyArchiveChain,
 } from '../data/audit-trail';
 import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
 import { LOBS, daysAgo } from '../data/case-fields';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
+import { Disposition, DispositionCertificate, DISPOSITION_APPROVERS } from '../shared/disposition';
+import { DashboardData } from '../data/dashboard-data';
 import {
   AI_DECISIONS, AiDecisionRecord, AiOutcome, OverrideReason, OVERRIDE_REASONS, MODEL_ATTRIBUTABLE,
   AI_TARGETS, MODEL_VERSIONS, aiScope, aiSummary, calibration, CalibrationRow, drift,
-  overrideReasons, reviewerConcordance, concordanceBy,
+  overrideReasons, reviewerConcordance, concordanceBy, pendMix, modelMix, PendReason,
 } from '../data/ai-oversight';
 
 interface TabDef { key: string; label: string; }
@@ -84,7 +86,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       <span class="span-note">
         Online store: <b>{{ span.count | number }}</b> events, {{ span.from }} → {{ span.to }}.
         @if (range() !== 'all') { <a class="lnk" (click)="setRange('all')">Show entire online history</a> }
-        @else { <a class="lnk" (click)="sel.set('retention')">+{{ archive.archivedEvents | number }} archived</a> }
+        @else { <a class="lnk" (click)="sel.set('retention')">+{{ archive().archivedEvents | number }} archived</a> }
       </span>
     </div>
 
@@ -204,14 +206,18 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       @case ('ai') {
         <div class="tab-head">
           <div><h2>AI Oversight</h2>
-            <span class="section-note">What the model recommended, how sure it said it was, what the clinician decided instead, and whether the score can be trusted. Every determination the model touched — {{ aiRows().length | number }} in range.</span></div>
+            <span class="section-note">What the model recommended, how sure it said it was, what the clinician decided instead, and whether the score can be trusted. Every determination the agentic flow touched — {{ aiRows().length | number }} in range.</span></div>
           <button class="btn outline sm" (click)="exportAi()">Export</button>
         </div>
 
         <div class="tile-row">
-          <div class="tile" (click)="drillAi('AI-Scored Determinations', aiRows(), 'all')">
-            <div class="tile-val">{{ ai().total | number }}</div><div class="tile-lab">Determinations Scored</div>
-            <div class="tile-sub">{{ ai().autoApproved }} straight-through · {{ ai().reviewed }} reviewed</div>
+          <div class="tile" (click)="drillAi('Determinations', aiRows(), 'all')">
+            <div class="tile-val">{{ ai().total | number }}</div><div class="tile-lab">Determinations</div>
+            <div class="tile-sub">{{ ai().reviewed }} clinician-reviewed</div>
+          </div>
+          <div class="tile" (click)="drillAi('Auto-Cleared', autoRows(), 'auto-cleared')">
+            <div class="tile-val">{{ ai().autoCleared | number }}</div><div class="tile-lab">Auto-Cleared</div>
+            <div class="tile-sub">{{ ai().autoClearedPct }}% of volume</div>
           </div>
           <div class="tile" (click)="drillAi('Concordant — AI Matched the Determination', concordantRows(), 'concordant')">
             <div class="tile-ic" [class.hot]="ai().concordancePct < targets.concordancePct"></div>
@@ -228,15 +234,63 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
             <div class="tile-val">{{ ai().modelAttributable }}</div><div class="tile-lab">Model-Attributable Overrides</div>
             <div class="tile-sub">the ones that are the model's fault</div>
           </div>
-          <div class="tile" (click)="drillAi('Escalated to Medical Director', escalatedRows(), 'escalated')">
-            <div class="tile-ic" [class.hot]="ai().escalationRatePct > targets.maxEscalationRatePct"></div>
-            <div class="tile-val">{{ ai().escalationRatePct }}%</div><div class="tile-lab">Escalation Rate</div>
-            <div class="tile-sub">low confidence routed to MD · target ≤ {{ targets.maxEscalationRatePct }}%</div>
+          <div class="tile" (click)="drillAi('Pended for Review', pendedRows(), 'pended')">
+            <div class="tile-val">{{ ai().pended | number }}</div><div class="tile-lab">Pended for Review</div>
+            <div class="tile-sub">{{ ai().pendedPctOfVolume }}% of volume stopped for a human</div>
           </div>
-          <div class="tile" (click)="drillAi('Straight-Through Auto-Approvals', autoRows(), 'auto')">
+          <div class="tile" (click)="drillAi('Determinations', aiRows(), 'confidence')">
             <div class="tile-val">{{ ai().meanConfidence }}%</div><div class="tile-lab">Mean Confidence</div>
-            <div class="tile-sub">{{ ai().autoApproved }} auto-approved</div>
+            <div class="tile-sub">{{ ai().panelRatePct }}% adjudicated by panel</div>
           </div>
+          <div class="tile" (click)="drillAi('Determinations', aiRows(), 'spend')">
+            <div class="tile-val">\${{ ai().avgCostPerCase.toFixed(2) }}</div><div class="tile-lab">Avg Cost / Case</div>
+            <div class="tile-sub">{{ ai().tokensPerCase | number }} tokens · {{ ai().avgLatencySec }}s</div>
+          </div>
+          <div class="tile" (click)="drillAi('Determinations', aiRows(), 'tokens')">
+            <div class="tile-val">{{ tokensLabel() }}</div><div class="tile-lab">Tokens</div>
+            <div class="tile-sub">\${{ ai().inferenceSpend.toFixed(2) }} inference spend</div>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Queue by Pend Reason</h3>
+            <span class="section-note sm">Why the flow stopped and asked for a human. A reviewed determination matching none of these was routine — it reached a clinician without the flow flagging anything, so it is not counted as a pend.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Pend Reason</th><th class="num">Determinations</th><th class="agree-col">Share of Pended</th></tr></thead>
+            <tbody>
+              @for (r of pendReasons(); track r.reason) {
+                <tr class="clk" (click)="drillPend(r.reason)">
+                  <td class="strong">{{ r.reason }}</td>
+                  <td class="num">{{ r.count }}</td>
+                  <td class="agree-col">
+                    <span class="mbar"><span class="teal" [style.width.%]="r.pct"></span></span>
+                    <span class="mpct">{{ r.pct }}%</span>
+                  </td>
+                </tr>
+              } @empty { <tr><td colspan="3" class="empty">Nothing pended in range.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Models Used</h3>
+            <span class="section-note sm">A panel is convened when one pass is not enough — an adverse direction or a soft score. It costs more per case; this is where you see whether it buys anything.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Models</th><th>Panel</th><th class="num">Runs</th><th class="num">Tokens / Case</th><th class="num">Avg Cost</th><th class="num">Avg Latency</th><th class="num">Concordance</th></tr></thead>
+            <tbody>
+              @for (m of models(); track m.modelsUsed + m.panel) {
+                <tr>
+                  <td class="strong mono">{{ m.modelsUsed }}</td>
+                  <td>@if (m.panel) { <span class="badge amber">panel</span> } @else { <span class="sub">—</span> }</td>
+                  <td class="num">{{ m.runs }}</td>
+                  <td class="num">{{ m.tokensPerCase | number }}</td>
+                  <td class="num">\${{ m.avgCost.toFixed(2) }}</td>
+                  <td class="num">{{ m.avgLatencySec }}s</td>
+                  <td class="num"><b [class.warn]="m.concordancePct < targets.concordancePct">{{ m.concordancePct }}%</b></td>
+                </tr>
+              }
+            </tbody>
+          </table>
         </div>
 
         <div class="panel mt-6">
@@ -566,31 +620,32 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
             <span class="section-note">The Audit Trail queries the online store. This is everything behind it — what is retained, for how long, under whose rule, where it physically sits, and what is holding disposition. The Range control above does not apply here; retention is not a reporting window.</span></div>
           <div class="head-actions">
             <button class="btn outline sm" (click)="verifyArchive()">Verify archive chain</button>
+            <button class="btn outline sm" (click)="exportCertificates()">Certificates</button>
             <button class="btn outline sm" (click)="exportArchive()">Export</button>
           </div>
         </div>
 
         <div class="tile-row">
           <div class="tile" (click)="sel.set('trail')">
-            <div class="tile-val">{{ archive.onlineEvents | number }}</div><div class="tile-lab">Online — Queryable</div>
-            <div class="tile-sub">{{ archive.onlineFrom }} → {{ archive.onlineTo }}</div>
+            <div class="tile-val">{{ archive().onlineEvents | number }}</div><div class="tile-lab">Online — Queryable</div>
+            <div class="tile-sub">{{ archive().onlineFrom }} → {{ archive().onlineTo }}</div>
           </div>
           <div class="tile" (click)="drillSegments('Archive Segment Index', segments, 'segments')">
-            <div class="tile-val">{{ archive.archivedEvents | number }}</div><div class="tile-lab">Archived — Retrievable</div>
-            <div class="tile-sub">{{ archive.archivedSegments }} sealed segments</div>
+            <div class="tile-val">{{ archive().archivedEvents | number }}</div><div class="tile-lab">Archived — Retrievable</div>
+            <div class="tile-sub">{{ archive().archivedSegments }} sealed segments</div>
           </div>
           <div class="tile" (click)="drillSegments('Archive Segment Index', segments, 'all-retained')">
-            <div class="tile-val">{{ archive.totalRetained | number }}</div><div class="tile-lab">Total Retained</div>
-            <div class="tile-sub">oldest {{ archive.oldestRetained }}</div>
+            <div class="tile-val">{{ archive().totalRetained | number }}</div><div class="tile-lab">Total Retained</div>
+            <div class="tile-sub">oldest {{ archive().oldestRetained }}</div>
           </div>
           <div class="tile" (click)="drillSegments('Segments Under Legal Hold', heldSegments(), 'held')">
-            <div class="tile-ic" [class.hot]="archive.onHold > 0"></div>
-            <div class="tile-val">{{ archive.onHold }}</div><div class="tile-lab">Under Legal Hold</div>
+            <div class="tile-ic" [class.hot]="archive().onHold > 0"></div>
+            <div class="tile-val">{{ archive().onHold }}</div><div class="tile-lab">Under Legal Hold</div>
             <div class="tile-sub">disposition suspended</div>
           </div>
           <div class="tile" (click)="drillSegments('Disposition Queue', purgeQueue(), 'disposition')">
-            <div class="tile-ic" [class.hot]="archive.purgeEligible > 0"></div>
-            <div class="tile-val">{{ archive.purgeEligible }}</div><div class="tile-lab">Past Retention, Not Held</div>
+            <div class="tile-ic" [class.hot]="archive().purgeEligible > 0"></div>
+            <div class="tile-val">{{ archive().purgeEligible }}</div><div class="tile-lab">Past Retention, Not Held</div>
             <div class="tile-sub">awaiting certified disposition</div>
           </div>
           <div class="tile" (click)="drillRestores()">
@@ -624,7 +679,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           <div class="panel-pad filters"><h3 class="pt">Archive Segment Index</h3>
             <span class="section-note sm">Metadata for events that live in cold storage. Each segment's first hash derives from the one before it, so the chain stays continuous across the archive boundary.</span>
             <label class="chk"><input type="checkbox" [checked]="segIssuesOnly()" (change)="segIssuesOnly.set($any($event.target).checked)" /> Held or past retention only</label>
-            <span class="count">{{ segments.length }} of {{ archive.archivedSegments }}</span>
+            <span class="count">{{ segments.length }} of {{ archive().archivedSegments }}</span>
           </div>
           <table class="z-table">
             <thead><tr>
@@ -635,7 +690,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
               <th class="srt" (click)="sortSeg('sealedDate')">Sealed{{ caretSeg('sealedDate') }}</th>
               <th class="srt" (click)="sortSeg('lastVerified')">Last Verified{{ caretSeg('lastVerified') }}</th>
               <th class="srt" (click)="sortSeg('purgeEligible')">Purge Eligible{{ caretSeg('purgeEligible') }}</th>
-              <th>Status</th>
+              <th>Status</th><th>Disposition</th>
             </tr></thead>
             <tbody>
               @for (g of segments; track g.segmentId) {
@@ -652,8 +707,13 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                     @else if (g.purgeEligible <= todayIso) { <span class="badge amber">Past retention</span> }
                     @else { <span class="badge green">Retained</span> }
                   </td>
+                  <td class="act">
+                    @if (g.legalHold || g.purgeEligible <= todayIso) {
+                      <button class="btn outline sm" (click)="disposeSegment(g); $event.stopPropagation()">Dispose</button>
+                    } @else { <span class="sub">—</span> }
+                  </td>
                 </tr>
-              } @empty { <tr><td colspan="8" class="empty">No segments match this filter.</td></tr> }
+              } @empty { <tr><td colspan="9" class="empty">No segments match this filter.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -673,6 +733,28 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                   <td class="mono">{{ g.purgeEligible }}</td>
                 </tr>
               } @empty { <tr><td colspan="5" class="empty">No active legal holds.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Certificates of Destruction</h3>
+            <span class="section-note sm">What survives a purge. Once a segment is destroyed the events are gone, so unless something durable states what was destroyed, under whose authority and against which retention basis, there is afterwards no evidence the record existed <em>or</em> that it was lawfully destroyed. The terminal hash is retained so the chain the segment used to close can still be confirmed.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Certificate</th><th>Segment</th><th>Period</th><th class="num">Events Destroyed</th><th>Terminal Hash</th><th>Disposed By</th><th>Approved By</th><th>Date</th></tr></thead>
+            <tbody>
+              @for (c of certificates(); track c.certificateId) {
+                <tr class="clk" (click)="openCertificate(c)">
+                  <td class="strong mono">{{ c.certificateId }}</td>
+                  <td class="mono">{{ c.segmentId }}</td>
+                  <td class="mono">{{ c.periodFrom }} → {{ c.periodTo }}</td>
+                  <td class="num">{{ c.eventCount | number }}</td>
+                  <td class="mono">{{ c.terminalHash }}</td>
+                  <td>{{ c.disposedBy }}</td>
+                  <td>{{ c.approvedBy }}</td>
+                  <td class="mono">{{ c.disposedDate }}</td>
+                </tr>
+              } @empty { <tr><td colspan="8" class="empty">No segments have been disposed of. Use Dispose on a past-retention segment to see the control run.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -816,6 +898,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .chip.amber { background: #fdf3e3; color: #9a6400; }
     .good { color: var(--teal-700); }
     .agree-col { width: 250px; white-space: nowrap; }
+    .act { white-space: nowrap; }
     .mbar {
       display: inline-block; vertical-align: middle; width: 110px; height: 7px;
       background: var(--gray-100); border-radius: 4px; overflow: hidden; margin-right: 10px;
@@ -1018,8 +1101,12 @@ export class AuditTraceability {
   readonly concordantRows = computed(() => this.aiRows().filter((r) => r.concordant));
   readonly overriddenRows = computed(() => this.aiRows().filter((r) => r.outcome === 'Overridden'));
   readonly modelAttributableRows = computed(() => this.overriddenRows().filter((r) => r.overrideReason && MODEL_ATTRIBUTABLE.includes(r.overrideReason)));
-  readonly escalatedRows = computed(() => this.aiRows().filter((r) => r.outcome === 'Escalated to MD'));
-  readonly autoRows = computed(() => this.aiRows().filter((r) => r.autoApproved));
+  readonly pendedRows = computed(() => this.aiRows().filter((r) => r.pended));
+  readonly pendReasons = computed(() => pendMix(this.aiRows()));
+  readonly models = computed(() => modelMix(this.aiRows()));
+  tokensLabel() { const t = this.ai().tokens; return t >= 1e6 ? (t / 1e6).toFixed(1) + 'M' : Math.round(t / 1000) + 'k'; }
+  drillPend(reason: PendReason) { this.drillAi(`Pended — ${reason}`, this.pendedRows().filter((r) => r.pendReason === reason), `pend-${slug(reason)}`); }
+  readonly autoRows = computed(() => this.aiRows().filter((r) => r.autoCleared));
   reasonPct(count: number): number {
     const total = this.overriddenRows().length;
     return total ? Math.round((count / total) * 100) : 0;
@@ -1035,17 +1122,23 @@ export class AuditTraceability {
   }
   caretRev(k: 'reviewer' | 'scored' | 'agreed' | 'overrides' | 'pct') { return caretFor(this.revSortKey(), k, this.revSortDir()); }
 
-  private readonly AI_COLUMNS = ['Auth', 'Member', 'LOB', 'Procedure', 'Model Version', 'Criteria Set', 'AI Recommendation', 'Confidence', 'Band', 'Final Determination', 'Concordant', 'Outcome', 'Override Reason', 'Overridden By', 'Reviewer', 'Scored', 'Decided'];
+  /** Run-ledger column set, in Symphony's order and its words: member, policy, outcome, agents,
+   *  models used, then the audit-specific columns and the run's cost. */
+  private readonly AI_COLUMNS = ['Auth', 'Member', 'Policy', 'LOB', 'Outcome', 'Pend Reason', 'Agents', 'Models Used', 'Panel',
+    'Recommendation', 'Confidence', 'Band', 'Final Determination', 'Concordant', 'Override Reason', 'Overridden By', 'Reviewer',
+    'Tokens', 'Cost', 'Latency', 'Model Version', 'Criteria Set', 'Scored', 'Decided'];
   private aiRow(r: AiDecisionRecord): (string | number)[] {
-    return [r.authId, r.member, r.lob, r.procedure, r.modelVersion, r.criteriaSet, r.recommendation, `${r.confidence}%`, r.band,
-      r.finalDecision, r.concordant ? 'Yes' : 'No', r.outcome, r.overrideReason ?? '—', r.overriddenBy ?? '—', r.reviewer, r.scoredDate, r.decidedDate];
+    return [r.authId, r.member, r.procedure, r.lob, r.outcome, r.pendReason ?? '—', `${r.agentsCompleted}/${r.agentsTotal}`,
+      r.modelsUsed, r.panel ? 'panel' : '—', r.recommendation, `${r.confidence}%`, r.band, r.finalDecision,
+      r.concordant ? 'Yes' : 'No', r.overrideReason ?? '—', r.overriddenBy ?? '—', r.reviewer,
+      r.tokens, `$${r.cost.toFixed(2)}`, `${r.latencySec}s`, r.modelVersion, r.criteriaSet, r.scoredDate, r.decidedDate];
   }
   /** Column 0 is 'Auth' rather than 'Auth ID' on purpose — these are compliance records, so the
    *  Explorer treats them as informational and offers no Reassign/Balance/Escalate, the same
    *  treatment the IRR log gets. */
   drillAi(title: string, rows: AiDecisionRecord[], slugName: string) {
     this.ix.openExplorer({
-      title, context: `${rows.length.toLocaleString()} AI-scored determination(s) · ${this.rangeLabel()}`,
+      title, context: `${rows.length.toLocaleString()} determination(s) · run ledger · ${this.rangeLabel()}`,
       columns: this.AI_COLUMNS, rows: rows.map((r) => this.aiRow(r)),
       exportName: `ai-oversight-${slugName}_2026-07-17`, memberColumn: 1,
     });
@@ -1103,10 +1196,12 @@ export class AuditTraceability {
   readonly sodConflicts = computed(() => this.sodResults().flatMap((r) => r.conflicts));
 
   // ---- Retention & archive ----
-  readonly retention = RETENTION_POLICIES;
+  readonly retention: RetentionPolicy[] = RETENTION_POLICIES;
+  /** The signed-in supervisor shown in the app's own top bar. */
+  readonly currentUser = 'Christina Lawson';
   readonly restores = RESTORE_REQUESTS;
   readonly restoreSla = RESTORE_REQUESTS.length ? RESTORE_REQUESTS[0].slaDays : 5;
-  readonly archive = archiveSummary();
+  readonly archive = computed(() => archiveSummary(this.disp.remaining()));
   readonly todayIso = auditSpan().to;
   readonly segIssuesOnly = signal(false);
   readonly segSortKey = signal<keyof ArchiveSegment | ''>('periodFrom');
@@ -1117,11 +1212,11 @@ export class AuditTraceability {
   }
   caretSeg(k: keyof ArchiveSegment) { return caretFor(this.segSortKey(), k, this.segSortDir()); }
   get segments(): ArchiveSegment[] {
-    const rows = ARCHIVE_SEGMENTS.filter((g) => !this.segIssuesOnly() || g.legalHold || g.purgeEligible <= this.todayIso);
+    const rows = this.disp.remaining().filter((g) => !this.segIssuesOnly() || g.legalHold || g.purgeEligible <= this.todayIso);
     return compareRows(rows, this.segSortKey(), this.segSortDir());
   }
-  heldSegments() { return ARCHIVE_SEGMENTS.filter((g) => !!g.legalHold); }
-  purgeQueue() { return ARCHIVE_SEGMENTS.filter((g) => g.purgeEligible <= this.todayIso && !g.legalHold); }
+  heldSegments() { return this.disp.remaining().filter((g) => !!g.legalHold); }
+  purgeQueue() { return this.disp.remaining().filter((g) => g.purgeEligible <= this.todayIso && !g.legalHold); }
   openRestores() { return RESTORE_REQUESTS.filter((r) => r.status === 'In Progress').length; }
 
   verifyArchive() {
@@ -1181,6 +1276,71 @@ export class AuditTraceability {
     });
   }
 
+  // ---- certified disposition ----
+  private disp = inject(Disposition);
+  private data = inject(DashboardData);
+  readonly certificates = computed(() => this.disp.certificates());
+
+  /** The refusal path is the demo. A held segment is stopped by the control itself, naming the hold
+   *  that stopped it — not by a note on screen saying it ought to be. */
+  disposeSegment(g: ArchiveSegment) {
+    const check = this.disp.canDispose(g, this.todayIso);
+    if (!check.ok) { this.ix.toast(check.reason, 'warn'); return; }
+
+    const rule = this.retention.find((r) => r.recordClass === 'Audit & Security Event');
+    const basis = rule ? `${rule.recordClass} — ${rule.retentionYears} years (${rule.citation})` : 'Retention schedule';
+    // Destroying a record is the least reversible action in the platform, so it takes the same
+    // two-person control a configuration change takes: a countersignature from someone other than
+    // the person running it.
+    this.ix.choose({
+      title: `Dispose of ${g.segmentId}`,
+      body: `${g.eventCount.toLocaleString()} events covering ${g.periodFrom} to ${g.periodTo}, past retention since ${g.purgeEligible}. Disposition requires an independent approver.`,
+      label: 'Countersigned by',
+      options: DISPOSITION_APPROVERS.filter((n) => n !== this.currentUser),
+      confirmLabel: 'Continue', tone: 'red',
+      onChoose: (approver) => {
+        this.ix.ask({
+          title: `Confirm destruction of ${g.segmentId}`,
+          body: `This cannot be undone. A certificate of destruction will be issued and written into the audit trail, retaining the segment's terminal hash so the chain can still be verified afterwards.`,
+          breakdown: [{ count: g.eventCount, label: 'events', target: 'permanent destruction' }],
+          confirmLabel: 'Dispose', tone: 'red',
+          onConfirm: () => {
+            const cert = this.disp.dispose(g, this.currentUser, approver, basis, this.todayIso);
+            this.ix.toast(`${g.segmentId} disposed — certificate ${cert.certificateId} issued and logged.`);
+            this.data.addHistory('check', 'Archive segment disposed', `${g.segmentId} · ${g.eventCount.toLocaleString()} events · certificate ${cert.certificateId}`);
+          },
+        });
+      },
+    });
+  }
+  openCertificate(c: DispositionCertificate) {
+    this.ix.openDrawer({
+      title: `${c.certificateId}`,
+      subtitle: `${c.segmentId} · ${c.eventCount.toLocaleString()} events destroyed ${c.disposedDate}`,
+      badge: { text: 'Certified disposition', tone: 'green' },
+      fields: [
+        { label: 'Segment', value: c.segmentId },
+        { label: 'Period Covered', value: `${c.periodFrom} → ${c.periodTo}` },
+        { label: 'Events Destroyed', value: c.eventCount.toLocaleString() },
+        { label: 'Terminal Hash (retained)', value: c.terminalHash },
+        { label: 'Retention Basis', value: c.retentionBasis },
+        { label: 'Purge Eligible From', value: c.purgeEligible },
+        { label: 'Method', value: c.method },
+        { label: 'Disposed By', value: c.disposedBy },
+        { label: 'Countersigned By', value: c.approvedBy },
+        { label: 'Date', value: c.disposedDate },
+      ],
+      note: 'The events themselves are gone. This record, and the terminal hash it carries, are what remain as evidence that the segment existed and was lawfully destroyed — which is the whole purpose of certifying a disposition rather than simply running one.',
+    });
+  }
+  exportCertificates() {
+    this.exporter.open({
+      title: 'Certificates of Destruction', name: 'audit-disposition-certificates_2026-07-17',
+      columns: ['Certificate', 'Segment', 'Period From', 'Period To', 'Events Destroyed', 'Terminal Hash', 'Retention Basis', 'Method', 'Disposed By', 'Approved By', 'Date'],
+      rows: this.certificates().map((c) => [c.certificateId, c.segmentId, c.periodFrom, c.periodTo, c.eventCount, c.terminalHash, c.retentionBasis, c.method, c.disposedBy, c.approvedBy, c.disposedDate]),
+    });
+  }
+
   // ---- Compliance register ----
   readonly counts = computed(() => registerCounts());
   byStatus(s: ComplianceRequirement['status']) { return this.register.filter((r) => r.status === s); }
@@ -1228,8 +1388,8 @@ export class AuditTraceability {
       ],
       note: `This record is chained to the event before it. Altering any field above changes this record's hash and every hash after it, which is what makes the alteration detectable — run "Verify chain" on the Audit Trail tab to re-walk it.`,
       actions: [{
-        label: 'Open full case trail', tone: 'teal',
-        run: () => this.drillEvents(`Trail — ${e.entityId}`, AUDIT_EVENTS.filter((x) => x.correlationId === e.correlationId), slug(e.entityId)),
+        label: 'Lineage', tone: 'teal',
+        run: () => this.drillEvents(`Lineage — ${e.entityId}`, AUDIT_EVENTS.filter((x) => x.correlationId === e.correlationId), slug(e.entityId)),
       }],
     });
   }

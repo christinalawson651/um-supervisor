@@ -14,7 +14,19 @@ import { CASE_POOL, CaseRec, Decision } from './case-pool';
 import { TODAY, lobOf, MD_REVIEWERS } from './case-fields';
 
 export type AiRecommendation = 'Approved' | 'Denied' | 'Partial' | 'Escalate';
-export type AiOutcome = 'Auto-approved' | 'Accepted' | 'Overridden' | 'Escalated to MD';
+/** Outcome vocabulary is Symphony's, not this app's invention: a determination is auto-cleared,
+ *  accepted by the reviewer, overridden by them, or pended for a human with a reason. Two audit
+ *  surfaces describing the same run in different words is the thing that loses an auditor.
+ *
+ *  Pending is deliberately NOT one of these. In Symphony a pend is a queue state — the flow stopped
+ *  and asked for a human — and the determination still resolves afterwards. Modelling it as a fourth
+ *  outcome made the two mutually exclusive, so a pended case could never also be recorded as
+ *  overridden, and the pend-reason mix came out with an empty category. It is its own attribute. */
+export type AiOutcome = 'Auto-cleared' | 'Accepted' | 'Overridden';
+
+/** Why a determination is waiting on a human — Symphony's Monitor taxonomy. */
+export type PendReason = 'Potential denial' | 'Low confidence' | 'Insufficient info';
+export const PEND_REASONS: PendReason[] = ['Potential denial', 'Low confidence', 'Insufficient info'];
 export type ConfidenceBand = '<70' | '70–79' | '80–89' | '90–94' | '95+';
 export const CONFIDENCE_BANDS: ConfidenceBand[] = ['<70', '70–79', '80–89', '90–94', '95+'];
 
@@ -50,7 +62,6 @@ export const AI_TARGETS = {
   concordancePct: 90,
   maxCalibrationDeviationPts: 5,
   maxOverrideRatePct: 15,
-  maxEscalationRatePct: 12,
   minBandSample: 20,
 };
 
@@ -72,8 +83,18 @@ export interface AiDecisionRecord {
   outcome: AiOutcome;
   overrideReason: OverrideReason | null;
   overriddenBy: string | null;
-  autoApproved: boolean;
-  ruleVersion: string | null;    // set only for straight-through auto-approvals
+  autoCleared: boolean;
+  ruleVersion: string | null;    // set only for auto-cleared determinations
+  pended: boolean;
+  pendReason: PendReason | null;
+  // ---- agentic run telemetry, mirroring Symphony's run ledger ----
+  agentsCompleted: number;
+  agentsTotal: number;
+  modelsUsed: string;            // e.g. "sonnet x4 · haiku · opus"
+  panel: boolean;                // a multi-model panel adjudicated this one
+  tokens: number;
+  cost: number;                  // USD, inference spend for the run
+  latencySec: number;
 }
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
@@ -135,12 +156,12 @@ function buildAiDecisions(cases: CaseRec[]): AiDecisionRecord[] {
   return cases.filter((c) => c.phase === 'decided').map((c): AiDecisionRecord => {
     const n = Number(c.authId.slice(-2));
     const spread = (n * 37 + 11) % 100;
-    const autoApproved = c.tags.includes('auto');
+    const autoCleared = c.tags.includes('auto');
 
-    // Straight-through cases only fire when the model is very sure. Reviewed cases are right-skewed
+    // Auto-cleared determinations only fire when the model is very sure. Reviewed cases are right-skewed
     // with a real low tail, which is what a production scorer actually looks like — most cases easy,
     // a small band genuinely hard.
-    const confidence = autoApproved
+    const confidence = autoCleared
       ? 96 + (n % 4)
       : spread < 6 ? 66 + (spread % 4)
       : spread < 18 ? 74 + (spread % 6)
@@ -168,25 +189,54 @@ function buildAiDecisions(cases: CaseRec[]): AiDecisionRecord[] {
     const decidedDate = isoDate(capToday(addDays(submitted, 3 + (n % 4))));
     const finalDecision = c.decision as Decision;
 
-    // Precedence matters: an auto-approval never had a reviewer, and a low-confidence case routes
-    // to a Medical Director rather than being accepted or overridden at nurse level.
-    // Only the genuinely low-confidence tail routes to a Medical Director — scope of practice, not
-    // a blanket rule, so the escalation rate stays inside the governance target.
-    const escalated = !autoApproved && scored < 70;
-    const outcome: AiOutcome = autoApproved ? 'Auto-approved' : escalated ? 'Escalated to MD' : concordant ? 'Accepted' : 'Overridden';
-    const reviewer = autoApproved ? '—' : escalated ? MD_REVIEWERS[n % MD_REVIEWERS.length] : c.nurse;
+    // Precedence matters: an auto-cleared determination never had a reviewer, and a pended one is
+    // waiting on a human rather than having been accepted or overridden.
+    const outcome: AiOutcome = autoCleared ? 'Auto-cleared' : concordant ? 'Accepted' : 'Overridden';
+
+    // Why the flow stopped and asked for a human, in Symphony's taxonomy. A determination can be
+    // pended and still end up accepted or overridden — the pend is what happened on the way, not
+    // the result. Order matters: a case heading somewhere adverse is flagged as a potential denial
+    // even when the score is also soft, because that is what a reviewer needs to know first.
+    const adverse = finalDecision === 'Denied' || finalDecision === 'Partial';
+    // Precedence is clinical, not cosmetic: a missing document blocks the assessment outright, so
+    // it outranks everything; an adverse direction needs a clinician regardless of the score; and a
+    // soft score is the residual reason. A reviewed case matching none of the three was routine —
+    // it went to a human without the flow flagging anything, so it is not a pend.
+    const insufficientInfo = c.tags.includes('rfi') || c.tags.includes('incompleteDoc');
+    const lowConfidence = scored < 80;
+    const pended = !autoCleared && (insufficientInfo || adverse || lowConfidence);
+    const pendReason: PendReason | null = !pended ? null
+      : insufficientInfo ? 'Insufficient info'
+      : adverse ? 'Potential denial'
+      : 'Low confidence';
+    const reviewer = autoCleared ? '—' : scored < 70 ? MD_REVIEWERS[n % MD_REVIEWERS.length] : c.nurse;
+
+    // A panel is convened when one pass is not enough — an adverse direction or a soft score. That
+    // is what drives the extra model, the extra tokens and the extra cost per case.
+    const panel = !autoCleared && (adverse || scored < 85);
+    const modelsUsed = autoCleared ? 'sonnet x4 · haiku' : panel ? 'sonnet x4 · haiku · opus' : 'sonnet x4 · haiku';
+    const runSeed = spread100(`${c.authId}|${c.member}|run`);
+    // Anchored to the volumes Symphony's own run ledger shows: ~36-40k tokens on an auto-cleared
+    // case, ~60-65k where a panel is convened, and cost tracking tokens rather than being invented
+    // independently of them.
+    const tokens = autoCleared ? 35800 + runSeed * 42 : panel ? 58500 + runSeed * 68 : 44200 + runSeed * 55;
+    const cost = Math.round((tokens / 1000) * (panel ? 0.0063 : 0.0042) * 100) / 100;
+    const latencySec = Math.round((autoCleared ? 13.2 : panel ? 16.9 : 14.8) * 10 + (runSeed % 22)) / 10;
 
     return {
       authId: c.authId, member: c.member, lob: lobOf(c.authId), procedure: c.procedure,
       reviewer, scoredDate, decidedDate,
       modelVersion: modelVersionFor(scoredDate),
       criteriaSet: `${c.procedure} — criteria set v${2 + (n % 3)}.0`,
-      recommendation: escalated ? 'Escalate' : concordant ? (finalDecision as AiRecommendation) : otherDecision(finalDecision, n),
-      confidence: scored, band, finalDecision, concordant, outcome,
+      recommendation: pended ? 'Escalate' : concordant ? (finalDecision as AiRecommendation) : otherDecision(finalDecision, n),
+      confidence: scored, band, finalDecision, concordant, outcome, pended,
       overrideReason: outcome === 'Overridden' ? overrideReasonFor(c, band) : null,
       overriddenBy: outcome === 'Overridden' ? c.nurse : null,
-      autoApproved,
-      ruleVersion: autoApproved ? `RULE-AUTOAPPROVE-v${3 + (n % 2)}.1` : null,
+      autoCleared,
+      ruleVersion: autoCleared ? `RULE-AUTOCLEAR-v${3 + (n % 2)}.1` : null,
+      pendReason,
+      agentsCompleted: 10, agentsTotal: 10,
+      modelsUsed, panel, tokens, cost, latencySec,
     };
   });
 }
@@ -207,26 +257,65 @@ export function aiScope(lob?: string, withinDays?: number): AiDecisionRecord[] {
 }
 
 export interface AiSummary {
-  total: number; reviewed: number; autoApproved: number;
+  total: number; reviewed: number; autoCleared: number; autoClearedPct: number;
   concordant: number; concordancePct: number;
   overridden: number; overrideRatePct: number;
-  escalated: number; escalationRatePct: number;
+  pended: number; pendedPctOfVolume: number;
   modelAttributable: number;
   meanConfidence: number;
+  // ---- run telemetry, in Symphony's terms ----
+  tokens: number; tokensPerCase: number;
+  inferenceSpend: number; avgCostPerCase: number;
+  avgLatencySec: number; panelRatePct: number;
 }
 export function aiSummary(rows: AiDecisionRecord[]): AiSummary {
-  const reviewed = rows.filter((r) => !r.autoApproved);
+  const reviewed = rows.filter((r) => !r.autoCleared);
   const concordant = rows.filter((r) => r.concordant).length;
   const overridden = rows.filter((r) => r.outcome === 'Overridden');
-  const escalated = rows.filter((r) => r.outcome === 'Escalated to MD').length;
+  const pended = rows.filter((r) => r.pended).length;
+  const tokens = rows.reduce((s, r) => s + r.tokens, 0);
+  const spend = rows.reduce((s, r) => s + r.cost, 0);
   return {
-    total: rows.length, reviewed: reviewed.length, autoApproved: rows.length - reviewed.length,
+    total: rows.length, reviewed: reviewed.length,
+    autoCleared: rows.length - reviewed.length, autoClearedPct: pctOf(rows.length - reviewed.length, rows.length),
     concordant, concordancePct: pctOf(concordant, rows.length),
     overridden: overridden.length, overrideRatePct: pctOf(overridden.length, reviewed.length),
-    escalated, escalationRatePct: pctOf(escalated, reviewed.length),
+    pended, pendedPctOfVolume: pctOf(pended, rows.length),
     modelAttributable: overridden.filter((r) => r.overrideReason && MODEL_ATTRIBUTABLE.includes(r.overrideReason)).length,
     meanConfidence: rows.length ? Math.round(rows.reduce((s, r) => s + r.confidence, 0) / rows.length) : 0,
+    tokens, tokensPerCase: rows.length ? Math.round(tokens / rows.length) : 0,
+    inferenceSpend: Math.round(spend * 100) / 100,
+    avgCostPerCase: rows.length ? Math.round((spend / rows.length) * 100) / 100 : 0,
+    avgLatencySec: rows.length ? Math.round((rows.reduce((s, r) => s + r.latencySec, 0) / rows.length) * 10) / 10 : 0,
+    panelRatePct: pctOf(rows.filter((r) => r.panel).length, rows.length),
   };
+}
+
+export interface PendReasonRow { reason: PendReason; count: number; pct: number; }
+/** What is waiting on a human, and why — the same breakdown Symphony's Monitor leads with. */
+export function pendMix(rows: AiDecisionRecord[]): PendReasonRow[] {
+  const pended = rows.filter((r) => r.pended);
+  return PEND_REASONS.map((reason) => {
+    const count = pended.filter((r) => r.pendReason === reason).length;
+    return { reason, count, pct: pctOf(count, pended.length) };
+  }).sort((a, b) => b.count - a.count);
+}
+
+export interface ModelMixRow { modelsUsed: string; panel: boolean; runs: number; tokensPerCase: number; avgCost: number; avgLatencySec: number; concordancePct: number; }
+/** Cost and agreement by the model set that actually ran. A panel costs more per case; this is
+ *  where you see whether it buys anything. */
+export function modelMix(rows: AiDecisionRecord[]): ModelMixRow[] {
+  return [...new Set(rows.map((r) => `${r.modelsUsed}|${r.panel}`))].map((key) => {
+    const [modelsUsed, panelFlag] = key.split('|');
+    const mine = rows.filter((r) => r.modelsUsed === modelsUsed && String(r.panel) === panelFlag);
+    return {
+      modelsUsed, panel: panelFlag === 'true', runs: mine.length,
+      tokensPerCase: Math.round(mine.reduce((s, r) => s + r.tokens, 0) / mine.length),
+      avgCost: Math.round((mine.reduce((s, r) => s + r.cost, 0) / mine.length) * 100) / 100,
+      avgLatencySec: Math.round((mine.reduce((s, r) => s + r.latencySec, 0) / mine.length) * 10) / 10,
+      concordancePct: pctOf(mine.filter((r) => r.concordant).length, mine.length),
+    };
+  }).sort((a, b) => b.runs - a.runs);
 }
 
 export interface CalibrationRow {
@@ -282,7 +371,7 @@ export interface ReviewerConcordanceRow { reviewer: string; scored: number; agre
  *  they may be catching what the model misses — which is why this reads as a signal to look at,
  *  never as a score to manage someone by. */
 export function reviewerConcordance(rows: AiDecisionRecord[]): ReviewerConcordanceRow[] {
-  const reviewed = rows.filter((r) => !r.autoApproved && r.reviewer !== '—');
+  const reviewed = rows.filter((r) => !r.autoCleared && r.reviewer !== '—');
   return [...new Set(reviewed.map((r) => r.reviewer))]
     .map((reviewer) => {
       const mine = reviewed.filter((r) => r.reviewer === reviewer);
@@ -301,7 +390,7 @@ export function concordanceBy(rows: AiDecisionRecord[], pick: (r: AiDecisionReco
   return [...new Set(rows.map(pick))]
     .map((key) => {
       const mine = rows.filter((r) => pick(r) === key);
-      const reviewed = mine.filter((r) => !r.autoApproved);
+      const reviewed = mine.filter((r) => !r.autoCleared);
       return {
         key, n: mine.length,
         concordancePct: pctOf(mine.filter((r) => r.concordant).length, mine.length),

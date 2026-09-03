@@ -39,7 +39,7 @@ import {
 } from './audit-trail';
 import {
   AI_DECISIONS, AiDecisionRecord, AI_TARGETS, MODEL_VERSIONS, MODEL_ATTRIBUTABLE,
-  aiSummary, calibration, drift, overrideReasons, reviewerConcordance, concordanceBy,
+  aiSummary, calibration, drift, overrideReasons, reviewerConcordance, concordanceBy, pendMix, modelMix,
 } from './ai-oversight';
 
 export const UM_QUEUE_NAMES = ['Intake', 'Clinical Review', 'MD Review', 'RFI Pending', 'OON Review', 'Concurrent Review', 'Pending P2P'];
@@ -856,7 +856,7 @@ export const AUDIT_REPORTS: ReportDef[] = [
     id: 'audit-ai-oversight', module: 'generic', group: AUDIT_GROUP, title: 'AI Oversight & Concordance',
     description: 'Every machine-influenced determination: what the model recommended, at what confidence and on which model version, what the clinician decided, and where they diverged — with confidence calibration, drift, override attribution and per-clinician agreement.',
     staticNote: 'Confidence calibration compares each band\'s claimed accuracy against the agreement actually observed. A band running below its claim is over-confident, and scores in that range should not be treated as stronger evidence than the band beneath it.',
-    dimension: { label: 'Outcome', options: [ALL, 'Auto-approved', 'Accepted', 'Overridden', 'Escalated to MD'] },
+    dimension: { label: 'Outcome', options: [ALL, 'Auto-cleared', 'Accepted', 'Overridden'] },
     tables: (ctx) => {
       const lobs = !ctx.lob || ctx.lob === ALL ? null : (Array.isArray(ctx.lob) ? ctx.lob : [ctx.lob]);
       const rows: AiDecisionRecord[] = AI_DECISIONS.filter((r) => {
@@ -870,14 +870,24 @@ export const AUDIT_REPORTS: ReportDef[] = [
       return [
         { title: 'Oversight Summary', columns: ['Measure', 'Value', 'Governance Target'], rows: [
           ['Determinations scored', sum.total, '—'],
-          ['Straight-through auto-approvals', sum.autoApproved, '—'],
+          ['Auto-cleared', `${sum.autoCleared} (${sum.autoClearedPct}% of volume)`, '—'],
           ['Clinician-reviewed', sum.reviewed, '—'],
           ['Concordance (AI matched final determination)', `${sum.concordancePct}%`, `>= ${AI_TARGETS.concordancePct}%`],
           ['Override rate', `${sum.overrideRatePct}%`, `<= ${AI_TARGETS.maxOverrideRatePct}%`],
           ['Model-attributable overrides', sum.modelAttributable, 'trend to zero'],
-          ['Escalation rate (low confidence to MD)', `${sum.escalationRatePct}%`, `<= ${AI_TARGETS.maxEscalationRatePct}%`],
+          ['Pended for review', `${sum.pended} (${sum.pendedPctOfVolume}% of volume)`, '—'],
           ['Mean confidence', `${sum.meanConfidence}%`, '—'],
+          ['Tokens', sum.tokens.toLocaleString(), '—'],
+          ['Tokens / case', sum.tokensPerCase.toLocaleString(), '—'],
+          ['Inference spend', `$${sum.inferenceSpend.toFixed(2)}`, '—'],
+          ['Avg cost / case', `$${sum.avgCostPerCase.toFixed(2)}`, '—'],
+          ['Avg latency', `${sum.avgLatencySec}s`, '—'],
+          ['Panel rate', `${sum.panelRatePct}%`, '—'],
         ] },
+        { title: 'Queue by Pend Reason', columns: ['Pend Reason', 'Determinations', '% of Pended'],
+          rows: pendMix(rows).map((r) => [r.reason, r.count, `${r.pct}%`]) },
+        { title: 'Models Used', columns: ['Models', 'Panel', 'Runs', 'Tokens / Case', 'Avg Cost', 'Avg Latency', 'Concordance %'],
+          rows: modelMix(rows).map((m) => [m.modelsUsed, m.panel ? 'Yes' : 'No', m.runs, m.tokensPerCase.toLocaleString(), `$${m.avgCost.toFixed(2)}`, `${m.avgLatencySec}s`, m.concordancePct]) },
         { title: 'Confidence Calibration', columns: ['Band', 'Determinations', 'Claimed Accuracy', 'Observed Agreement', 'Deviation (pts)', 'Verdict'],
           rows: calibration(rows).map((c) => [c.band, c.n, `${c.claimed}%`, `${c.observed}%`, c.deviation, c.verdict]) },
         { title: 'Concordance Over Time', columns: ['Month', 'Determinations', 'Model Version', 'Mean Confidence', 'Concordance'],
@@ -890,9 +900,10 @@ export const AUDIT_REPORTS: ReportDef[] = [
           rows: concordanceBy(rows, (r) => r.procedure).filter((g) => g.n >= AI_TARGETS.minBandSample / 2).map((g) => [g.key, g.n, g.concordancePct, g.overrideRatePct]) },
         { title: 'Model Versions in Force', columns: ['Version', 'From', 'To', 'Determinations Scored', 'Change'],
           rows: MODEL_VERSIONS.map((m) => [m.version, m.from, m.to ?? 'current', rows.filter((r) => r.modelVersion === m.version).length, m.note]) },
-        { title: 'Override Detail', columns: ['Auth', 'Member', 'LOB', 'Procedure', 'Model Version', 'AI Recommendation', 'Confidence', 'Final Determination', 'Override Reason', 'Attribution', 'Overridden By', 'Decided'],
-          rows: overridden.map((r) => [r.authId, r.member, r.lob, r.procedure, r.modelVersion, r.recommendation, `${r.confidence}%`,
-            r.finalDecision, r.overrideReason ?? '—', r.overrideReason && MODEL_ATTRIBUTABLE.includes(r.overrideReason) ? 'Model' : 'Clinical', r.overriddenBy ?? '—', r.decidedDate]) },
+        { title: 'Override Detail', columns: ['Auth', 'Member', 'Policy', 'Models Used', 'Panel', 'Recommendation', 'Confidence', 'Final Determination', 'Override Reason', 'Attribution', 'Overridden By', 'Tokens', 'Cost', 'Decided'],
+          rows: overridden.map((r) => [r.authId, r.member, r.procedure, r.modelsUsed, r.panel ? 'Yes' : 'No', r.recommendation, `${r.confidence}%`,
+            r.finalDecision, r.overrideReason ?? '—', r.overrideReason && MODEL_ATTRIBUTABLE.includes(r.overrideReason) ? 'Model' : 'Clinical', r.overriddenBy ?? '—',
+            r.tokens.toLocaleString(), `$${r.cost.toFixed(2)}`, r.decidedDate]) },
       ];
     },
   },
