@@ -100,7 +100,7 @@ Both are in the build. Lead with the second — that's what this session is abou
 | Per-determination governance record | Decision lineage, human actions and execution for one case — Symphony's own three sections | Audit Trail → Governance record |
 | Delegated-entity oversight | One dated packet assembling every required artifact, with a content stamp | Reports → Delegation Oversight Packet |
 | Certified disposition | Legal hold blocks disposal outright; destruction issues a certificate retaining the terminal hash | Retention & Archive |
-| Cross-module signal awareness | Live alert count in the Inbox, each opening the surface that owns it | Inbox (rail) |
+| Cross-module signal awareness | Live count in the top-bar bell, each signal opening the surface that owns it — nothing assigned to anyone | Notifications bell |
 | AI decision transparency | Recommendation, confidence, model version and criteria logged per determination; override with structured reason | AI Oversight · Audit Trail |
 | Confidence reliability | Per-band calibration against claimed accuracy, with a sample floor | AI Oversight — calibration |
 | Model drift | Decision agreement and mean confidence by month against model version in force | AI Oversight — drift |
