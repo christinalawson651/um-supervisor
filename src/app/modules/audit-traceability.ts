@@ -271,15 +271,29 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Concordance Over Time</h3>
             <span class="section-note sm">Drift shows up here before it shows up anywhere a member would notice. Model version in force is shown against each month.</span></div>
-          <div class="ilist">
-            @for (d of driftRows(); track d.month) {
-              <div class="irow">
-                <div class="ilab">{{ d.month }}<span class="cite">{{ d.modelVersion }} · n={{ d.n }}</span></div>
-                <div class="ibar-track"><div class="ibar-fill" [class.amber]="d.concordancePct < targets.concordancePct" [class.teal]="d.concordancePct >= targets.concordancePct" [style.width.%]="d.concordancePct"></div></div>
-                <div class="icount">{{ d.concordancePct }}% · conf {{ d.meanConfidence }}%</div>
-              </div>
-            }
-          </div>
+          <!-- Chronological, and deliberately not sortable: a drift series read in any order other
+               than time is no longer a drift series. -->
+          <table class="z-table">
+            <thead><tr>
+              <th>Month</th><th class="num">Determinations</th><th>Model Version</th>
+              <th class="num">Mean Confidence</th><th class="agree-col">Concordance</th>
+            </tr></thead>
+            <tbody>
+              @for (d of driftRows(); track d.month) {
+                <tr>
+                  <td class="strong mono">{{ d.month }}</td>
+                  <td class="num">{{ d.n }}</td>
+                  <td class="mono">{{ d.modelVersion }}</td>
+                  <td class="num">{{ d.meanConfidence }}%</td>
+                  <td class="agree-col">
+                    <span class="mbar"><span [class.amber]="d.concordancePct < targets.concordancePct" [class.teal]="d.concordancePct >= targets.concordancePct" [style.width.%]="d.concordancePct"></span></span>
+                    <span class="mpct" [class.warn]="d.concordancePct < targets.concordancePct">{{ d.concordancePct }}%</span>
+                    @if (d.n < targets.minBandSample) { <span class="chip amber">thin month</span> }
+                  </td>
+                </tr>
+              } @empty { <tr><td colspan="5" class="empty">No scored determinations in range.</td></tr> }
+            </tbody>
+          </table>
         </div>
 
         <div class="panel mt-6">
@@ -303,20 +317,33 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Agreement by Clinician</h3>
             <span class="section-note sm">A reviewer below the group is not necessarily wrong — they may be catching what the model misses. This is a signal to look at, never a score to manage someone by.</span></div>
-          <div class="ilist">
-            @for (r of byReviewer(); track r.reviewer) {
-              <div class="irow clk" (click)="drillReviewer(r.reviewer)">
-                <div class="ilab">{{ r.reviewer }}<span class="cite">{{ r.overrides }} override(s)</span></div>
-                @if (r.adequate) {
-                  <div class="ibar-track"><div class="ibar-fill" [class.amber]="r.pct < targets.concordancePct" [class.teal]="r.pct >= targets.concordancePct" [style.width.%]="r.pct"></div></div>
-                  <div class="icount">{{ r.agreed }}/{{ r.scored }} · {{ r.pct }}%</div>
-                } @else {
-                  <div class="ibar-track"><div class="ibar-fill gray" style="width:100%"></div></div>
-                  <div class="icount muted">n={{ r.scored }} · insufficient</div>
-                }
-              </div>
-            }
-          </div>
+          <table class="z-table">
+            <thead><tr>
+              <th class="srt" (click)="sortRev('reviewer')">Clinician{{ caretRev('reviewer') }}</th>
+              <th class="srt num" (click)="sortRev('scored')">Scored{{ caretRev('scored') }}</th>
+              <th class="srt num" (click)="sortRev('agreed')">Agreed{{ caretRev('agreed') }}</th>
+              <th class="srt num" (click)="sortRev('overrides')">Overrides{{ caretRev('overrides') }}</th>
+              <th class="srt agree-col" (click)="sortRev('pct')">Agreement{{ caretRev('pct') }}</th>
+            </tr></thead>
+            <tbody>
+              @for (r of byReviewer(); track r.reviewer) {
+                <tr class="clk" (click)="drillReviewer(r.reviewer)">
+                  <td class="strong">{{ r.reviewer }}</td>
+                  <td class="num">{{ r.scored }}</td>
+                  <td class="num">{{ r.adequate ? r.agreed : '—' }}</td>
+                  <td class="num"><b [class.warn]="r.overrides > 0">{{ r.overrides }}</b></td>
+                  <td class="agree-col">
+                    @if (r.adequate) {
+                      <span class="mbar"><span [class.amber]="r.pct < targets.concordancePct" [class.teal]="r.pct >= targets.concordancePct" [style.width.%]="r.pct"></span></span>
+                      <span class="mpct" [class.warn]="r.pct < targets.concordancePct">{{ r.pct }}%</span>
+                    } @else {
+                      <span class="sub">n={{ r.scored }} — below the {{ targets.minBandSample }}-determination floor, no rate reported</span>
+                    }
+                  </td>
+                </tr>
+              } @empty { <tr><td colspan="5" class="empty">No clinician-reviewed determinations in range.</td></tr> }
+            </tbody>
+          </table>
         </div>
 
         <div class="panel mt-6">
@@ -788,6 +815,15 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     .chip { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--gray-100); color: var(--gray-500); }
     .chip.amber { background: #fdf3e3; color: #9a6400; }
     .good { color: var(--teal-700); }
+    .agree-col { width: 250px; white-space: nowrap; }
+    .mbar {
+      display: inline-block; vertical-align: middle; width: 110px; height: 7px;
+      background: var(--gray-100); border-radius: 4px; overflow: hidden; margin-right: 10px;
+    }
+    .mbar > span { display: block; height: 100%; border-radius: 4px; background: var(--gray-300); }
+    .mbar > span.teal { background: var(--teal-600); }
+    .mbar > span.amber { background: var(--amber); }
+    .mpct { font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600; }
     .finding {
       border-left: 3px solid var(--amber); margin: 0 20px 18px; padding: 10px 0 10px 14px;
       font-size: 13px; line-height: 1.55; color: var(--ink); max-width: 76ch;
@@ -966,7 +1002,14 @@ export class AuditTraceability {
   readonly overconfidentBands = computed(() => this.calib().filter((c) => c.verdict === 'Overconfident').map((c) => c.band));
   readonly driftRows = computed(() => drift(this.aiRows()));
   readonly reasons = computed(() => overrideReasons(this.aiRows()));
-  readonly byReviewer = computed(() => reviewerConcordance(this.aiRows()));
+  /** Under-sampled reviewers always sink to the bottom, whatever the sort. Their rate is not
+   *  reported, so letting it position them in a list ordered by that rate would be the one thing
+   *  the sample floor exists to prevent. */
+  readonly byReviewer = computed(() => {
+    const rows = reviewerConcordance(this.aiRows());
+    const sorted = compareRows(rows, this.revSortKey(), this.revSortDir());
+    return [...sorted.filter((r) => r.adequate), ...sorted.filter((r) => !r.adequate)];
+  });
   /** Grouped by the procedure the criteria govern, not by criteria-set version — versioning
    *  fragments each procedure three ways and leaves samples of three or four, which say nothing.
    *  Groups below the band sample floor are dropped for the same reason. */
@@ -982,6 +1025,15 @@ export class AuditTraceability {
     return total ? Math.round((count / total) * 100) : 0;
   }
   scoredByVersion(v: string): number { return this.aiRows().filter((r) => r.modelVersion === v).length; }
+
+  readonly revSortKey = signal<'reviewer' | 'scored' | 'agreed' | 'overrides' | 'pct' | ''>('pct');
+  readonly revSortDir = signal<SortDir>(1);
+  sortRev(k: 'reviewer' | 'scored' | 'agreed' | 'overrides' | 'pct') {
+    if (this.revSortKey() === k) this.revSortDir.set(this.revSortDir() === 1 ? -1 : 1);
+    // Lowest agreement first by default — that is the row worth looking at.
+    else { this.revSortKey.set(k); this.revSortDir.set(k === 'reviewer' ? 1 : -1); }
+  }
+  caretRev(k: 'reviewer' | 'scored' | 'agreed' | 'overrides' | 'pct') { return caretFor(this.revSortKey(), k, this.revSortDir()); }
 
   private readonly AI_COLUMNS = ['Auth', 'Member', 'LOB', 'Procedure', 'Model Version', 'Criteria Set', 'AI Recommendation', 'Confidence', 'Band', 'Final Determination', 'Concordant', 'Outcome', 'Override Reason', 'Overridden By', 'Reviewer', 'Scored', 'Decided'];
   private aiRow(r: AiDecisionRecord): (string | number)[] {
