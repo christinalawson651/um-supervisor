@@ -30,12 +30,15 @@ import {
 } from './case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { IRR_TARGET_PCT } from './um-irr';
+import { CM_FILE_AUDITS, CM_AUDIT_PASS_PCT, cmRegCompliance } from './cm-audit';
+import { CM_CASE_POOL } from './cm-case-pool';
 import { UM_NURSE_ROSTER, UM_ROLLING_4_WEEKS, UM_MONTHLY_WEEKS, UM_PTO_BALANCES, UM_UPCOMING_WEEKS, UM_TODAY_ISO } from './um-schedule';
 import {
   AUDIT_EVENTS, AuditEvent, SYSTEM_USERS, PERMISSIONS, PERMISSION_MATRIX, COMPLIANCE_REGISTER,
   userActivityRollup, evaluateSod, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   eventDate, verifyChain,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, RESTORE_REQUESTS, archiveSummary, verifyArchiveChain,
+  SYSTEM_USERS as AUDIT_USERS, contentHash,
 } from './audit-trail';
 import {
   AI_DECISIONS, AiDecisionRecord, AI_TARGETS, PRODUCTION_CONFIG, AGENTS, MODEL_ATTRIBUTABLE,
@@ -958,6 +961,125 @@ export const AUDIT_REPORTS: ReportDef[] = [
             .map((g) => [g.segmentId, `${g.periodFrom} → ${g.periodTo}`, g.eventCount, g.purgeEligible, 'NOT AVAILABLE — see REQ-17']) },
         { title: 'Restore Requests', columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'SLA (days)', 'Status'],
           rows: RESTORE_REQUESTS.map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]) },
+      ];
+    },
+  },
+  {
+    id: 'audit-delegation-packet', module: 'generic', group: AUDIT_GROUP, title: 'Delegation Oversight Packet',
+    description: 'The standard oversight artifact set assembled into one dated document with provenance — volume and turnaround, clinical quality, AI governance, access, audit integrity, retention, and the open findings. What a delegated entity hands the plan, rather than nine exports someone gathers by hand.',
+    staticNote: 'The open-findings section is deliberately part of the packet. An oversight packet that shows only strengths is the kind a plan learns to discount, and every finding here already carries an owner and a next step.',
+    noLobDays: true,
+    tables: () => {
+      const chain = verifyChain();
+      const arch = archiveSummary();
+      const ai = aiSummary(AI_DECISIONS);
+      const cmAudits = CM_FILE_AUDITS;
+      const cmPassed = cmAudits.filter((a) => a.pass).length;
+      const irr = liveIrrByReviewer();
+      const irrSampled = irr.reduce((n, r) => n + r.sampled, 0);
+      const irrAgreed = irr.reduce((n, r) => n + r.agree, 0);
+      const sod = evaluateSod(AUDIT_EVENTS);
+      const sodExceptions = sod.reduce((n, r) => n + r.conflicts.length, 0);
+      const noMfa = AUDIT_USERS.filter((u) => !u.mfaEnrolled).length;
+      const attestOverdue = AUDIT_USERS.filter((u) => attestationAgeDays(u) > ATTESTATION_CYCLE_DAYS).length;
+      const openFindings = COMPLIANCE_REGISTER.filter((r) => r.status !== 'Met');
+      const decided = CASE_POOL.filter((c) => c.phase === 'decided');
+
+      // Stamped over the figures the packet actually asserts, so a recipient can tell whether the
+      // copy in their hands is the copy that was issued.
+      const stamp = contentHash([
+        chain.verified, arch.totalRetained, ai.decisionAgreementPct, ai.groundednessPct,
+        irrAgreed, irrSampled, cmPassed, cmAudits.length, sodExceptions, openFindings.length,
+      ].join('|'));
+
+      return [
+        { title: 'Cover — Delegation Oversight Packet', columns: ['Field', 'Value'], rows: [
+          ['Delegated entity', 'Zyter TruCare — Utilization & Care Management'],
+          ['Prepared for', 'Plan delegation oversight'],
+          ['Basis', '42 CFR §422.504(i) · NCQA delegation standards'],
+          ['Scope', 'Utilization Management and Care Management. Appeals & Grievances is not in scope of this packet.'],
+          ['Determinations covered', decided.length],
+          ['Care-management records covered', CM_CASE_POOL.length],
+          ['Packet stamp', stamp],
+          ['Contents', '1 Volume & turnaround · 2 Clinical quality · 3 AI governance · 4 Access & security · 5 Audit integrity · 6 Retention · 7 Open findings · 8 Attestation'],
+        ] },
+
+        { title: '1 · Volume & Turnaround — Regulatory Windows by Program', columns: ['Program', 'Standard Window (days)', 'Expedited Window (hours)', 'Citation', 'Compliant', 'Total', 'Compliance %'],
+          rows: liveRegCompliance().map((r) => [r.lob, r.standardDays, r.expeditedHours, r.citation, r.compliant, r.total, r.pct]) },
+
+        { title: '2 · Clinical Quality — UM Inter-Rater Reliability', columns: ['Measure', 'Value', 'Target'], rows: [
+          ['Decisions sampled for independent re-determination', irrSampled, '—'],
+          ['Agreement rate', `${irrSampled ? Math.round((irrAgreed / irrSampled) * 100) : 0}%`, `>= ${IRR_TARGET_PCT}%`],
+          ['Reviewers below threshold', irr.filter((r) => r.adequate && r.pct < IRR_TARGET_PCT).length, '0'],
+          ['Reviewers with insufficient sample', irr.filter((r) => !r.adequate).length, '—'],
+          ['Open corrective actions', liveIrrCorrectiveActions().filter((r) => r.correctiveActionStatus === 'Open').length, 'trend to zero'],
+        ] },
+        { title: '2 · Clinical Quality — UM Discrepancy Reasons', columns: ['Reason', 'Count'],
+          rows: liveIrrDiscrepancyReasons().map((r) => [r.reason, r.count]) },
+        { title: '2 · Clinical Quality — CM Documentation File Audit', columns: ['Measure', 'Value', 'Target'], rows: [
+          ['Files audited', cmAudits.length, '—'],
+          ['Pass rate', `${cmAudits.length ? Math.round((cmPassed / cmAudits.length) * 100) : 0}%`, `>= ${CM_AUDIT_PASS_PCT}% of rubric per file`],
+          ['Files failing review', cmAudits.length - cmPassed, '—'],
+          ['Open corrective actions', cmAudits.filter((a) => a.correctiveActionStatus === 'Open').length, 'trend to zero'],
+        ] },
+        { title: '2 · Clinical Quality — CM Regulatory Windows by Program', columns: ['Program', 'Assessment Window (days)', 'Care Plan Window (days)', 'Citation', 'Compliant', 'Total', 'Compliance %'],
+          rows: cmRegCompliance(CM_CASE_POOL).map((r) => [r.lob, r.assessmentDays, r.carePlanDays, r.citation, r.compliant, r.total, r.pct]) },
+
+        { title: '3 · AI Governance — Machine-Influenced Determinations', columns: ['Measure', 'Value', 'Target'], rows: [
+          ['Determinations scored', ai.total, '—'],
+          ['Auto-cleared', `${ai.autoCleared} (${ai.autoClearedPct}% of volume)`, '—'],
+          ['Decision agreement', `${ai.decisionAgreementPct}%`, `>= ${AI_TARGETS.decisionAgreementPct}%`],
+          ['Groundedness', `${ai.groundednessPct}%`, `>= ${AI_TARGETS.groundednessPct}%`],
+          ['Convergence', `${ai.convergencePct}%`, `>= ${AI_TARGETS.convergencePct}%`],
+          ['Override rate', `${ai.overrideRatePct}%`, `<= ${AI_TARGETS.maxOverrideRatePct}%`],
+          ['Model-attributable overrides', ai.modelAttributable, 'trend to zero'],
+          ['Avg confidence', ai.avgConfidence.toFixed(2), '—'],
+        ] },
+        { title: '3 · AI Governance — Confidence Calibration', columns: ['Band', 'Determinations', 'Claimed', 'Observed', 'Deviation (pts)', 'Verdict'],
+          rows: calibration(AI_DECISIONS).map((c) => [c.band, c.n, `${c.claimed}%`, c.adequate ? `${c.observed}%` : 'not reported', c.adequate ? c.deviation : '—', c.verdict]) },
+        { title: '3 · AI Governance — Serving Configuration', columns: ['Setting', 'Value'], rows: [
+          ['Workflow', PRODUCTION_CONFIG.workflow],
+          ['Med-necessity bundle', `${PRODUCTION_CONFIG.bundle} (promoted ${PRODUCTION_CONFIG.bundlePromoted})`],
+          ['Model', PRODUCTION_CONFIG.model],
+          ['Confidence gate', `>= ${PRODUCTION_CONFIG.autoApproveGate.toFixed(2)} auto-approve · < ${PRODUCTION_CONFIG.autoPendGate.toFixed(2)} auto-pend`],
+        ] },
+
+        { title: '4 · Access & Security', columns: ['Measure', 'Value', 'Target'], rows: [
+          ['Accounts', AUDIT_USERS.length, '—'],
+          ['MFA coverage', `${Math.round(((AUDIT_USERS.length - noMfa) / AUDIT_USERS.length) * 100)}%`, '100%'],
+          ['Accounts password-only', noMfa, '0'],
+          ['Entitlement reviews overdue', attestOverdue, `0 beyond ${ATTESTATION_CYCLE_DAYS} days`],
+          ['Segregation-of-duty exceptions', sodExceptions, '0'],
+        ] },
+        { title: '4 · Access & Security — Segregation-of-Duty Results', columns: ['Rule', 'Control', 'Citation', 'Result'],
+          rows: sod.map((r) => [r.rule.id, r.rule.name, r.rule.citation,
+            r.conflicts.length ? `${r.conflicts.length} EXCEPTION(S)` : `Passing across ${AUDIT_EVENTS.length} events tested`]) },
+
+        { title: '5 · Audit Integrity', columns: ['Check', 'Result'], rows: [
+          ['Events in the online store', chain.verified],
+          ['Hash chain', chain.brokenAt ? `BROKEN at ${chain.brokenAt}` : 'Intact — no gaps or alterations'],
+          ['Archive chain', verifyArchiveChain().brokenAt ? 'BROKEN' : `Continuous across ${ARCHIVE_SEGMENTS.length} sealed segments`],
+        ] },
+
+        { title: '6 · Retention & Disposition', columns: ['Measure', 'Value'], rows: [
+          ['Online — queryable', arch.onlineEvents],
+          ['Archived — retrievable', arch.archivedEvents],
+          ['Total retained', arch.totalRetained],
+          ['Oldest retained period', arch.oldestRetained],
+          ['Segments under legal hold', arch.onHold],
+          ['Segments past retention, not held', arch.purgeEligible],
+        ] },
+        { title: '6 · Retention Schedule', columns: ['Record Class', 'Retention (years)', 'Citation'],
+          rows: RETENTION_POLICIES.map((r) => [r.recordClass, r.retentionYears, r.citation]) },
+
+        { title: '7 · Open Findings', columns: ['ID', 'Domain', 'Requirement', 'Status', 'Priority', 'Gap', 'Next Step', 'Owner'],
+          rows: openFindings.map((r) => [r.id, r.domain, r.requirement, r.status, r.priority, r.gap ?? '—', r.nextStep ?? '—', r.owner]) },
+
+        { title: '8 · Attestation', columns: ['Role', 'Name', 'Signature', 'Date'], rows: [
+          ['Prepared by — Compliance', '', '', ''],
+          ['Reviewed by — Medical Director', '', '', ''],
+          ['Accepted by — Plan delegation oversight', '', '', ''],
+        ] },
       ];
     },
   },
