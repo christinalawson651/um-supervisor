@@ -173,9 +173,30 @@ export class Alerts {
 
   readonly count = computed(() => this.all().length);
   readonly criticalCount = computed(() => this.all().filter((a) => a.severity === 'critical').length);
+
+  // ---- filters -------------------------------------------------------------------------------
+  // Severity and source, because those are the two questions actually being asked of this list:
+  // "what is on fire" and "whose is it". The bell badge deliberately keeps reporting the UNFILTERED
+  // count — a filter is a way of reading the list, not a way of making signals disappear, and a
+  // badge that dropped when you narrowed the view would be lying about what is outstanding.
+  readonly severityFilter = signal<AlertSeverity | 'all'>('all');
+  readonly sourceFilter = signal<string>('all');
+
+  readonly sources = computed(() => [...new Set(this.all().map((a) => a.source))]);
+  countBySeverity(sev: AlertSeverity) { return this.all().filter((a) => a.severity === sev).length; }
+  countBySource(source: string) { return this.all().filter((a) => a.source === source).length; }
+  readonly filtersActive = computed(() => this.severityFilter() !== 'all' || this.sourceFilter() !== 'all');
+  clearFilters() { this.severityFilter.set('all'); this.sourceFilter.set('all'); }
+
+  readonly visible = computed(() => {
+    const sev = this.severityFilter(), src = this.sourceFilter();
+    return this.all().filter((a) => (sev === 'all' || a.severity === sev) && (src === 'all' || a.source === src));
+  });
+  readonly visibleCount = computed(() => this.visible().length);
+
   readonly bySource = computed(() => {
-    const sources = [...new Set(this.all().map((a) => a.source))];
-    return sources.map((source) => ({ source, alerts: this.all().filter((a) => a.source === source) }));
+    const sources = [...new Set(this.visible().map((a) => a.source))];
+    return sources.map((source) => ({ source, alerts: this.visible().filter((a) => a.source === source) }));
   });
 
   /** The one thing an alert does: put you where the problem is. */

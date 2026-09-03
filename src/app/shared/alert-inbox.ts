@@ -17,14 +17,42 @@ import { Icon } from './icon';
           <div>
             <h3>Notifications</h3>
             <p class="sub">
-              {{ alerts.count() }} open signal{{ alerts.count() === 1 ? '' : 's' }} across your modules
-              @if (alerts.criticalCount()) { · <b class="crit">{{ alerts.criticalCount() }} critical</b> }
+              @if (alerts.filtersActive()) {
+                Showing {{ alerts.visibleCount() }} of {{ alerts.count() }} open signals
+              } @else {
+                {{ alerts.count() }} open signal{{ alerts.count() === 1 ? '' : 's' }} across your modules
+                @if (alerts.criticalCount()) { · <b class="crit">{{ alerts.criticalCount() }} critical</b> }
+              }
             </p>
           </div>
           <button class="x" (click)="alerts.close()" aria-label="Close">×</button>
         </header>
 
         <p class="note">Nothing here is assigned to you. Each one opens the screen that owns it, where the actions already are.</p>
+
+        <div class="filters">
+          <div class="frow">
+            @for (f of severities; track f.id) {
+              <button class="chip-btn" [attr.data-sev]="f.id" [class.on]="alerts.severityFilter() === f.id"
+                (click)="alerts.severityFilter.set(f.id)">
+                {{ f.label }}<span class="n">{{ f.id === 'all' ? alerts.count() : alerts.countBySeverity(f.id) }}</span>
+              </button>
+            }
+          </div>
+          <div class="frow">
+            <button class="chip-btn" [class.on]="alerts.sourceFilter() === 'all'" (click)="alerts.sourceFilter.set('all')">
+              All modules<span class="n">{{ alerts.count() }}</span>
+            </button>
+            @for (src of alerts.sources(); track src) {
+              <button class="chip-btn" [class.on]="alerts.sourceFilter() === src" (click)="alerts.sourceFilter.set(src)">
+                {{ src }}<span class="n">{{ alerts.countBySource(src) }}</span>
+              </button>
+            }
+          </div>
+          @if (alerts.filtersActive()) {
+            <button class="clearf" (click)="alerts.clearFilters()">Clear filters</button>
+          }
+        </div>
 
         <div class="body">
           @for (g of alerts.bySource(); track g.source) {
@@ -43,7 +71,11 @@ import { Icon } from './icon';
               }
             </div>
           } @empty {
-            <div class="empty">Nothing needs your attention right now. ✓</div>
+            @if (alerts.filtersActive()) {
+              <div class="empty muted">No signals match this filter.<br><button class="clearf inline" (click)="alerts.clearFilters()">Clear filters</button></div>
+            } @else {
+              <div class="empty">Nothing needs your attention right now. ✓</div>
+            }
           }
         </div>
       </aside>
@@ -63,6 +95,31 @@ import { Icon } from './icon';
     .sub .crit { color: var(--red, #c0392b); font-weight: 700; }
     .x { margin-left: auto; border: 0; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; color: var(--gray-500); }
     .note { margin: 0; padding: 12px 20px; font-size: 12px; color: var(--gray-500); background: var(--gray-50, #f9fafb); border-bottom: 1px solid var(--border); line-height: 1.5; }
+
+    .filters { padding: 10px 20px 12px; border-bottom: 1px solid var(--border); display: grid; gap: 7px; }
+    .frow { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--border); border-radius: 999px; background: #fff;
+      padding: 4px 10px; font: inherit; font-size: 11.5px; font-weight: 600; color: var(--gray-500);
+      cursor: pointer; transition: border-color .12s, color .12s, background .12s;
+    }
+    .chip-btn:hover { border-color: var(--teal-600); color: var(--teal-700); }
+    .chip-btn:focus-visible { outline: 2px solid var(--teal-600); outline-offset: 1px; }
+    .chip-btn.on { background: var(--teal-600); border-color: var(--teal-600); color: #fff; }
+    .chip-btn[data-sev="critical"].on { background: var(--red, #c0392b); border-color: var(--red, #c0392b); }
+    .chip-btn[data-sev="warning"].on { background: var(--amber); border-color: var(--amber); }
+    .chip-btn .n {
+      font-variant-numeric: tabular-nums; font-size: 10.5px; font-weight: 700;
+      background: var(--gray-100); color: var(--gray-500); border-radius: 999px; padding: 0 5px; min-width: 17px; text-align: center;
+    }
+    .chip-btn.on .n { background: rgba(255,255,255,.24); color: #fff; }
+    .clearf {
+      justify-self: start; border: 0; background: transparent; padding: 0; font: inherit;
+      font-size: 11.5px; font-weight: 600; color: var(--teal-700); cursor: pointer; text-decoration: underline;
+    }
+    .clearf.inline { margin-top: 8px; }
+    .empty.muted { color: var(--gray-500); font-weight: 500; }
 
     .body { overflow-y: auto; padding: 6px 0 24px; }
     .grp { padding: 10px 0 2px; }
@@ -94,4 +151,11 @@ import { Icon } from './icon';
 })
 export class AlertInbox {
   alerts = inject(Alerts);
+  /** 'all' first so the default is one click away from wherever you narrowed to. */
+  readonly severities = [
+    { id: 'all' as const, label: 'All' },
+    { id: 'critical' as const, label: 'Critical' },
+    { id: 'warning' as const, label: 'Warning' },
+    { id: 'info' as const, label: 'Info' },
+  ];
 }
