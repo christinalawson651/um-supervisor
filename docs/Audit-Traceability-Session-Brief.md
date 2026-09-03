@@ -61,9 +61,9 @@ Both are in the build. Lead with the second — that's what this session is abou
 ### 1.5 AI Oversight — 6 min
 **Audit & Traceability → AI Oversight**
 
-- Every determination the model touched: what it recommended, at what confidence, on which model version, and what the clinician decided instead. **247 scored · 94 straight-through · 153 clinician-reviewed.**
-- **Confidence calibration is the whole answer to "what evidence supports their reliability".** A band claiming 97% should be right about 97% of the time. Show the table: the 95%+ band claims 97% and observes 83% — **14 points hot, across 121 of 247 determinations.**
-- That is also why aggregate concordance is **87% against a 90% target**. Say it in that order: the number misses, and the calibration table explains why. An aggregate that passed while a band ran hot would be the more dangerous result.
+- Every determination the model touched: what it recommended, at what confidence, on which model version, and what the clinician decided instead. **247 scored · 94 auto-cleared · 153 clinician-reviewed.**
+- **Confidence calibration is the whole answer to "what evidence supports their reliability".** A band claiming 0.95 should be right about 95% of the time. Show the table: the **0.90–1.00 band claims 0.95 and observes 86% — nine points hot, across 85 of 247 determinations.**
+- That is also why decision agreement is **85% against a 90% target**, and why the override rate sits at **17% against a 15% ceiling**. Say it in that order: the number misses, and the calibration table explains why. An aggregate that passed while a band ran hot would be the more dangerous result.
 - **Override reasons carry attribution.** The top reason is *Criteria not applicable to this presentation* — model-attributable, and concentrated in the over-confident band. That is the loop back to clinical content, not a reviewer problem.
 - Agreement by clinician is shown as a **signal, not a score** — a reviewer below the group may be catching what the model misses. Sample floor of 20 before anyone gets a rate at all.
 - Agreement by procedure names where it breaks down: Behavioral Health PHP and Cardiac Catheterization sit lowest.
@@ -97,9 +97,13 @@ Both are in the build. Lead with the second — that's what this session is abou
 | Delegation oversight evidence | IRR, file audit, regulatory TAT, corrective actions — all exportable | UM & CM Audit & Compliance |
 | Program-audit readiness | Filtered, dated extracts with provenance | Reports module + Audit Trail export |
 | Access governance | Role→permission matrix, SOD evaluation, entitlement attestation | Governance & Access Controls |
+| Per-determination governance record | Decision lineage, human actions and execution for one case — Symphony's own three sections | Audit Trail → Governance record |
+| Delegated-entity oversight | One dated packet assembling every required artifact, with a content stamp | Reports → Delegation Oversight Packet |
+| Certified disposition | Legal hold blocks disposal outright; destruction issues a certificate retaining the terminal hash | Retention & Archive |
+| Cross-module signal awareness | Live alert count in the Inbox, each opening the surface that owns it | Inbox (rail) |
 | AI decision transparency | Recommendation, confidence, model version and criteria logged per determination; override with structured reason | AI Oversight · Audit Trail |
 | Confidence reliability | Per-band calibration against claimed accuracy, with a sample floor | AI Oversight — calibration |
-| Model drift | Concordance and mean confidence by month against model version in force | AI Oversight — drift |
+| Model drift | Decision agreement and mean confidence by month against model version in force | AI Oversight — drift |
 | Clinical AI governance | Model versions governed like policy: versioned, two-person approved, logged | AI Oversight · Configuration Change Log |
 | Records retention & defensible disposition | Per-class retention schedule, sealed archive segment index with continuous hash chain, legal holds, disposition queue, restore SLA | Retention & Archive |
 
@@ -107,7 +111,7 @@ Both are in the build. Lead with the second — that's what this session is abou
 
 ## 3. Gaps, priorities and next steps
 
-Taken straight from the in-app register (`Compliance Requirements & Gaps` → export for the follow-up packet). **21 requirements: 7 Met · 10 Partial · 4 Gap. Six P1 items are still open.**
+Taken straight from the in-app register (`Compliance Requirements & Gaps` → export for the follow-up packet). **21 requirements: 10 Met · 8 Partial · 3 Gap. Five P1 items are still open.**
 
 ### P1 — address before a plan audit
 
