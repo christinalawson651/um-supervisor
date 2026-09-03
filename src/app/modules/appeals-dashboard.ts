@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
@@ -6,6 +6,7 @@ import { Donut, Segment, Trend } from '../shared/charts';
 import { Icon } from '../shared/icon';
 import { Members } from '../shared/members';
 import { Interaction } from '../shared/interaction';
+import { Nav } from '../shared/nav';
 import { DashboardData } from '../data/dashboard-data';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
@@ -501,6 +502,7 @@ const TAB_DEFS: TabDef[] = [
   `],
 })
 export class AppealsDashboard {
+  private navSvc = inject(Nav);
   members = inject(Members);
   private ix = inject(Interaction);
   private data = inject(DashboardData);
@@ -508,6 +510,14 @@ export class AppealsDashboard {
   private lookback = inject(Lookback);
   readonly tabs = TAB_DEFS;
   readonly sel = signal('workforce');
+
+  constructor() {
+    effect(() => {
+      if (this.navSvc.module() !== 'appeals') return;
+      const tab = this.navSvc.takeRequestedTab();
+      if (tab && TAB_DEFS.some((t) => t.key === tab)) this.sel.set(tab);
+    });
+  }
   readonly APPEALS_REVIEWERS = APPEALS_REVIEWERS;
 
   private readonly PERIOD_VALUES: Record<string, string[]> = {

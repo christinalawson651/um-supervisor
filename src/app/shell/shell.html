@@ -6,7 +6,7 @@
       <button class="rail-item" [class.active]="item.active" (click)="railClick(item)">
         <span class="rail-ic">
           <z-icon [name]="item.icon" [size]="20" [stroke]="1.8"></z-icon>
-          @if (item.badge) { <span class="rail-badge">{{ item.badge }}</span> }
+          @if (railBadge(item)) { <span class="rail-badge" [class.crit]="item.label === 'Inbox' && alerts.criticalCount() > 0">{{ railBadge(item) }}</span> }
         </span>
         <span class="rail-label">{{ item.label }}</span>
       </button>
@@ -135,6 +135,8 @@
       }
     }
   </main>
+
+  <app-alert-inbox />
 
   <app-overlays />
   <app-case-explorer />

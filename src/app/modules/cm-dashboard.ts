@@ -1,10 +1,11 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
 import { Donut, Segment, Trend } from '../shared/charts';
 import { Members } from '../shared/members';
 import { Interaction, ConfirmBreakdownRow } from '../shared/interaction';
+import { Nav } from '../shared/nav';
 import { DashboardData } from '../data/dashboard-data';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
@@ -1061,6 +1062,7 @@ const TAB_DEFS: TabDef[] = [
   `],
 })
 export class CmDashboard {
+  private navSvc = inject(Nav);
   members = inject(Members);
   private ix = inject(Interaction);
   private data = inject(DashboardData);
@@ -1073,6 +1075,14 @@ export class CmDashboard {
   private pto = inject(Pto);
   readonly tabs = TAB_DEFS;
   readonly sel = signal('workforce');
+
+  constructor() {
+    effect(() => {
+      if (this.navSvc.module() !== 'cm') return;
+      const tab = this.navSvc.takeRequestedTab();
+      if (tab && TAB_DEFS.some((t) => t.key === tab)) this.sel.set(tab);
+    });
+  }
   readonly kpiCollapsed = signal(false);
 
   readonly vis = new WidgetVisibility('zyter-cm-workforce-widgets-v2', CM_WORKFORCE_WIDGETS);

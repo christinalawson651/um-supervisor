@@ -35,8 +35,29 @@ export class Nav {
   /** Business modules (no overview) the role owns — drives the exec Overview scope. */
   readonly scope = computed<BizModule[]>(() => this.role().modules);
 
+  /** A tab a caller has asked the destination module to open. Set alongside the module, read and
+   *  cleared by whichever dashboard owns that module — cross-component tab selection has no other
+   *  route, because each module holds its own tab state. Null means "leave the tab alone", which is
+   *  what every existing navigation does. */
+  readonly requestedTab = signal<string | null>(null);
+
   go(m: ModuleId) {
     if (this.visibleModules().includes(m)) this.module.set(m);
+  }
+
+  /** Navigate to a module AND a tab within it — how an alert takes someone to the surface that owns
+   *  the problem it is reporting. */
+  goTo(m: ModuleId, tab?: string) {
+    if (!this.visibleModules().includes(m)) return;
+    this.module.set(m);
+    this.requestedTab.set(tab ?? null);
+  }
+
+  /** Read once and clear, so returning to a module later does not silently re-navigate. */
+  takeRequestedTab(): string | null {
+    const t = this.requestedTab();
+    if (t !== null) this.requestedTab.set(null);
+    return t;
   }
 
   setRole(label: string) {

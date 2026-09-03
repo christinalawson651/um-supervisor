@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
 import {
@@ -12,6 +12,7 @@ import {
   archiveSummary, verifyArchiveChain,
 } from '../data/audit-trail';
 import { Interaction } from '../shared/interaction';
+import { Nav } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
 import { LOBS, daysAgo } from '../data/case-fields';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
@@ -1016,10 +1017,19 @@ const govSection = governanceSection;
 })
 export class AuditTraceability {
   private ix = inject(Interaction);
+  private navSvc = inject(Nav);
   private exporter = inject(Exporter);
 
   readonly tabs = TAB_DEFS;
   readonly sel = signal('trail');
+
+  constructor() {
+    effect(() => {
+      if (this.navSvc.module() !== 'audit') return;
+      const tab = this.navSvc.takeRequestedTab();
+      if (tab && TAB_DEFS.some((t) => t.key === tab)) this.sel.set(tab);
+    });
+  }
   readonly categories = CATEGORIES;
   readonly channels = CHANNELS;
   readonly entityTypes = ENTITY_TYPES;

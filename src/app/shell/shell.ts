@@ -1,4 +1,4 @@
-import { Component, signal, computed, inject, ViewChild, ElementRef } from '@angular/core';
+import { Component, signal, computed, inject, effect, ViewChild, ElementRef } from '@angular/core';
 import { Icon } from '../shared/icon';
 import { Overlays } from '../shared/overlays';
 import { CaseExplorer } from '../shared/case-explorer';
@@ -7,6 +7,8 @@ import { ReassignPanel } from '../shared/reassign-panel';
 import { EscalatePanel } from '../shared/escalate-panel';
 import { PtoPanel } from '../shared/pto-panel';
 import { GlobalSearch } from '../shared/global-search';
+import { Alerts } from '../shared/alerts';
+import { AlertInbox } from '../shared/alert-inbox';
 import { ExportDialog } from '../shared/export-dialog';
 import { Interaction } from '../shared/interaction';
 import { Metrics } from '../shared/metrics';
@@ -93,7 +95,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   selector: 'app-shell',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard, AuditTraceability,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, AlertInbox, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard, AuditTraceability,
     WorkforceTab, SchedulingTab, DemandTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab, FollowThroughBoard,
   ],
@@ -111,11 +113,28 @@ export class Shell {
   readonly modules = MODULES;
   readonly headings = HEADINGS;
   readonly visibleTabs = computed(() => MODULES.filter((m) => this.nav.visibleModules().includes(m.id)));
+  readonly alerts = inject(Alerts);
   readonly selected = signal('workforce');
+
+  constructor() {
+    // An alert targeting a UM tab lands here — the shell owns UM's tab state, so it is the only
+    // place that can honour the request. Read once and cleared, so coming back to UM later does
+    // not silently re-navigate.
+    effect(() => {
+      if (this.nav.module() !== 'um') return;
+      const tab = this.nav.takeRequestedTab();
+      if (tab && TAB_DEFS.some((t) => t.key === tab)) this.selected.set(tab);
+    });
+  }
   readonly kpiKeys = ['kpi.pending', 'kpi.tat', 'kpi.auto', 'kpi.risk', 'kpi.aht', 'kpi.unassigned', 'kpi.breached', 'kpi.util'];
   readonly kpiCollapsed = signal(false); // collapsible for screen real estate
 
   @ViewChild('tabbar') private tabbarEl?: ElementRef<HTMLElement>;
+  /** Inbox carries the live alert count; every other rail badge stays as authored. */
+  railBadge(item: { label: string; badge: number }): number {
+    return item.label === 'Inbox' ? this.alerts.count() : item.badge;
+  }
+
   scrollTabs(delta: number) {
     this.tabbarEl?.nativeElement.scrollBy({ left: delta, behavior: 'smooth' });
   }
@@ -164,6 +183,7 @@ export class Shell {
   }
 
   railClick(item: { label: string; active: boolean }) {
+    if (item.label === 'Inbox') { this.alerts.toggle(); return; }
     if (item.active) return;
     this.ix.toast(`${item.label} module isn't part of this demo build.`, 'info');
   }
