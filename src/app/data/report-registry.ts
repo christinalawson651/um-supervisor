@@ -35,6 +35,7 @@ import {
   AUDIT_EVENTS, AuditEvent, SYSTEM_USERS, PERMISSIONS, PERMISSION_MATRIX, COMPLIANCE_REGISTER,
   userActivityRollup, evaluateSod, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   eventDate, verifyChain,
+  RETENTION_POLICIES, ARCHIVE_SEGMENTS, RESTORE_REQUESTS, archiveSummary, verifyArchiveChain,
 } from './audit-trail';
 
 export const UM_QUEUE_NAMES = ['Intake', 'Clinical Review', 'MD Review', 'RFI Pending', 'OON Review', 'Concurrent Review', 'Pending P2P'];
@@ -844,6 +845,45 @@ export const AUDIT_REPORTS: ReportDef[] = [
           ] },
         { title: 'Role → Permission Matrix', columns: ['Permission', ...AUDIT_ROLE_KEYS],
           rows: PERMISSIONS.map((p) => [p, ...AUDIT_ROLE_KEYS.map((r) => (PERMISSION_MATRIX as any)[r][p] ?? '—')]) },
+      ];
+    },
+  },
+  {
+    id: 'audit-retention-archive', module: 'generic', group: AUDIT_GROUP, title: 'Retention & Archive Register',
+    description: 'Retention schedule by record class, the sealed archive segment index with hash range and storage tier, active legal holds, the disposition queue, and cold-storage restore requests. 42 CFR §422.504(d) · HIPAA §164.316(b)(2)(i).',
+    staticNote: 'The online store holds what the Audit Trail can query directly. Archived periods are represented by their segment metadata — period, event count, hash range, tier and hold status — not by materialising the individual events.',
+    noLobDays: true,
+    dimension: { label: 'Segment Status', options: [ALL, 'Retained', 'Past retention', 'Legal hold'] },
+    tables: () => {
+      const sum = archiveSummary();
+      const chain = verifyArchiveChain();
+      const today = sum.onlineTo;
+      const statusOf = (g: (typeof ARCHIVE_SEGMENTS)[number]) =>
+        g.legalHold ? 'Legal hold' : g.purgeEligible <= today ? 'Past retention' : 'Retained';
+      return [
+        { title: 'Retained Record Summary', columns: ['Measure', 'Value'], rows: [
+          ['Online — queryable events', sum.onlineEvents],
+          ['Online window', `${sum.onlineFrom} → ${sum.onlineTo}`],
+          ['Archived events', sum.archivedEvents],
+          ['Sealed segments', sum.archivedSegments],
+          ['Total retained events', sum.totalRetained],
+          ['Oldest retained period', sum.oldestRetained],
+          ['Segments under legal hold', sum.onHold],
+          ['Segments past retention, not held', sum.purgeEligible],
+          ['Archive chain', chain.brokenAt ? `BROKEN at ${chain.brokenAt}` : `Continuous across ${chain.verified} segments`],
+        ] },
+        { title: 'Retention Schedule', columns: ['Record Class', 'Retention (years)', 'Basis', 'Citation', 'Disposition Action'],
+          rows: RETENTION_POLICIES.map((r) => [r.recordClass, r.retentionYears, r.basis, r.citation, r.dispositionAction]) },
+        { title: 'Archive Segment Index', columns: ['Segment', 'Period From', 'Period To', 'Events', 'Tier', 'WORM Locked', 'Sealed', 'Last Verified', 'Chain Verified', 'Purge Eligible', 'Legal Hold', 'First Hash', 'Last Hash', 'Status'],
+          rows: ARCHIVE_SEGMENTS.map((g) => [g.segmentId, g.periodFrom, g.periodTo, g.eventCount, g.tier, g.wormLocked ? 'Yes' : 'No',
+            g.sealedDate, g.lastVerified, g.verified ? 'Yes' : 'No', g.purgeEligible, g.legalHold ?? '—', g.firstHash, g.lastHash, statusOf(g)]) },
+        { title: 'Legal Holds', columns: ['Hold', 'Segment', 'Period', 'Events Held', 'Would Otherwise Purge'],
+          rows: ARCHIVE_SEGMENTS.filter((g) => g.legalHold).map((g) => [g.legalHold as string, g.segmentId, `${g.periodFrom} → ${g.periodTo}`, g.eventCount, g.purgeEligible]) },
+        { title: 'Disposition Queue — Past Retention, Not Held', columns: ['Segment', 'Period', 'Events', 'Purge Eligible', 'Certified Disposition'],
+          rows: ARCHIVE_SEGMENTS.filter((g) => g.purgeEligible <= today && !g.legalHold)
+            .map((g) => [g.segmentId, `${g.periodFrom} → ${g.periodTo}`, g.eventCount, g.purgeEligible, 'NOT AVAILABLE — see REQ-17']) },
+        { title: 'Restore Requests', columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'SLA (days)', 'Status'],
+          rows: RESTORE_REQUESTS.map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]) },
       ];
     },
   },

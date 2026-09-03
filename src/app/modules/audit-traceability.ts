@@ -8,6 +8,8 @@ import {
   verifyChain, isOffHours, isExternalIp, eventDate,
   AUDIT_RANGES, AuditRange, auditSpan, userActivityRollup, UserActivityRow,
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
+  RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest,
+  archiveSummary, verifyArchiveChain,
 } from '../data/audit-trail';
 import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
@@ -19,6 +21,7 @@ const TAB_DEFS: TabDef[] = [
   { key: 'trail', label: 'Audit Trail' },
   { key: 'activity', label: 'User Activity Monitoring' },
   { key: 'governance', label: 'Governance & Access Controls' },
+  { key: 'retention', label: 'Retention & Archive' },
   { key: 'compliance', label: 'Compliance Requirements & Gaps' },
 ];
 
@@ -73,8 +76,9 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         }
       </div>
       <span class="span-note">
-        Retained log: <b>{{ span.count | number }}</b> events, {{ span.from }} → {{ span.to }}.
-        @if (range() !== 'all') { <a class="lnk" (click)="setRange('all')">Show entire history</a> }
+        Online store: <b>{{ span.count | number }}</b> events, {{ span.from }} → {{ span.to }}.
+        @if (range() !== 'all') { <a class="lnk" (click)="setRange('all')">Show entire online history</a> }
+        @else { <a class="lnk" (click)="sel.set('retention')">+{{ archive.archivedEvents | number }} archived</a> }
       </span>
     </div>
 
@@ -361,6 +365,146 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
                   <td><span class="badge green">{{ u.status }}</span></td>
                 </tr>
               } @empty { <tr><td colspan="7" class="empty">No accounts match this search.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      <!-- ==================== RETENTION & ARCHIVE ==================== -->
+      @case ('retention') {
+        <div class="tab-head">
+          <div><h2>Retention &amp; Archive</h2>
+            <span class="section-note">The Audit Trail queries the online store. This is everything behind it — what is retained, for how long, under whose rule, where it physically sits, and what is holding disposition. The Range control above does not apply here; retention is not a reporting window.</span></div>
+          <div class="head-actions">
+            <button class="btn outline sm" (click)="verifyArchive()">Verify archive chain</button>
+            <button class="btn outline sm" (click)="exportArchive()">Export</button>
+          </div>
+        </div>
+
+        <div class="tile-row">
+          <div class="tile" (click)="sel.set('trail')">
+            <div class="tile-val">{{ archive.onlineEvents | number }}</div><div class="tile-lab">Online — Queryable</div>
+            <div class="tile-sub">{{ archive.onlineFrom }} → {{ archive.onlineTo }}</div>
+          </div>
+          <div class="tile" (click)="drillSegments('Archive Segment Index', segments, 'segments')">
+            <div class="tile-val">{{ archive.archivedEvents | number }}</div><div class="tile-lab">Archived — Retrievable</div>
+            <div class="tile-sub">{{ archive.archivedSegments }} sealed segments</div>
+          </div>
+          <div class="tile" (click)="drillSegments('Archive Segment Index', segments, 'all-retained')">
+            <div class="tile-val">{{ archive.totalRetained | number }}</div><div class="tile-lab">Total Retained</div>
+            <div class="tile-sub">oldest {{ archive.oldestRetained }}</div>
+          </div>
+          <div class="tile" (click)="drillSegments('Segments Under Legal Hold', heldSegments(), 'held')">
+            <div class="tile-ic" [class.hot]="archive.onHold > 0"></div>
+            <div class="tile-val">{{ archive.onHold }}</div><div class="tile-lab">Under Legal Hold</div>
+            <div class="tile-sub">disposition suspended</div>
+          </div>
+          <div class="tile" (click)="drillSegments('Disposition Queue', purgeQueue(), 'disposition')">
+            <div class="tile-ic" [class.hot]="archive.purgeEligible > 0"></div>
+            <div class="tile-val">{{ archive.purgeEligible }}</div><div class="tile-lab">Past Retention, Not Held</div>
+            <div class="tile-sub">awaiting certified disposition</div>
+          </div>
+          <div class="tile" (click)="drillRestores()">
+            <div class="tile-ic" [class.hot]="openRestores() > 0"></div>
+            <div class="tile-val">{{ openRestores() }}</div><div class="tile-lab">Open Restore Requests</div>
+            <div class="tile-sub">{{ restoreSla }}-day retrieval SLA</div>
+          </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Retention Schedule</h3>
+            <span class="section-note sm">Per record class, not one blanket number — the legal floor and the longest applicable requirement are rarely the same, and the schedule holds to the longest.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Record Class</th><th class="num">Retention</th><th>Basis</th><th>Citation</th><th>Disposition</th></tr></thead>
+            <tbody>
+              @for (r of retention; track r.recordClass) {
+                <tr>
+                  <td class="strong">{{ r.recordClass }}</td>
+                  <td class="num">{{ r.retentionYears }} years</td>
+                  <td>{{ r.basis }}</td>
+                  <td class="sub">{{ r.citation }}</td>
+                  <td class="sub">{{ r.dispositionAction }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          <div class="foot-note panel-pad">Directional — confirm against the plan's own retention schedule and any state overrides before this is used as survey evidence.</div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad filters"><h3 class="pt">Archive Segment Index</h3>
+            <span class="section-note sm">Metadata for events that live in cold storage. Each segment's first hash derives from the one before it, so the chain stays continuous across the archive boundary.</span>
+            <label class="chk"><input type="checkbox" [checked]="segIssuesOnly()" (change)="segIssuesOnly.set($any($event.target).checked)" /> Held or past retention only</label>
+            <span class="count">{{ segments.length }} of {{ archive.archivedSegments }}</span>
+          </div>
+          <table class="z-table">
+            <thead><tr>
+              <th class="srt" (click)="sortSeg('segmentId')">Segment{{ caretSeg('segmentId') }}</th>
+              <th class="srt" (click)="sortSeg('periodFrom')">Period{{ caretSeg('periodFrom') }}</th>
+              <th class="srt num" (click)="sortSeg('eventCount')">Events{{ caretSeg('eventCount') }}</th>
+              <th class="srt" (click)="sortSeg('tier')">Tier{{ caretSeg('tier') }}</th>
+              <th class="srt" (click)="sortSeg('sealedDate')">Sealed{{ caretSeg('sealedDate') }}</th>
+              <th class="srt" (click)="sortSeg('lastVerified')">Last Verified{{ caretSeg('lastVerified') }}</th>
+              <th class="srt" (click)="sortSeg('purgeEligible')">Purge Eligible{{ caretSeg('purgeEligible') }}</th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody>
+              @for (g of segments; track g.segmentId) {
+                <tr class="clk" (click)="openSegment(g)">
+                  <td class="strong mono">{{ g.segmentId }}</td>
+                  <td class="mono">{{ g.periodFrom }} → {{ g.periodTo }}</td>
+                  <td class="num">{{ g.eventCount | number }}</td>
+                  <td>{{ g.tier }}@if (g.wormLocked) { <span class="chip">WORM</span> }</td>
+                  <td class="mono">{{ g.sealedDate }}</td>
+                  <td class="mono">{{ g.lastVerified }}</td>
+                  <td class="mono">{{ g.purgeEligible }}</td>
+                  <td>
+                    @if (g.legalHold) { <span class="badge red">Legal hold</span> }
+                    @else if (g.purgeEligible <= todayIso) { <span class="badge amber">Past retention</span> }
+                    @else { <span class="badge green">Retained</span> }
+                  </td>
+                </tr>
+              } @empty { <tr><td colspan="8" class="empty">No segments match this filter.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Legal Holds</h3>
+            <span class="section-note sm">A hold suspends disposition regardless of retention date — and today it is applied by hand, which is why REQ-16 is still open.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Hold</th><th>Segment</th><th>Period</th><th class="num">Events Held</th><th>Would Otherwise Purge</th></tr></thead>
+            <tbody>
+              @for (g of heldSegments(); track g.segmentId) {
+                <tr class="clk" (click)="openSegment(g)">
+                  <td class="strong">{{ g.legalHold }}</td>
+                  <td class="mono">{{ g.segmentId }}</td>
+                  <td class="mono">{{ g.periodFrom }} → {{ g.periodTo }}</td>
+                  <td class="num">{{ g.eventCount | number }}</td>
+                  <td class="mono">{{ g.purgeEligible }}</td>
+                </tr>
+              } @empty { <tr><td colspan="5" class="empty">No active legal holds.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Restore Requests</h3>
+            <span class="section-note sm">Retrieval from cold storage is itself an auditable act — who asked, why, and how long it took against the {{ restoreSla }}-day SLA.</span></div>
+          <table class="z-table">
+            <thead><tr><th>Request</th><th>Segment</th><th>Requested By</th><th>Reason</th><th>Requested</th><th>Fulfilled</th><th>Status</th></tr></thead>
+            <tbody>
+              @for (r of restores; track r.requestId) {
+                <tr>
+                  <td class="strong mono">{{ r.requestId }}</td>
+                  <td class="mono">{{ r.segmentId }}</td>
+                  <td>{{ r.requestedBy }}</td>
+                  <td class="sub">{{ r.reason }}</td>
+                  <td class="mono">{{ r.requestedDate }}</td>
+                  <td class="mono">{{ r.fulfilledDate ?? '—' }}</td>
+                  <td><span class="badge" [class.green]="r.status==='Fulfilled'" [class.amber]="r.status==='In Progress'" [class.red]="r.status==='Denied'">{{ r.status }}</span></td>
+                </tr>
+              }
             </tbody>
           </table>
         </div>
@@ -672,6 +816,85 @@ export class AuditTraceability {
 
   readonly sodResults = computed(() => evaluateSod(this.scopedEvents()));
   readonly sodConflicts = computed(() => this.sodResults().flatMap((r) => r.conflicts));
+
+  // ---- Retention & archive ----
+  readonly retention = RETENTION_POLICIES;
+  readonly restores = RESTORE_REQUESTS;
+  readonly restoreSla = RESTORE_REQUESTS.length ? RESTORE_REQUESTS[0].slaDays : 5;
+  readonly archive = archiveSummary();
+  readonly todayIso = auditSpan().to;
+  readonly segIssuesOnly = signal(false);
+  readonly segSortKey = signal<keyof ArchiveSegment | ''>('periodFrom');
+  readonly segSortDir = signal<SortDir>(-1);
+  sortSeg(k: keyof ArchiveSegment) {
+    if (this.segSortKey() === k) this.segSortDir.set(this.segSortDir() === 1 ? -1 : 1);
+    else { this.segSortKey.set(k); this.segSortDir.set(k === 'eventCount' ? -1 : 1); }
+  }
+  caretSeg(k: keyof ArchiveSegment) { return caretFor(this.segSortKey(), k, this.segSortDir()); }
+  get segments(): ArchiveSegment[] {
+    const rows = ARCHIVE_SEGMENTS.filter((g) => !this.segIssuesOnly() || g.legalHold || g.purgeEligible <= this.todayIso);
+    return compareRows(rows, this.segSortKey(), this.segSortDir());
+  }
+  heldSegments() { return ARCHIVE_SEGMENTS.filter((g) => !!g.legalHold); }
+  purgeQueue() { return ARCHIVE_SEGMENTS.filter((g) => g.purgeEligible <= this.todayIso && !g.legalHold); }
+  openRestores() { return RESTORE_REQUESTS.filter((r) => r.status === 'In Progress').length; }
+
+  verifyArchive() {
+    const r = verifyArchiveChain();
+    if (r.brokenAt) this.ix.toast(`Archive chain broken at ${r.brokenAt} — ${r.verified} segment(s) verified before the break.`, 'warn');
+    else this.ix.toast(`Archive chain continuous — ${r.verified} sealed segments verified, each chaining to the next and on into the online store.`);
+  }
+  private readonly SEGMENT_COLUMNS = ['Segment', 'Period From', 'Period To', 'Events', 'Tier', 'WORM Locked', 'Sealed', 'Last Verified', 'Chain Verified', 'Purge Eligible', 'Legal Hold', 'First Hash', 'Last Hash'];
+  private segmentRow(g: ArchiveSegment): (string | number)[] {
+    return [g.segmentId, g.periodFrom, g.periodTo, g.eventCount, g.tier, g.wormLocked ? 'Yes' : 'No', g.sealedDate,
+      g.lastVerified, g.verified ? 'Yes' : 'No', g.purgeEligible, g.legalHold ?? '—', g.firstHash, g.lastHash];
+  }
+  drillSegments(title: string, gs: ArchiveSegment[], slugName: string) {
+    this.ix.openExplorer({
+      title, context: `${gs.length} sealed segment(s) · ${gs.reduce((s, g) => s + g.eventCount, 0).toLocaleString()} archived events`,
+      columns: this.SEGMENT_COLUMNS, rows: gs.map((g) => this.segmentRow(g)), exportName: `audit-archive-${slugName}_2026-07-17`,
+    });
+  }
+  drillRestores() {
+    this.ix.openExplorer({
+      title: 'Restore Requests', context: `${RESTORE_REQUESTS.length} retrieval request(s) from cold storage`,
+      columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'SLA (days)', 'Status'],
+      rows: RESTORE_REQUESTS.map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]),
+      exportName: 'audit-archive-restores_2026-07-17',
+    });
+  }
+  openSegment(g: ArchiveSegment) {
+    const held = !!g.legalHold;
+    const pastRetention = g.purgeEligible <= this.todayIso;
+    this.ix.openDrawer({
+      title: `${g.segmentId} · ${g.periodFrom} → ${g.periodTo}`,
+      subtitle: `${g.eventCount.toLocaleString()} events · sealed ${g.sealedDate}`,
+      badge: { text: held ? 'Legal hold' : pastRetention ? 'Past retention' : 'Retained', tone: held ? 'red' : pastRetention ? 'amber' : 'green' },
+      fields: [
+        { label: 'Storage Tier', value: g.tier },
+        { label: 'Write-Once Locked', value: g.wormLocked ? 'Yes — object lock' : 'No', tone: g.wormLocked ? 'green' : 'red' },
+        { label: 'Events', value: g.eventCount.toLocaleString() },
+        { label: 'Sealed', value: g.sealedDate },
+        { label: 'Last Chain Verification', value: g.lastVerified },
+        { label: 'Chain Verified', value: g.verified ? 'Yes' : 'No', tone: g.verified ? 'green' : 'red' },
+        { label: 'Purge Eligible', value: g.purgeEligible, tone: pastRetention && !held ? 'amber' : undefined },
+        { label: 'Legal Hold', value: g.legalHold ?? '—', tone: held ? 'red' : undefined },
+        { label: 'First Hash', value: g.firstHash },
+        { label: 'Last Hash', value: g.lastHash },
+      ],
+      note: held
+        ? `Disposition is suspended on this segment by ${g.legalHold}. The hold is recorded here but applied by hand — nothing yet blocks a purge job from running against it, which is the open half of REQ-16.`
+        : pastRetention
+          ? 'This segment is past its retention date and not held. It sits in the disposition queue — but there is no certified-destruction step yet, so purging it today would leave no evidence it ever existed (REQ-17).'
+          : 'Retained under the schedule. Its first hash derives from the previous segment\u2019s last hash, so the chain is continuous from here into the online store.',
+    });
+  }
+  exportArchive() {
+    this.exporter.open({
+      title: 'Archive Segment Index', name: 'audit-archive-index_2026-07-17',
+      columns: this.SEGMENT_COLUMNS, rows: ARCHIVE_SEGMENTS.map((g) => this.segmentRow(g)),
+    });
+  }
 
   // ---- Compliance register ----
   readonly counts = computed(() => registerCounts());

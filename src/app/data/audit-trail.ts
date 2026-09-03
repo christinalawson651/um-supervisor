@@ -483,7 +483,7 @@ export interface ComplianceRequirement {
 
 export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
   { id: 'REQ-01', domain: 'Audit Trail', requirement: 'Record and examine activity in systems containing ePHI', citation: 'HIPAA §164.312(b)', control: 'Every create/read/update on an auth, CM case, member, or appeal writes an immutable event with actor, role, timestamp, channel, source IP and correlation ID.', evidence: 'Audit Trail tab — filter by entity or actor', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
-  { id: 'REQ-02', domain: 'Retention & Integrity', requirement: 'Audit records are tamper-evident and retained for the required period', citation: 'HIPAA §164.316(b)(2) · CMS 10-year', control: 'Events are hash-chained in timestamp order; retention is configured at 10 years and the change itself is logged.', evidence: 'Audit Trail — Verify chain', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
+  { id: 'REQ-02', domain: 'Retention & Integrity', requirement: 'Audit records are tamper-evident and retained for the required period', citation: 'HIPAA §164.316(b)(2) · CMS 10-year', control: 'Events are hash-chained in timestamp order, and each sealed archive segment chains to the next, so the chain stays continuous across the archive boundary. Retention is configured per record class and every change to it is itself logged.', evidence: 'Audit Trail — Verify chain · Retention & Archive — Verify archive chain', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Platform Engineering' },
   { id: 'REQ-03', domain: 'User Activity', requirement: 'Regular review of information-system activity', citation: 'HIPAA §164.308(a)(1)(ii)(D)', control: 'Per-user activity rollups with off-hours, external-IP, failed sign-in, unassigned-record and bulk-export signals.', evidence: 'User Activity tab · Reports → User Activity Review', status: 'Partial', priority: 'P1', gap: 'Review is available on demand but there is no scheduled attestation that a named reviewer looked at it, and no sign-off record.', nextStep: 'Add a monthly activity-review task with reviewer sign-off captured as its own audit event.', owner: 'Compliance' },
   { id: 'REQ-04', domain: 'User Activity', requirement: 'Break-the-glass access is justified and reviewed', citation: 'HIPAA §164.308(a)(4) — minimum necessary', control: 'Out-of-scope record access is denied by default; emergent access requires a reason code and is logged as PHI disclosure.', evidence: 'User Activity — Break-the-glass', status: 'Partial', priority: 'P1', gap: 'Reason codes are captured but free-text justification is not required, and nothing forces a follow-up review within a set window.', nextStep: 'Require narrative justification at the point of access and auto-route each event to Compliance for 5-day review.', owner: 'Compliance' },
   { id: 'REQ-05', domain: 'Access Governance', requirement: 'Role-based access enforces minimum necessary', citation: 'HIPAA §164.308(a)(3)-(4) · NCQA UM 2', control: 'Nine access roles with per-permission constraints; PHI is scoped to assigned caseload for reviewer roles and masked for administrators.', evidence: 'Governance & Access — permission matrix', status: 'Met', priority: 'P2', gap: null, nextStep: null, owner: 'IT Operations' },
@@ -496,6 +496,10 @@ export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
   { id: 'REQ-12', domain: 'Retention & Integrity', requirement: 'Audit data is exportable to the plan\'s own SIEM / long-term store', citation: 'SOC 2 CC7.2 · plan security requirements', control: 'Audit events export as CSV on demand.', evidence: 'Audit Trail — Export', status: 'Gap', priority: 'P2', gap: 'No streaming or scheduled feed — a plan wanting continuous ingestion into its own SIEM has to pull manually.', nextStep: 'Expose an append-only audit event API and a nightly signed batch feed.', owner: 'Platform Engineering' },
   { id: 'REQ-13', domain: 'User Activity', requirement: 'Alerting on anomalous access patterns', citation: 'SOC 2 CC7.2 · HIPAA §164.308(a)(6)', control: 'Anomaly signals are computed and displayed.', evidence: 'User Activity — flagged users', status: 'Gap', priority: 'P2', gap: 'Signals are visible in the dashboard only — nothing notifies anyone when a threshold is crossed.', nextStep: 'Define thresholds per signal and route breaches to Compliance as a work item, not just a tile.', owner: 'Compliance' },
   { id: 'REQ-14', domain: 'Audit Trail', requirement: 'Member-facing disclosure accounting', citation: 'HIPAA §164.528', control: 'PHI disclosure events (letters, exports, break-the-glass) are individually flagged in the trail.', evidence: 'Audit Trail — PHI filter', status: 'Partial', priority: 'P3', gap: 'The underlying events exist, but there is no per-member accounting-of-disclosures report a member request could be answered with.', nextStep: 'Add a member-scoped disclosure report covering the trailing 6 years.', owner: 'Compliance' },
+  { id: 'REQ-15', domain: 'Retention & Integrity', requirement: 'Retention schedule defined and applied per record class', citation: '42 CFR §422.504(d) · HIPAA §164.316(b)(2)(i)', control: 'Six record classes each carry their own retention period, legal basis and disposition action; the archive segment index shows the purge-eligible date every sealed period resolves to.', evidence: 'Retention & Archive — retention schedule', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Compliance' },
+  { id: 'REQ-16', domain: 'Retention & Integrity', requirement: 'Legal hold suspends disposition', citation: 'FRCP 37(e) · plan litigation-hold policy', control: 'A hold reference can be attached to any archive segment and is displayed against its purge-eligible date.', evidence: 'Retention & Archive — legal holds', status: 'Partial', priority: 'P1', gap: 'Holds are recorded and visible, but they are applied by hand and nothing in the platform blocks a disposition job from running against a held segment.', nextStep: 'Make the hold flag a hard precondition on the purge job, and require a named releaser plus a reason to lift one.', owner: 'Compliance' },
+  { id: 'REQ-17', domain: 'Retention & Integrity', requirement: 'Defensible disposition — destruction is certified and itself logged', citation: 'HIPAA §164.310(d)(2)(i) · NARA-style disposition practice', control: 'Segments past retention are identified and queued.', evidence: 'Retention & Archive — disposition queue', status: 'Gap', priority: 'P2', gap: 'Nothing produces a certificate of destruction, and a purge would leave no audit event of its own — so after disposition there is no evidence the record ever existed or was lawfully destroyed.', nextStep: 'Emit a signed disposition record per segment (period, event count, terminal hash, approver, date) and write it back into the audit trail as its own event.', owner: 'Platform Engineering' },
+  { id: 'REQ-18', domain: 'Retention & Integrity', requirement: 'Archived records are retrievable within the requested window', citation: 'CMS program audit request timelines', control: 'Restore requests from cold storage are tracked with requester, reason, and turnaround against a 5-day retrieval SLA.', evidence: 'Retention & Archive — restore requests', status: 'Partial', priority: 'P2', gap: 'Turnaround is recorded after the fact; nothing alerts when a request is approaching or past the retrieval SLA.', nextStep: 'Surface open restore requests as a work item with an SLA countdown, the same treatment the UM queues get.', owner: 'Platform Engineering' },
 ];
 
 export function registerCounts(rows: ComplianceRequirement[] = COMPLIANCE_REGISTER) {
@@ -624,4 +628,177 @@ export function evaluateSod(events: AuditEvent[], users: SystemUser[] = SYSTEM_U
 export const ATTESTATION_CYCLE_DAYS = 90;
 export function attestationAgeDays(u: SystemUser): number {
   return Math.round((TODAY.getTime() - new Date(`${u.lastAccessReview}T00:00:00`).getTime()) / 86400000);
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Retention & archive
+// ---------------------------------------------------------------------------------------------
+// AUDIT_EVENTS above is the ONLINE store — what the Audit Trail tab can query directly. It is not
+// the whole retained record, and a screen that implies otherwise fails the first question a
+// records-retention reviewer asks: "where is everything older than that?"
+//
+// Real platforms tier this. Recent events stay queryable; older ones are sealed into immutable
+// segments on cheaper storage, still hash-chained, retrievable on request. Materialising ten years
+// of individual events in a browser demo would misrepresent what is actually there, so the archive
+// is modelled the way a real system exposes it: a SEGMENT INDEX carrying period, event count, hash
+// range, storage tier, seal date, retention class and hold status — metadata about events that
+// live elsewhere, rather than the events themselves.
+//
+// The hash range is the part that matters. Each sealed segment's last hash is the input to the
+// next segment's first hash, so the chain is continuous across the archive boundary and on into
+// the online store. That continuity is what lets an archived record still be evidence.
+
+export type StorageTier = 'Online' | 'Nearline' | 'Archive';
+export type RetentionClass =
+  | 'Authorization & Determination' | 'Care Management' | 'Appeal & Grievance'
+  | 'Audit & Security Event' | 'PHI Disclosure Accounting' | 'Configuration Change';
+
+export interface RetentionPolicy {
+  recordClass: RetentionClass;
+  retentionYears: number;
+  basis: string;
+  citation: string;
+  dispositionAction: string;
+}
+/** Retention is per record class, not one blanket number — the shortest legal minimum and the
+ *  longest applicable requirement are rarely the same, and the org holds to the longest.
+ *  Directional; confirm against the plan's own schedule and any state overrides. */
+export const RETENTION_POLICIES: RetentionPolicy[] = [
+  { recordClass: 'Authorization & Determination', retentionYears: 10, basis: 'CMS records-retention requirement for Medicare Advantage contract records', citation: '42 CFR §422.504(d)', dispositionAction: 'Purge after certified disposition' },
+  { recordClass: 'Appeal & Grievance', retentionYears: 10, basis: 'Appeal file must survive the full CMS look-back window', citation: '42 CFR §422.504(d) · §438.416', dispositionAction: 'Purge after certified disposition' },
+  { recordClass: 'Care Management', retentionYears: 10, basis: 'Aligned to the authorization schedule; state Medicaid overrides may run longer', citation: '42 CFR §438.3(u) · state schedule', dispositionAction: 'Purge after certified disposition' },
+  { recordClass: 'Audit & Security Event', retentionYears: 10, basis: 'HIPAA sets a 6-year floor; org policy holds audit events the full 10 to match the record they describe', citation: 'HIPAA §164.316(b)(2)(i)', dispositionAction: 'Purge after certified disposition' },
+  { recordClass: 'PHI Disclosure Accounting', retentionYears: 6, basis: 'A member may request an accounting covering the trailing six years', citation: 'HIPAA §164.528(a)(1)', dispositionAction: 'Retain 6 years, then purge' },
+  { recordClass: 'Configuration Change', retentionYears: 10, basis: 'A determination can only be re-explained against the rule version in force at the time', citation: 'NCQA UM 2 · CMS delegation oversight', dispositionAction: 'Retain for the life of every record it governed' },
+];
+
+export interface ArchiveSegment {
+  segmentId: string;
+  periodFrom: string;          // ISO date
+  periodTo: string;            // ISO date
+  eventCount: number;
+  firstHash: string;
+  lastHash: string;
+  sealedDate: string;          // ISO date — when the segment was closed and made immutable
+  tier: StorageTier;
+  wormLocked: boolean;         // object-lock / write-once storage
+  lastVerified: string;        // ISO date — last time the chain was re-walked in place
+  verified: boolean;
+  purgeEligible: string;       // ISO date — periodTo + the longest applicable retention
+  legalHold: string | null;    // hold reference suspending disposition, or null
+}
+
+/** Quarter boundaries walking backwards from the start of the online window. */
+function quarterStarts(fromExclusive: Date, count: number): { from: Date; to: Date }[] {
+  const out: { from: Date; to: Date }[] = [];
+  let y = fromExclusive.getFullYear();
+  let q = Math.floor(fromExclusive.getMonth() / 3);
+  for (let i = 0; i < count; i++) {
+    q -= 1;
+    if (q < 0) { q = 3; y -= 1; }
+    out.push({ from: new Date(y, q * 3, 1), to: new Date(y, q * 3 + 3, 0) });
+  }
+  return out;
+}
+
+// Deliberately more than the 10-year retention window, not less: an archive that stops exactly at
+// the retention boundary has no disposition queue and no segment a legal hold could matter to,
+// which are the two things a records reviewer actually asks about.
+const ARCHIVE_QUARTERS = 46;
+
+function buildArchive(): ArchiveSegment[] {
+  const onlineStart = AUDIT_EVENTS.length ? new Date(eventDate(AUDIT_EVENTS[0].timestamp) + 'T00:00:00') : TODAY;
+  const quarters = quarterStarts(onlineStart, ARCHIVE_QUARTERS);
+  quarters.reverse(); // oldest first, so the chain reads forward into the online store
+
+  let prevHash = '0000000000000000';
+  const segments: ArchiveSegment[] = quarters.map((qtr, i) => {
+    const label = qtr.from.getFullYear() + 'Q' + (Math.floor(qtr.from.getMonth() / 3) + 1);
+    const segmentId = 'SEG-' + label;
+    // Volume ramps with adoption rather than sitting flat across a decade.
+    const eventCount = 1400 + Math.round(i * 62) + ((i * 37) % 240);
+    const firstHash = digest(segmentId + '|first|' + prevHash);
+    const lastHash = digest(segmentId + '|last|' + firstHash + '|' + eventCount);
+    prevHash = lastHash;
+    const ageDays = Math.round((TODAY.getTime() - qtr.to.getTime()) / 86400000);
+    const tier: StorageTier = ageDays <= 365 ? 'Nearline' : 'Archive';
+    const sealed = new Date(qtr.to); sealed.setDate(sealed.getDate() + 7);
+    const purge = new Date(qtr.to); purge.setFullYear(purge.getFullYear() + 10);
+    // Segments are re-verified on a rolling schedule, not all on the same day.
+    const verifiedOffset = 20 + ((i * 53) % 300);
+    return {
+      segmentId, periodFrom: isoDate(qtr.from), periodTo: isoDate(qtr.to), eventCount,
+      firstHash, lastHash, sealedDate: isoDate(capToday(sealed)), tier, wormLocked: true,
+      lastVerified: isoDate(capToday(addDays(TODAY, -verifiedOffset))), verified: true,
+      purgeEligible: isoDate(purge), legalHold: null,
+    };
+  });
+
+  // Holds land on the oldest segments already past their purge-eligible date — the only ones where
+  // a hold changes what happens next, which is exactly where a reviewer looks first.
+  const today = isoDate(TODAY);
+  segments.filter((s) => s.purgeEligible <= today).slice(0, 2).forEach((s, i) => {
+    s.legalHold = i === 0 ? 'HOLD-2026-004 · CMS program audit' : 'HOLD-2025-011 · Member grievance G-88214';
+  });
+  return segments;
+}
+export const ARCHIVE_SEGMENTS: ArchiveSegment[] = buildArchive();
+
+export interface RestoreRequest {
+  requestId: string; segmentId: string; requestedBy: string; requestedDate: string;
+  reason: string; status: 'Fulfilled' | 'In Progress' | 'Denied'; fulfilledDate: string | null; slaDays: number;
+}
+/** Retrieval from cold storage is itself an auditable act — who asked, why, and how long it took
+ *  against the retrieval SLA. */
+export const RESTORE_REQUESTS: RestoreRequest[] = (() => {
+  const targets = ARCHIVE_SEGMENTS.slice(-8);
+  const reasons = ['CMS program audit — ODAG universe request', 'Member appeal — prior determination history', 'Delegation oversight review', 'Litigation hold discovery', 'Internal IRR look-back'];
+  const requesters = ['Priya Shah, RN (QI)', 'Christina Lawson', 'Renee Alvarez', 'Daniel Okafor'];
+  return targets.map((seg, i) => {
+    const requested = addDays(TODAY, -(8 + i * 17));
+    const status: RestoreRequest['status'] = i % 5 === 3 ? 'In Progress' : 'Fulfilled';
+    const turnaround = 1 + (i % 4);
+    return {
+      requestId: 'RST-2026-' + String(100 + i * 7), segmentId: seg.segmentId,
+      requestedBy: requesters[i % requesters.length], requestedDate: isoDate(requested),
+      reason: reasons[i % reasons.length], status,
+      fulfilledDate: status === 'Fulfilled' ? isoDate(capToday(addDays(requested, turnaround))) : null,
+      slaDays: 5,
+    };
+  });
+})();
+
+export interface ArchiveSummary {
+  onlineEvents: number; onlineFrom: string; onlineTo: string;
+  archivedEvents: number; archivedSegments: number; oldestRetained: string;
+  totalRetained: number; onHold: number; purgeEligible: number; unverified: number;
+}
+export function archiveSummary(): ArchiveSummary {
+  const online = auditSpan();
+  const archivedEvents = ARCHIVE_SEGMENTS.reduce((s, x) => s + x.eventCount, 0);
+  const today = isoDate(TODAY);
+  return {
+    onlineEvents: online.count, onlineFrom: online.from, onlineTo: online.to,
+    archivedEvents, archivedSegments: ARCHIVE_SEGMENTS.length,
+    oldestRetained: ARCHIVE_SEGMENTS.length ? ARCHIVE_SEGMENTS[0].periodFrom : online.from,
+    totalRetained: archivedEvents + online.count,
+    onHold: ARCHIVE_SEGMENTS.filter((s) => s.legalHold).length,
+    // Past its retention date and not held — the disposition queue a reviewer asks to see.
+    purgeEligible: ARCHIVE_SEGMENTS.filter((s) => s.purgeEligible <= today && !s.legalHold).length,
+    unverified: ARCHIVE_SEGMENTS.filter((s) => !s.verified).length,
+  };
+}
+
+/** Walks the sealed segments in order and confirms each one's first hash derives from the previous
+ *  segment's last hash — the archive-boundary equivalent of verifyChain(). */
+export function verifyArchiveChain(segments: ArchiveSegment[] = ARCHIVE_SEGMENTS): { verified: number; brokenAt: string | null } {
+  let prevHash = '0000000000000000';
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    if (digest(s.segmentId + '|first|' + prevHash) !== s.firstHash) return { verified: i, brokenAt: s.segmentId };
+    if (digest(s.segmentId + '|last|' + s.firstHash + '|' + s.eventCount) !== s.lastHash) return { verified: i, brokenAt: s.segmentId };
+    prevHash = s.lastHash;
+  }
+  return { verified: segments.length, brokenAt: null };
 }

@@ -21,7 +21,7 @@ Both are in the build. Lead with the second — that's what this session is abou
 
 ---
 
-## 1. Demo flow (≈25 minutes)
+## 1. Demo flow (≈30 minutes)
 
 ### 1.1 Audit Trail — 6 min
 **Audit & Traceability → Audit Trail**
@@ -58,7 +58,17 @@ Both are in the build. Lead with the second — that's what this session is abou
 
 14 tracked requirements, each stated as *requirement → control today → where the evidence lives → status → gap → next step → owner*, grouped by domain. This is the working list for section 3 below — put it on screen and drive the discussion from it rather than from slides.
 
-### 1.5 Clinical audit layer — 3 min
+### 1.5 Retention & Archive — 5 min
+**Audit & Traceability → Retention & Archive**
+
+- The Audit Trail queries the **online store**. This tab is everything behind it. Say that out loud — "3,824 events" invites the question "and where is year seven?", and the answer should not be improvised.
+- **3,824 online · 133,745 archived across 46 sealed quarterly segments · 137,569 total retained, back to 2014-10-01.** Archived periods are represented by segment metadata — period, event count, hash range, storage tier, seal date, hold status — not by materialising a decade of individual events.
+- **Retention schedule** is per record class, not one blanket number: authorization/appeal/CM/audit records at 10 years (42 CFR §422.504(d)), PHI disclosure accounting at 6 (HIPAA §164.528(a)(1)), configuration changes for the life of every record they governed.
+- **Verify archive chain** walks the sealed segments and confirms each one's first hash derives from the previous segment's last — the chain is continuous across the archive boundary and on into the online store. That continuity is what lets an archived record still function as evidence.
+- **2 segments under legal hold, 5 past retention and not held.** The second number is the honest one: those are sitting in a disposition queue with no certified-destruction step behind it (REQ-17).
+- Restore requests from cold storage are tracked with requester, reason and turnaround against a 5-day retrieval SLA.
+
+### 1.6 Clinical audit layer — 3 min
 - **UM → Audit & Compliance**: IRR sample with independent re-determination, discrepancy reason codes, corrective-action lifecycle, regulatory TAT compliance per LOB.
 - **CM → Audit & Compliance**: documentation file review (chart audit) scored element-by-element, pass rate by care manager, rubric-element findings, second-reviewer IRR on the rubric itself, assessment/care-plan window compliance per program, and live compliance exceptions on member records.
 
@@ -75,12 +85,13 @@ Both are in the build. Lead with the second — that's what this session is abou
 | Delegation oversight evidence | IRR, file audit, regulatory TAT, corrective actions — all exportable | UM & CM Audit & Compliance |
 | Program-audit readiness | Filtered, dated extracts with provenance | Reports module + Audit Trail export |
 | Access governance | Role→permission matrix, SOD evaluation, entitlement attestation | Governance & Access Controls |
+| Records retention & defensible disposition | Per-class retention schedule, sealed archive segment index with continuous hash chain, legal holds, disposition queue, restore SLA | Retention & Archive |
 
 ---
 
 ## 3. Gaps, priorities and next steps
 
-Taken straight from the in-app register (`Compliance Requirements & Gaps` → export for the follow-up packet). **5 Met · 6 Partial · 3 Gap. Four P1 items are still open.**
+Taken straight from the in-app register (`Compliance Requirements & Gaps` → export for the follow-up packet). **18 requirements: 6 Met · 8 Partial · 4 Gap. Five P1 items are still open.**
 
 ### P1 — address before a plan audit
 
@@ -90,6 +101,7 @@ Taken straight from the in-app register (`Compliance Requirements & Gaps` → ex
 | REQ-03 | Regular information-system activity review (**Partial**) | Review is available on demand, but nothing records that a named reviewer actually looked, or when. | Monthly activity-review task with reviewer sign-off captured as its own audit event. | Compliance |
 | REQ-04 | Break-the-glass justified and reviewed (**Partial**) | Reason codes are captured; narrative justification is not required and no follow-up review is forced. | Require narrative justification at point of access; auto-route each event to Compliance for 5-day review. | Compliance |
 | REQ-06 | Periodic entitlement review and attestation (**Partial**) | Attestation is tracked but not enforced — an account past its cycle keeps full access. | Escalate at 90 days, auto-suspend entitlements at 120 unless re-attested. | IT Operations |
+| REQ-16 | Legal hold suspends disposition (**Partial**) | Holds are recorded and visible, but applied by hand — nothing in the platform blocks a disposition job from running against a held segment. | Make the hold flag a hard precondition on the purge job; require a named releaser and a reason to lift one. | Compliance |
 
 ### P2 — required for scale and for plan-side ingestion
 
@@ -99,6 +111,8 @@ Taken straight from the in-app register (`Compliance Requirements & Gaps` → ex
 | REQ-11 | Delegated-entity oversight reporting (**Partial**) | Evidence exports per widget; there's no single dated packet assembling the required artifact set. | One-click **Delegation Oversight Packet** — standard artifacts, cover page, generation hash. | Compliance |
 | REQ-12 | Audit data exportable to the plan's SIEM (**Gap**) | CSV pull only; no streaming or scheduled feed for continuous ingestion. | Append-only audit event API plus a nightly signed batch feed. | Platform Engineering |
 | REQ-13 | Alerting on anomalous access (**Gap**) | Signals are computed and displayed but nothing notifies anyone when a threshold is crossed. | Define thresholds per signal; route breaches to Compliance as a work item, not just a tile. | Compliance |
+| REQ-17 | Defensible disposition — destruction certified and logged (**Gap**) | Nothing produces a certificate of destruction, and a purge would leave no audit event of its own. After disposition there would be no evidence the record existed or was lawfully destroyed. | Emit a signed disposition record per segment (period, event count, terminal hash, approver, date) and write it back into the trail as its own event. | Platform Engineering |
+| REQ-18 | Archived records retrievable within the requested window (**Partial**) | Turnaround is recorded after the fact; nothing alerts when a restore request approaches or passes the 5-day retrieval SLA. | Surface open restore requests as a work item with an SLA countdown, the same treatment the UM queues get. | Platform Engineering |
 
 ### P3
 
@@ -110,10 +124,11 @@ Taken straight from the in-app register (`Compliance Requirements & Gaps` → ex
 
 1. **Universe layouts** — which ODAG/CDAG record layouts and versions should we build to, and does Centene supply the reconciliation template?
 2. **SIEM ingestion** — push (API/feed into Centene's SIEM) or pull, and what authentication and signing does Centene's security team require?
-3. **Retention** — 10 years is configured. Confirm against Centene's own schedule and any state-specific overrides.
+3. **Retention & disposition** — the schedule holds 10 years for authorization, appeal, CM and audit records and 6 for disclosure accounting. Confirm against Centene's own schedule and any state overrides — and confirm who signs a certificate of destruction, since that step does not exist yet.
 4. **Attestation cadence and owner** — is the 90-day entitlement cycle Centene's standard, and who signs?
 5. **Break-the-glass SLA** — what review window does Centene expect between an emergent-access grant and compliance sign-off?
 6. **Delegation packet contents** — which artifacts must the oversight packet contain, and at what cadence?
+7. **Retrieval SLA** — is 5 days the right retrieval window for archived periods, and does Centene expect a standing feed instead of request-by-request restore?
 
 ---
 
@@ -122,6 +137,7 @@ Taken straight from the in-app register (`Compliance Requirements & Gaps` → ex
 - The hash chain in this build uses a lightweight digest so the mechanism is demonstrable in-browser. Production chain-of-custody is server-side SHA-256; the property being demonstrated — any alteration changes this record's hash and every hash after it — is the same.
 - Regulatory citations throughout are directional. Commercial PPO and ACA Exchange have **no** federal care-management clock, so those rows measure accreditation and plan policy, not statute. Exact subsections need Compliance validation before anything goes in front of a surveyor.
 - IRR thresholds (90% agreement) and the CM file-audit pass line (80% of rubric) are org policy choices. NCQA/URAC require a defined, followed methodology — not one universal number.
+- The archive is represented by **segment metadata**, not by materialised events: period, count, hash range, tier and hold status for each sealed quarter. That is how a real tiered store exposes cold data, and it is the honest way to show ten years in a browser — but say it, rather than letting "137,569 retained" imply 137,569 rows are sitting behind the screen.
 - Data in the demo is deterministically generated from the UM/CM case pools. It is realistic in shape and stable across runs, but it is not Centene data.
 
 ---
@@ -136,5 +152,7 @@ Taken straight from the in-app register (`Compliance Requirements & Gaps` → ex
 | CM Audit & Compliance tab | `src/app/tabs/cm-audit-tab.ts` |
 | UM IRR model | `src/app/data/um-irr.ts` |
 | UM Audit & Compliance tab | `src/app/tabs/audit-tab.ts` |
+
+Eight audit extracts live under **Reports → Audit & Traceability** (access & change log, user activity review, PHI disclosure log, configuration change log, SOD exceptions, entitlements & attestation, retention & archive register, compliance control register). Each calls the same function backing the audit screen, so a report can never disagree with what is on the tab.
 
 Hosted build deploys from this repo via `render.yaml` (static site, SPA rewrite).
