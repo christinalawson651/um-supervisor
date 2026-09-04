@@ -663,7 +663,7 @@ const govSection = governanceSection;
             </div>
 
             <div class="panel-pad narrbar">
-              <span class="albl">Window</span>
+              <span class="albl" title="Independent of the Range control in the page header">Window</span>
               @for (w of windowPresets; track w.id) {
                 <button class="qp" [class.on]="windowPreset() === w.id" (click)="setWindowPreset(w.id)">{{ w.label }}</button>
               }
@@ -949,7 +949,7 @@ const govSection = governanceSection;
       @case ('governance') {
         <div class="tab-head">
           <div><h2>Governance &amp; Access Controls</h2>
-            <span class="section-note">Who is entitled to do what, whether those entitlements are still attested, and where two duties that must stay separate have landed on one person.</span></div>
+            <span class="section-note">Who is entitled to do what, whether those entitlements are still attested, and where two duties that must stay separate have landed on one person. The account inventory and entitlement figures are a point-in-time state and do not move with the Range control; the segregation-of-duty results are evaluated over the selected range and do.</span></div>
           <button class="btn outline sm" (click)="exportGovernance()">Export</button>
         </div>
 
@@ -1306,7 +1306,7 @@ const govSection = governanceSection;
       @case ('compliance') {
         <div class="tab-head">
           <div><h2>Compliance Requirements &amp; Gaps</h2>
-            <span class="section-note">Requirement → control in the platform today → where the evidence lives → what is still missing. This is the working list for the gap, priority and next-step discussion.</span></div>
+            <span class="section-note">Requirement → control in the platform today → where the evidence lives → what is still missing. This is the working list for the gap, priority and next-step discussion. The Range and LOB controls do not apply here — this is the control set itself, not a measurement over a window.</span></div>
           <button class="btn outline sm" (click)="exportRegister()">Export</button>
         </div>
 
