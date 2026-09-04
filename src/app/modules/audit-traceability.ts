@@ -2246,7 +2246,27 @@ export class AuditTraceability {
       columns: ['Section', ...EVENT_COLUMNS],
       rows: evs.map((e) => [governanceSection(e), ...eventRow(e)]),
       exportName: `governance-record-${slug(entityId)}${TODAY_ISO}`,
+      rowLinks: this.eventRowLinks(1),
     });
+  }
+
+  /** Actor and Member are links on every event list, not just on the tab that happens to render
+   *  them. A drill-down is where a reviewer actually spends their time, and a name they cannot
+   *  click is a name they have to go and look up somewhere else. Column positions are read off
+   *  EVENT_COLUMNS rather than hard-coded, so inserting a column cannot silently point a link at
+   *  the wrong cell. */
+  private eventRowLinks(offset = 0) {
+    const at = (c: string) => EVENT_COLUMNS.indexOf(c) + offset;
+    const iActor = at('Actor'), iMember = at('Member'), iMemberId = at('Member ID');
+    return [
+      { column: iActor, run: (row: (string | number)[]) => this.openActor(String(row[iActor])) },
+      {
+        column: iMember,
+        run: (row: (string | number)[]) => { this.ix.closeExplorer(); this.openMemberFromId(String(row[iMemberId])); },
+        // "Not member-specific" and "412 members — extract" are statements, not destinations.
+        enabled: (row: (string | number)[]) => String(row[iMemberId]) !== '—',
+      },
+    ];
   }
 
   drillEvents(title: string, evs: AuditEvent[], slugName: string) {
@@ -2254,6 +2274,7 @@ export class AuditTraceability {
     this.ix.openExplorer({
       title, context: `${rows.length.toLocaleString()} audit event(s) · ${this.rangeLabel()}`,
       columns: EVENT_COLUMNS, rows: rows.map(eventRow), exportName: `audit-trail-${slugName}${TODAY_ISO}`,
+      rowLinks: this.eventRowLinks(),
     });
   }
   /** The trail STORES the member id, which is correct — an id is stable and a name is not, and the

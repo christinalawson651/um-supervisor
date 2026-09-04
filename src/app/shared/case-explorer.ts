@@ -5,7 +5,7 @@ import { Members } from './members';
 import { Reassign, ReassignCase } from './reassign';
 import { Escalate, ESCALATE_TARGETS } from './escalate';
 import { Balance } from './balance';
-import { downloadCsv } from './export-csv';
+import { Exporter } from './exporter';
 import { DashboardData } from '../data/dashboard-data';
 import { CASE_POOL, CaseRec, GUIDELINE_BY_PROCEDURE } from '../data/case-pool';
 import { CM_CASE_POOL } from '../data/cm-case-pool';
@@ -210,6 +210,7 @@ export class CaseExplorer {
   private rx = inject(Reassign);
   private esc = inject(Escalate);
   private bal = inject(Balance);
+  private exporter = inject(Exporter);
 
   readonly q = signal('');
   readonly page = signal(0);
@@ -345,8 +346,25 @@ export class CaseExplorer {
     this.selected.set(on ? new Set(this.filtered().filter((r) => this.isRowReassignable(r)).map((r) => this.rowId(r))) : new Set());
   }
 
-  exportAll(e: { columns: string[]; exportName: string }) {
-    downloadCsv(e.exportName, e.columns, this.filtered());
+  /** Every drill-down in the app exports through the same dialog as every other export: format,
+   *  column selection, a row filter, and the provenance stamp. It used to hand straight to
+   *  downloadCsv — one silent CSV, all columns, no record of what was filtered when it was taken.
+   *  An audit extract with no statement of its own scope is the one kind you cannot defend later,
+   *  and this button sits on the audit drill-downs too. */
+  exportAll(e: { title: string; context: string; columns: string[]; exportName: string }) {
+    const q = this.q().trim();
+    this.exporter.open({
+      title: e.title,
+      name: e.exportName,
+      columns: e.columns,
+      rows: this.filtered(),
+      meta: {
+        generatedAt: new Date().toLocaleString(),
+        generatedBy: 'Christina Lawson',
+        scope: [e.context, q ? `row filter "${q}"` : '', `${this.filtered().length} of ${(this.ix.explorer()?.rows ?? []).length} rows`]
+          .filter(Boolean).join(' · '),
+      },
+    });
   }
 
   // ---- reassign / balance directly from any drill-down ----
