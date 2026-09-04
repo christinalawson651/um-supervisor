@@ -11,6 +11,7 @@ import {
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   activityBuckets, weekdayBuckets, ActivityBucket, ActivityGrain, ACTIVITY_GRAINS,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest, RetentionPolicy,
+  slaLabel, slaHoursFor, StorageTier,
   archiveSummary, verifyArchiveChain,
   memberAuditRollup, MemberAuditRow, memberTimeline, TimelineThread, membersForUser, UserMemberRow, memberName,
 } from '../data/audit-trail';
@@ -49,10 +50,10 @@ const ENTITY_TYPES: AuditEntityType[] = ['Authorization', 'CM Case', 'Member', '
 const OUTCOMES: AuditOutcome[] = ['Success', 'Denied', 'Failed'];
 const PAGE_SIZE = 50;
 
-const EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Role', 'Category', 'Action', 'Entity Type', 'Entity ID', 'Screen', 'Control', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
+const EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Role', 'Category', 'Action', 'Entity Type', 'Entity ID', 'Members', 'Screen', 'Control', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
 function eventRow(e: AuditEvent): (string | number)[] {
   return [e.eventId, e.timestamp.replace('T', ' '), e.actor, e.actorRole, e.category, e.action, e.entityType, e.entityId,
-    e.screen ?? '—', e.control ?? '—', e.field ?? '—', e.before ?? '—', e.after ?? '—', e.channel, e.sourceIp, e.sessionId,
+    e.memberId ?? (e.memberCount ? `${e.memberCount} members` : '—'), e.screen ?? '—', e.control ?? '—', e.field ?? '—', e.before ?? '—', e.after ?? '—', e.channel, e.sourceIp, e.sessionId,
     e.correlationId, e.reasonCode ?? '—', e.phi ? 'Yes' : 'No', e.outcome, e.recordHash];
 }
 
@@ -194,7 +195,8 @@ const govSection = governanceSection;
                   <td class="mono">{{ r.ev.timestamp.replace('T', ' ') }}@if (isOff(r.ev.timestamp)) { <span class="chip amber">off-hours</span> }</td>
                   <td class="strong">{{ r.ev.actor }}<div class="sub">{{ r.ev.actorRole }}</div></td>
                   <td>{{ r.ev.action }}<div class="sub">{{ r.ev.category }}</div></td>
-                  <td class="mono">{{ r.ev.entityId }}<div class="sub">{{ r.ev.entityType }}@if (r.ev.phi) { · <span class="phi">PHI</span> }</div></td>
+                  <td class="mono">{{ r.ev.entityId }}<div class="sub">{{ r.ev.entityType }}@if (r.ev.phi) { · <span class="phi">PHI</span> }
+                    @if (r.ev.memberCount) { · <b>{{ r.ev.memberCount | number }} members</b> }</div></td>
                   <td>@if (r.ev.field) {
                       @if (r.ev.changeAction) { <span class="chg" [attr.data-a]="r.ev.changeAction">{{ r.ev.changeAction }}</span> }
                       <span class="sub">{{ r.ev.field }}:</span> <span class="was">{{ r.ev.before ?? '—' }}</span> → <b>{{ r.ev.after }}</b>
@@ -1125,7 +1127,7 @@ const govSection = governanceSection;
                   <button class="btn primary sm" (click)="requestRestore()">
                     Request restore of {{ lookupNeedingRestore().length }} segment{{ lookupNeedingRestore().length > 1 ? 's' : '' }}
                   </button>
-                  <span class="sub">{{ restoreSla }}-day retrieval SLA · the request is itself logged</span>
+                  <span class="sub">retrieval target {{ slaLabelFor(lookupNeedingRestore()[0].tier) }} ({{ lookupNeedingRestore()[0].tier }} tier) · the request is itself logged</span>
                 } @else {
                   <span class="sub">Every segment covering this window is already requested or retrieved.</span>
                 }
@@ -1162,7 +1164,7 @@ const govSection = governanceSection;
           <div class="tile" (click)="drillRestores()">
             <div class="tile-ic" [class.hot]="openRestores() > 0"></div>
             <div class="tile-val">{{ openRestores() }}</div><div class="tile-lab">Open Restore Requests</div>
-            <div class="tile-sub">{{ restoreSla }}-day retrieval SLA</div>
+            <div class="tile-sub">retrieval SLA by tier · nearline {{ slaLabelFor('Nearline') }} · archive {{ slaLabelFor('Archive') }}</div>
           </div>
         </div>
 
@@ -1272,7 +1274,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Restore Requests</h3>
-            <span class="section-note sm">Retrieval from cold storage is itself an auditable act — who asked, why, and how long it took against the {{ restoreSla }}-day SLA.</span></div>
+            <span class="section-note sm">Retrieval from cold storage is itself an auditable act — who asked, why, and how long it took against the retrieval target for its storage tier.</span></div>
           <table class="z-table">
             <thead><tr><th>Request</th><th>Segment</th><th>Requested By</th><th>Reason</th><th>Requested</th><th>Fulfilled</th><th>Status</th></tr></thead>
             <tbody>
@@ -2056,7 +2058,8 @@ export class AuditTraceability {
    *  queue where asking for something leaves the queue unchanged would be worse than not offering
    *  the action at all. */
   readonly restores = signal<RestoreRequest[]>([...RESTORE_REQUESTS]);
-  readonly restoreSla = RESTORE_REQUESTS.length ? RESTORE_REQUESTS[0].slaDays : 5;
+  /** Retrieval time follows the storage tier rather than one flat number — see RETRIEVAL_SLA_HOURS. */
+  slaLabelFor(tier: StorageTier) { return slaLabel(tier); }
   readonly archive = computed(() => archiveSummary(this.disp.remaining()));
   readonly todayIso = auditSpan().to;
   readonly segIssuesOnly = signal(false);
@@ -2094,8 +2097,8 @@ export class AuditTraceability {
   drillRestores() {
     this.ix.openExplorer({
       title: 'Restore Requests', context: `${this.restores().length} retrieval request(s) from cold storage`,
-      columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'SLA (days)', 'Status'],
-      rows: this.restores().map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]),
+      columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'Tier', 'Retrieval SLA', 'Status'],
+      rows: this.restores().map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.tier, slaLabel(r.tier), r.status]),
       exportName: `audit-archive-restores${TODAY_ISO}`,
     });
   }
@@ -2235,6 +2238,15 @@ export class AuditTraceability {
       columns: EVENT_COLUMNS, rows: rows.map(eventRow), exportName: `audit-trail-${slugName}${TODAY_ISO}`,
     });
   }
+  /** A blank member column reads as missing data. These three are different facts: one member,
+   *  many members (an extract is a disclosure of everyone in it), or an event that is genuinely not
+   *  about a member at all — a sign-in, a rule change, an account grant. Only the first two are
+   *  about anyone. */
+  memberLabel(e: AuditEvent): string {
+    if (e.memberId) return e.memberId;
+    if (e.memberCount) return `${e.memberCount.toLocaleString()} members — extract`;
+    return 'Not member-specific';
+  }
   openEvent(e: AuditEvent) {
     this.ix.openDrawer({
       title: `${e.eventId} · ${e.action}`,
@@ -2244,7 +2256,7 @@ export class AuditTraceability {
         { label: 'Category', value: e.category },
         { label: 'Record', value: `${e.entityType} ${e.entityId}` },
         { label: 'Governance Section', value: govSection(e) },
-        { label: 'Member', value: e.memberId ?? '—' },
+        { label: 'Member', value: this.memberLabel(e), tone: e.memberCount ? 'amber' : undefined },
         { label: 'Line of Business', value: e.lob ?? '—' },
         { label: 'Change Action', value: e.changeAction ?? '—' },
         { label: 'Screen', value: e.screen ?? '—' },
@@ -2380,7 +2392,8 @@ export class AuditTraceability {
     this.ix.ask({
       title: `Request restore of ${needed.length} segment${needed.length > 1 ? 's' : ''}`,
       body: `Retrieve ${this.lookupEvents().toLocaleString()} archived events covering ${l.from} → ${l.to} for ${l.account}. `
-        + `Cold-storage retrieval runs to a ${this.restoreSla}-day SLA; the events do not become queryable until it completes.`
+        + `Retrieval target ${[...new Set(needed.map((g) => `${g.tier.toLowerCase()} ${slaLabel(g.tier)}`))].join(', ')}. `
+        + `That is the technical rehydration time; the events do not become queryable until the segment chain is re-verified and published.`
         + (held.length ? ` ${held.length} of these segments is under legal hold — the hold does not block retrieval, only disposition.` : ''),
       breakdown: needed.map((g) => ({ count: g.eventCount, label: g.segmentId, target: `${g.periodFrom} → ${g.periodTo}` })),
       confirmLabel: 'Request restore', tone: 'teal',
@@ -2389,10 +2402,11 @@ export class AuditTraceability {
           requestId: `RST-${String(this.restores().length + k + 1).padStart(4, '0')}`,
           segmentId: g.segmentId, requestedBy: this.currentUser, requestedDate: TODAY_ISO,
           reason: `Account activity review — ${l.account}, ${l.from} → ${l.to}`,
-          status: 'In Progress' as const, fulfilledDate: null, slaDays: this.restoreSla,
+          status: 'In Progress' as const, fulfilledDate: null,
+          slaHours: slaHoursFor(g.tier), tier: g.tier,
         }));
         this.restores.update((r) => [...next, ...r]);
-        this.ix.toast(`${next.length} restore request(s) raised — due within ${this.restoreSla} days.`);
+        this.ix.toast(`${next.length} restore request(s) raised — retrieval target ${slaLabel(needed[0].tier)}.`);
       },
     });
   }

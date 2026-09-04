@@ -33,7 +33,7 @@ import { IRR_TARGET_PCT } from './um-irr';
 import { CM_FILE_AUDITS, CM_AUDIT_PASS_PCT, cmRegCompliance } from './cm-audit';
 import { CM_CASE_POOL } from './cm-case-pool';
 import { UM_NURSE_ROSTER, UM_ROLLING_4_WEEKS, UM_MONTHLY_WEEKS, UM_PTO_BALANCES, UM_UPCOMING_WEEKS, UM_TODAY_ISO } from './um-schedule';
-import {
+import { slaLabel,
   AUDIT_EVENTS, AuditEvent, SYSTEM_USERS, PERMISSIONS, PERMISSION_MATRIX, COMPLIANCE_REGISTER,
   userActivityRollup, evaluateSod, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   eventDate, verifyChain,
@@ -959,8 +959,8 @@ export const AUDIT_REPORTS: ReportDef[] = [
         { title: 'Disposition Queue — Past Retention, Not Held', columns: ['Segment', 'Period', 'Events', 'Purge Eligible', 'Certified Disposition'],
           rows: ARCHIVE_SEGMENTS.filter((g) => g.purgeEligible <= today && !g.legalHold)
             .map((g) => [g.segmentId, `${g.periodFrom} → ${g.periodTo}`, g.eventCount, g.purgeEligible, 'NOT AVAILABLE — see REQ-17']) },
-        { title: 'Restore Requests', columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'SLA (days)', 'Status'],
-          rows: RESTORE_REQUESTS.map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]) },
+        { title: 'Restore Requests', columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'Tier', 'Retrieval SLA', 'Status'],
+          rows: RESTORE_REQUESTS.map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.tier, slaLabel(r.tier), r.status]) },
       ];
     },
   },

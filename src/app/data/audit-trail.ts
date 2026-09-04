@@ -213,6 +213,10 @@ export interface AuditEvent {
    *  create/update/delete semantics. Hashed with the rest of the record, so it cannot be edited
    *  after the fact without breaking the chain. */
   changeAction?: ConfigChangeAction | null;
+  /** How many DISTINCT MEMBERS an event touched, where that is not one. An extract is a disclosure
+   *  under §164.528 and a single memberId cannot represent it — "412 members" is the fact the
+   *  accounting needs, and a blank member column on an export reads as "no PHI left the building". */
+  memberCount?: number | null;
   /** Where in the product the change was made, and through what control. Populated on field-level
    *  edits; null on everything a person did not type or pick. */
   screen?: string | null;
@@ -630,6 +634,10 @@ function operationalEvents(): Draft[] {
       category: 'Data Export', action: 'Report exported', entityType: 'Report',
       entityId: ['um-tat-compliance', 'cm-caseload', 'appeals-aging', 'um-denials', 'irr-sample'][k % 5],
       memberId: null, lob: null, field: 'Rows', before: null, after: String(rows),
+      // A member-level extract is a disclosure of every member in it. Rows are not members — an
+      // authorization extract carries several rows per member — so the count is derived rather
+      // than reused, and a non-PHI extract discloses nobody.
+      memberCount: k % 3 !== 0 ? Math.max(1, Math.round(rows / (2 + (k % 3)))) : null,
       channel: 'Web UI', sourceIp: ipFor(u, k), sessionId: `S-${digest(u.userId + k).slice(0, 8)}`,
       correlationId: `EXP-${1000 + k}`, reasonCode: k % 7 === 0 ? 'REG-AUDIT-REQUEST' : 'OPERATIONAL-REVIEW',
       phi: k % 3 !== 0, outcome: 'Success',
@@ -729,7 +737,7 @@ function buildEvents(): AuditEvent[] {
   let prevHash = '0000000000000000';
   return drafts.map((d, i): AuditEvent => {
     const eventId = `AE-${String(i + 1).padStart(6, '0')}`;
-    const payload = [eventId, d.timestamp, d.actorId, d.action, d.entityType, d.entityId, d.field, d.before, d.after, d.changeAction ?? '', d.screen ?? '', d.control ?? '', d.outcome, prevHash].join('|');
+    const payload = [eventId, d.timestamp, d.actorId, d.action, d.entityType, d.entityId, d.field, d.before, d.after, d.changeAction ?? '', d.screen ?? '', d.control ?? '', d.memberCount ?? '', d.outcome, prevHash].join('|');
     const recordHash = digest(payload);
     const ev: AuditEvent = { ...d, eventId, prevHash, recordHash };
     prevHash = recordHash;
@@ -772,7 +780,7 @@ export function verifyChain(events: AuditEvent[] = AUDIT_EVENTS): { verified: nu
   let prevHash = '0000000000000000';
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
-    const payload = [e.eventId, e.timestamp, e.actorId, e.action, e.entityType, e.entityId, e.field, e.before, e.after, e.changeAction ?? '', e.screen ?? '', e.control ?? '', e.outcome, prevHash].join('|');
+    const payload = [e.eventId, e.timestamp, e.actorId, e.action, e.entityType, e.entityId, e.field, e.before, e.after, e.changeAction ?? '', e.screen ?? '', e.control ?? '', e.memberCount ?? '', e.outcome, prevHash].join('|');
     if (digest(payload) !== e.recordHash) return { verified: i, brokenAt: e.eventId };
     prevHash = e.recordHash;
   }
@@ -1360,9 +1368,28 @@ function buildArchive(): ArchiveSegment[] {
 }
 export const ARCHIVE_SEGMENTS: ArchiveSegment[] = buildArchive();
 
+/** Retrieval time is a property of the storage tier, not a flat organisational number. Nearline
+ *  objects are rehydrated in hours; deep archive is a next-business-day or worse proposition at
+ *  every major provider. Quoting one figure for both either flatters the cold case or slanders the
+ *  warm one, and the plan's IT reviewer will know which.
+ *
+ *  These are RETRIEVAL targets — the technical part. End-to-end (approve, rehydrate, re-verify the
+ *  segment chain, publish, notify) is tracked separately as it involves people. */
+export const RETRIEVAL_SLA_HOURS: Record<StorageTier, number> = {
+  Online: 0,        // already queryable
+  Nearline: 4,      // rehydrate from warm object storage
+  Archive: 24,      // cold tier, standard retrieval
+};
+export function slaHoursFor(tier: StorageTier): number { return RETRIEVAL_SLA_HOURS[tier] ?? 24; }
+export function slaLabel(tier: StorageTier): string {
+  const h = slaHoursFor(tier);
+  return h === 0 ? 'queryable now' : h < 24 ? `${h} hours` : `${Math.round(h / 24)} business day${h >= 48 ? 's' : ''}`;
+}
+
 export interface RestoreRequest {
   requestId: string; segmentId: string; requestedBy: string; requestedDate: string;
-  reason: string; status: 'Fulfilled' | 'In Progress' | 'Denied'; fulfilledDate: string | null; slaDays: number;
+  reason: string; status: 'Fulfilled' | 'In Progress' | 'Denied'; fulfilledDate: string | null;
+  slaHours: number; tier: StorageTier;
 }
 /** Retrieval from cold storage is itself an auditable act — who asked, why, and how long it took
  *  against the retrieval SLA. */
@@ -1379,7 +1406,7 @@ export const RESTORE_REQUESTS: RestoreRequest[] = (() => {
       requestedBy: requesters[i % requesters.length], requestedDate: isoDate(requested),
       reason: reasons[i % reasons.length], status,
       fulfilledDate: status === 'Fulfilled' ? isoDate(capToday(addDays(requested, turnaround))) : null,
-      slaDays: 5,
+      slaHours: slaHoursFor(seg.tier), tier: seg.tier,
     };
   });
 })();
