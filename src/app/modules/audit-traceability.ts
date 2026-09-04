@@ -130,6 +130,10 @@ const govSection = governanceSection;
           <div class="tile" (click)="drillEvents('Clinical Decisions', decisionEvents(), 'decisions')">
             <div class="tile-val">{{ decisionEvents().length | number }}</div><div class="tile-lab">Clinical Decision Events</div>
           </div>
+          <div class="tile" (click)="drillEvents('Field-Level Edits', fieldEditEvents(), 'field-edits')">
+            <div class="tile-val">{{ fieldEditEvents().length | number }}</div><div class="tile-lab">Field-Level Edits</div>
+            <div class="tile-sub">value changed, with what it was before</div>
+          </div>
           <div class="tile" (click)="drillEvents('Configuration Changes', configEvents(), 'config')">
             <div class="tile-ic" [class.hot]="configEvents().length > 0"></div>
             <div class="tile-val">{{ configEvents().length }}</div><div class="tile-lab">Configuration Changes</div>
@@ -168,6 +172,7 @@ const govSection = governanceSection;
               @for (o of outcomes; track o) { <option [value]="o">{{ o }}</option> }
             </select>
             <label class="chk"><input type="checkbox" [checked]="phiOnly()" (change)="setPhiOnly($any($event.target).checked)" /> PHI only</label>
+            <label class="chk"><input type="checkbox" [checked]="editsOnly()" (change)="setEditsOnly($any($event.target).checked)" /> Field edits only</label>
             <label class="chk"><input type="checkbox" [checked]="offHoursOnly()" (change)="setOffHoursOnly($any($event.target).checked)" /> Off-hours only</label>
             @if (filtersActive()) { <button class="btn outline sm" (click)="clearFilters()">Clear</button> }
             <span class="count">{{ filteredEvents().length | number }} of {{ scopedEvents().length | number }}</span>
@@ -192,6 +197,7 @@ const govSection = governanceSection;
                   <td>@if (r.ev.field) {
                       @if (r.ev.changeAction) { <span class="chg" [attr.data-a]="r.ev.changeAction">{{ r.ev.changeAction }}</span> }
                       <span class="sub">{{ r.ev.field }}:</span> <span class="was">{{ r.ev.before ?? '—' }}</span> → <b>{{ r.ev.after }}</b>
+                      @if (r.ev.screen) { <div class="scr">{{ r.ev.screen }} · <span class="ctl">{{ r.ev.control }}</span></div> }
                     } @else { <span class="sub">—</span> }</td>
                   <td>{{ r.ev.channel }}</td>
                   <td><span class="badge" [class.green]="r.ev.outcome==='Success'" [class.red]="r.ev.outcome==='Failed'" [class.amber]="r.ev.outcome==='Denied'">{{ r.ev.outcome }}</span></td>
@@ -799,6 +805,7 @@ const govSection = governanceSection;
                                 <span class="tlf">
                                   @if (e.changeAction) { <span class="chg" [attr.data-a]="e.changeAction">{{ e.changeAction }}</span> }
                                   <span class="sub">{{ e.field }}:</span> <span class="was">{{ e.before ?? '—' }}</span> → <b>{{ e.after }}</b>
+                                  @if (e.screen) { <span class="scr">{{ e.screen }} · <span class="ctl">{{ e.control }}</span></span> }
                                 </span>
                               }
                               <span class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }</span>
@@ -1398,6 +1405,8 @@ const govSection = governanceSection;
     .tlm { font-size:11px; margin-top:2px; }
     .empty.pick { padding:70px 24px; color:var(--gray-500); font-weight:500; text-align:center; }
 
+    .scr { display:block; font-size:10.5px; color:var(--gray-500); margin-top:2px; }
+    .scr .ctl { font-weight:700; letter-spacing:.03em; text-transform:uppercase; font-size:9.5px; }
     .chg { display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
            padding:1px 6px; border-radius:3px; margin-right:6px; background:var(--gray-100); color:var(--gray-500); vertical-align:1px; }
     .chg[data-a="Deleted"] { background:var(--red-bg); color:var(--red-fg); }
@@ -1498,6 +1507,12 @@ export class AuditTraceability {
   readonly actor = signal<'all' | string>('all');
   readonly outcome = signal<'all' | AuditOutcome>('all');
   readonly phiOnly = signal(false);
+  /** Field edits are the grain a plan's own admin audit works in — "what did this person change on
+   *  this screen, and what was there before". Filterable on its own because that question is asked
+   *  independently of everything else in the trail. */
+  readonly editsOnly = signal(false);
+  setEditsOnly(v: boolean) { this.editsOnly.set(v); this.page.set(0); }
+  readonly fieldEditEvents = computed(() => this.scopedEvents().filter((e) => e.action === 'Field edited'));
   readonly offHoursOnly = signal(false);
   readonly page = signal(0);
 
@@ -1514,17 +1529,17 @@ export class AuditTraceability {
   setOffHoursOnly(v: boolean) { this.offHoursOnly.set(v); this.reset(); }
   readonly filtersActive = computed(() =>
     !!this.q() || this.cat() !== 'all' || this.chan() !== 'all' || this.entity() !== 'all' ||
-    this.actor() !== 'all' || this.outcome() !== 'all' || this.phiOnly() || this.offHoursOnly());
+    this.actor() !== 'all' || this.outcome() !== 'all' || this.phiOnly() || this.offHoursOnly() || this.editsOnly());
   clearFilters() {
     this.q.set(''); this.cat.set('all'); this.chan.set('all'); this.entity.set('all');
-    this.actor.set('all'); this.outcome.set('all'); this.phiOnly.set(false); this.offHoursOnly.set(false);
+    this.actor.set('all'); this.outcome.set('all'); this.phiOnly.set(false); this.offHoursOnly.set(false); this.editsOnly.set(false);
     this.reset();
   }
 
   readonly filteredEvents = computed(() => {
     const q = this.q().trim().toLowerCase();
     const cat = this.cat(), chan = this.chan(), ent = this.entity(), act = this.actor(), out = this.outcome();
-    const phi = this.phiOnly(), off = this.offHoursOnly();
+    const phi = this.phiOnly(), off = this.offHoursOnly(), edits = this.editsOnly();
     return this.scopedEvents().filter((e) =>
       (cat === 'all' || e.category === cat) &&
       (chan === 'all' || e.channel === chan) &&
@@ -1533,7 +1548,9 @@ export class AuditTraceability {
       (out === 'all' || e.outcome === out) &&
       (!phi || e.phi) &&
       (!off || isOffHours(e.timestamp)) &&
+      (!edits || e.action === 'Field edited') &&
       (!q || [e.eventId, e.actor, e.actorRole, e.action, e.entityId, e.entityType, e.correlationId, e.reasonCode ?? '', e.sourceIp, e.after ?? '', e.sessionId]
+        .concat([e.field ?? '', e.before ?? '', e.screen ?? '', e.control ?? ''])
         .some((v) => String(v).toLowerCase().includes(q))));
   });
 
@@ -1947,6 +1964,8 @@ export class AuditTraceability {
         { label: 'Member', value: e.memberId ?? '—' },
         { label: 'Line of Business', value: e.lob ?? '—' },
         { label: 'Change Action', value: e.changeAction ?? '—' },
+        { label: 'Screen', value: e.screen ?? '—' },
+        { label: 'Control', value: e.control ?? '—' },
         { label: 'Field Changed', value: e.field ?? '—' },
         { label: 'Before', value: e.before ?? '—' },
         { label: 'After', value: e.after ?? '—' },

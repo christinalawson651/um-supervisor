@@ -155,6 +155,11 @@ export type AuditEntityType = 'Authorization' | 'CM Case' | 'Member' | 'Appeal' 
  *  both: a threshold that was DELETED and one that was UPDATED to a laxer value read identically
  *  in a before/after column, and they are not the same finding. */
 export type ConfigChangeAction = 'Created' | 'Updated' | 'Deleted' | 'Activated' | 'Deactivated';
+
+/** The input a value was changed through. A date corrected by hand and a dropdown re-selected are
+ *  different kinds of mistake and different kinds of evidence: an auditor reading a run of edits
+ *  wants to know whether someone re-picked from a controlled list or retyped free text. */
+export type FieldControl = 'Dropdown' | 'Free text' | 'Date' | 'Number' | 'Checkbox' | 'Lookup';
 export type AuditOutcome = 'Success' | 'Denied' | 'Failed';
 
 export interface AuditEvent {
@@ -176,6 +181,10 @@ export interface AuditEvent {
    *  create/update/delete semantics. Hashed with the rest of the record, so it cannot be edited
    *  after the fact without breaking the chain. */
   changeAction?: ConfigChangeAction | null;
+  /** Where in the product the change was made, and through what control. Populated on field-level
+   *  edits; null on everything a person did not type or pick. */
+  screen?: string | null;
+  control?: FieldControl | null;
   channel: AuditChannel;
   sourceIp: string;
   sessionId: string;
@@ -224,6 +233,82 @@ function ipFor(u: SystemUser, n: number): string {
 export function isExternalIp(ip: string): boolean { return ip.startsWith('203.0.113.'); }
 
 interface Draft extends Omit<AuditEvent, 'eventId' | 'recordHash' | 'prevHash'> {}
+
+// ---------------------------------------------------------------------------------------------
+// Field-level edits.
+//
+// Scope is deliberate and narrower than "everything the user did": this records COMMITTED changes
+// to fields that carry clinical or contractual weight, not navigation, focus, scrolling or
+// keystrokes. Full interaction capture produces a trail no reviewer can read, a storage cost
+// nobody approved, and a discovery surface Legal will not thank you for — and it buries the
+// fifteen edits that actually changed a determination under fifty thousand that did not.
+//
+// What each edit needs to be worth keeping: the screen it happened on, the control it was made
+// through, the value before, the value after, and who committed it.
+// ---------------------------------------------------------------------------------------------
+interface FieldEdit { screen: string; field: string; control: FieldControl; before: string; after: string; reason: string; }
+
+/** The edits a reviewer actually makes on a UM case, drawn deterministically off case identity so
+ *  the same authorization always produces the same edit history. */
+function fieldEditsFor(c: CaseRec, i: number): FieldEdit[] {
+  const seed = parseInt(digest(c.authId + 'fields').slice(0, 4), 16);
+  const catalogue: FieldEdit[] = [
+    { screen: 'Authorization — Request Details', field: 'Urgency', control: 'Dropdown',
+      before: 'Standard', after: 'Expedited', reason: 'FIELD-URGENCY-CHANGED' },
+    { screen: 'Authorization — Request Details', field: 'Place of Service', control: 'Dropdown',
+      before: 'Outpatient Hospital', after: 'Ambulatory Surgical Center', reason: 'FIELD-POS-CORRECTED' },
+    { screen: 'Authorization — Request Details', field: 'Requested Units', control: 'Number',
+      before: String(6 + (i % 8)), after: String(3 + (i % 5)), reason: 'FIELD-UNITS-AMENDED' },
+    { screen: 'Authorization — Request Details', field: 'Requested Start Date', control: 'Date',
+      before: isoDay(c.submitted, 3), after: isoDay(c.submitted, 7), reason: 'FIELD-START-DATE-CORRECTED' },
+    { screen: 'Clinical Review — Diagnosis', field: 'Primary Diagnosis', control: 'Lookup',
+      before: DX_CORRECTIONS[i % DX_CORRECTIONS.length][0], after: DX_CORRECTIONS[i % DX_CORRECTIONS.length][1],
+      reason: 'FIELD-DX-CORRECTED' },
+    { screen: 'Clinical Review — Criteria', field: 'Level of Care', control: 'Dropdown',
+      before: 'Inpatient', after: 'Observation', reason: 'FIELD-LOC-CHANGED' },
+    { screen: 'Clinical Review — Criteria', field: 'Criteria Set', control: 'Dropdown',
+      before: `${c.procedure} — criteria set v${1 + (i % 3)}.0`, after: `${c.procedure} — criteria set v${2 + (i % 3)}.0`,
+      reason: 'FIELD-CRITERIA-RESELECTED' },
+    { screen: 'Clinical Review — Notes', field: 'Clinical Note', control: 'Free text',
+      before: '(empty)', after: 'Conservative therapy documented; imaging within 60 days on file.',
+      reason: 'FIELD-NOTE-ENTERED' },
+    { screen: 'Determination', field: 'Approved Units', control: 'Number',
+      before: String(6 + (i % 8)), after: String(3 + (i % 4)), reason: 'FIELD-UNITS-PARTIAL' },
+    { screen: 'Determination', field: 'Denial Reason', control: 'Dropdown',
+      before: '(none)', after: 'Not medically necessary — criteria not met', reason: 'FIELD-DENIAL-REASON-SET' },
+    { screen: 'Member — Demographics', field: 'Contact Phone', control: 'Free text',
+      before: '555-0143', after: '555-0198', reason: 'FIELD-CONTACT-UPDATED' },
+  ];
+  // Two or three edits per case, spread across the catalogue rather than taken from the front of
+  // it — a modulo walk would give every case the same opening pair.
+  const n = 2 + (seed % 2);
+  const picks: FieldEdit[] = [];
+  for (let k = 0; k < n; k++) {
+    const idx = (seed + k * 37 + i * 7) % catalogue.length;
+    const edit = catalogue[idx];
+    // Determination-screen edits only make sense once a determination exists, and a partial
+    // approval is the only thing that trims approved units.
+    if (edit.screen === 'Determination' && c.phase !== 'decided') continue;
+    if (edit.field === 'Approved Units' && c.decision !== 'Partial') continue;
+    if (edit.field === 'Denial Reason' && c.decision !== 'Denied') continue;
+    if (!picks.some((x) => x.field === edit.field)) picks.push(edit);
+  }
+  return picks;
+}
+/** Diagnosis corrections, as pairs — a re-code is the most common clinically material field edit
+ *  and the one an auditor most often traces, because it can move a case across criteria sets. */
+const DX_CORRECTIONS: [string, string][] = [
+  ['M54.5 — Low back pain', 'M51.26 — Lumbar disc displacement'],
+  ['R10.9 — Abdominal pain', 'K80.20 — Calculus of gallbladder'],
+  ['J44.9 — COPD unspecified', 'J44.1 — COPD with exacerbation'],
+  ['I50.9 — Heart failure unspecified', 'I50.32 — Chronic diastolic heart failure'],
+  ['E11.9 — Type 2 diabetes', 'E11.22 — Type 2 diabetes with CKD'],
+];
+function isoDay(base: string, plus: number): string {
+  const d = new Date(`${base}T00:00:00`);
+  d.setDate(d.getDate() + plus);
+  return d.toISOString().slice(0, 10);
+}
 
 function umEventsFor(c: CaseRec, i: number): Draft[] {
   const nurse = USER_BY_NAME.get(c.nurse);
@@ -333,6 +418,14 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
         reasonCode: `${ai.model} · ${ai.workflowVersion} · ${ai.criteriaSet}`,
       }));
     }
+    // What the reviewer actually changed on screen, between opening the case and deciding it.
+    fieldEditsFor(c, i).forEach((fe, k) => {
+      out.push(nb({
+        timestamp: stamp(submitted, 1, 570 + (i % 240) + k * 4), category: 'Case Management',
+        action: 'Field edited', field: fe.field, before: fe.before, after: fe.after,
+        screen: fe.screen, control: fe.control, reasonCode: fe.reason,
+      }));
+    });
     if (c.tags.includes('rfi')) {
       out.push(nb({
         timestamp: stamp(submitted, 2, 600 + (i % 200)), category: 'Correspondence',
@@ -594,7 +687,7 @@ function buildEvents(): AuditEvent[] {
   let prevHash = '0000000000000000';
   return drafts.map((d, i): AuditEvent => {
     const eventId = `AE-${String(i + 1).padStart(6, '0')}`;
-    const payload = [eventId, d.timestamp, d.actorId, d.action, d.entityType, d.entityId, d.field, d.before, d.after, d.changeAction ?? '', d.outcome, prevHash].join('|');
+    const payload = [eventId, d.timestamp, d.actorId, d.action, d.entityType, d.entityId, d.field, d.before, d.after, d.changeAction ?? '', d.screen ?? '', d.control ?? '', d.outcome, prevHash].join('|');
     const recordHash = digest(payload);
     const ev: AuditEvent = { ...d, eventId, prevHash, recordHash };
     prevHash = recordHash;
@@ -637,7 +730,7 @@ export function verifyChain(events: AuditEvent[] = AUDIT_EVENTS): { verified: nu
   let prevHash = '0000000000000000';
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
-    const payload = [e.eventId, e.timestamp, e.actorId, e.action, e.entityType, e.entityId, e.field, e.before, e.after, e.changeAction ?? '', e.outcome, prevHash].join('|');
+    const payload = [e.eventId, e.timestamp, e.actorId, e.action, e.entityType, e.entityId, e.field, e.before, e.after, e.changeAction ?? '', e.screen ?? '', e.control ?? '', e.outcome, prevHash].join('|');
     if (digest(payload) !== e.recordHash) return { verified: i, brokenAt: e.eventId };
     prevHash = e.recordHash;
   }
@@ -718,6 +811,9 @@ export const COMPLIANCE_REGISTER: ComplianceRequirement[] = [
   { id: 'REQ-18', domain: 'Retention & Integrity', requirement: 'Archived records are retrievable within the requested window', citation: 'CMS program audit request timelines', control: 'Restore requests from cold storage are tracked with requester, reason, and turnaround against a 5-day retrieval SLA.', evidence: 'Retention & Archive — restore requests', status: 'Partial', priority: 'P2', gap: 'Turnaround is recorded after the fact; nothing alerts when a request is approaching or past the retrieval SLA.', nextStep: 'Surface open restore requests as a work item with an SLA countdown, the same treatment the UM queues get.', owner: 'Platform Engineering' },
   { id: 'REQ-19', domain: 'AI Governance', requirement: 'Every machine-influenced determination is traceable to the model version and criteria that produced it', citation: 'NCQA UM 2 · emerging Clinical AI governance practice', control: 'The recommendation, its confidence score, the model version and the criteria set are written to the audit trail as their own event before the determination, and an override is logged separately with before/after.', evidence: 'Audit Trail — filter Clinical Decision · AI Oversight tab', status: 'Met', priority: 'P1', gap: null, nextStep: null, owner: 'Clinical Content' },
   { id: 'REQ-20', domain: 'AI Governance', requirement: 'Confidence scores are calibrated and monitored for drift', citation: 'Emerging Clinical AI governance practice · SOC 2 CC7.2', control: 'Observed agreement is measured against each confidence band and against a defined tolerance, and concordance is tracked month over month against the model version in force.', evidence: 'AI Oversight — calibration & drift', status: 'Partial', priority: 'P1', gap: 'Calibration is measured and visible, but nothing alerts when a band drifts outside tolerance — today it is found by someone opening the tab. The 95%+ band is currently running overconfident.', nextStep: 'Alert on any adequately-sampled band exceeding the deviation tolerance, and gate model promotion on the same check.', owner: 'Clinical Content' },
+  { id: 'REQ-22', domain: 'Audit Trail', requirement: 'Screen and field-level changes are captured with the prior value', citation: 'HIPAA §164.312(b) · NCQA UM 2 · plan admin-audit parity', control: 'Committed changes to clinically and contractually material fields are logged with the screen, the control they were made through, the value before and after, and the account that committed them — chained with every other event.', evidence: 'Audit Trail — Field edits · Member Timeline', status: 'Partial', priority: 'P2', gap: 'Navigation, record views and in-progress keystrokes are not captured, and the field set is fixed rather than configurable per client. Full interaction capture was scoped out deliberately: it buries the edits that changed a determination and creates a discovery surface with no audit value.', nextStep: 'Agree the material-field list with Centene per module, and decide whether record-view events are in scope for their admin-audit parity.', owner: 'Product' },
+  { id: 'REQ-23', domain: 'AI Governance', requirement: 'The language a model presented is retained alongside what the clinician submitted', citation: 'NCQA UM 2 · CMS delegation oversight · plan AI policy', control: 'Every machine-influenced determination retains the rationale as generated, the text recorded on the determination, a word-level diff, and a classification of what kind of edit was made. Verbatim acceptance is reported as its own rate over clinician-reviewed cases.', evidence: 'AI Oversight — What the Model Said, and What Went Out', status: 'Met', priority: 'P1', gap: '', nextStep: 'Agree an automation-bias threshold with Centene; the verbatim rate is reported but no target is set.', owner: 'Clinical Content' },
+  { id: 'REQ-24', domain: 'Audit Trail', requirement: 'A member\'s record can be reconstructed across every user who touched it', citation: 'HIPAA §164.528 · plan admin-audit parity', control: 'Member Timeline threads a member\'s complete history by authorization or case, across every account, with a per-account filter; User Activity pivots the same events by account. Both drill to the full record.', evidence: 'Member Timeline · User Activity Monitoring', status: 'Met', priority: 'P1', gap: '', nextStep: 'None — extend to Appeals when that module\'s audit tab is built.', owner: 'Product' },
   { id: 'REQ-21', domain: 'AI Governance', requirement: 'Clinician overrides are captured with a structured reason and reviewed', citation: 'Emerging Clinical AI governance practice · NCQA UM 4', control: 'Overrides require a reason code, and reasons are split between model-attributable findings and legitimate clinical divergence so the override rate can actually be interpreted.', evidence: 'AI Oversight — override reasons', status: 'Partial', priority: 'P2', gap: 'Reasons are coded and reportable, but model-attributable overrides do not route anywhere — there is no loop back to the clinical content team who own the criteria.', nextStep: 'Route model-attributable overrides to Clinical Content as a work item, and report closure alongside the IRR corrective-action loop.', owner: 'Clinical Content' },
 ];
 
