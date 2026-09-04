@@ -148,6 +148,13 @@ export type AuditCategory =
   | 'Administrative' | 'Configuration' | 'Security' | 'Data Export';
 export type AuditChannel = 'Web UI' | 'API' | 'Batch Interface' | 'Fax / OCR Intake' | 'System Rule';
 export type AuditEntityType = 'Authorization' | 'CM Case' | 'Member' | 'Appeal' | 'Report' | 'User Account' | 'Configuration';
+
+/** What was done to a configuration object, as distinct from what the platform did with the event.
+ *  "Configuration change published" is the platform's action; 'Created' / 'Updated' / 'Deleted' is
+ *  the change itself. An auditor reconstructing why a determination came out the way it did needs
+ *  both: a threshold that was DELETED and one that was UPDATED to a laxer value read identically
+ *  in a before/after column, and they are not the same finding. */
+export type ConfigChangeAction = 'Created' | 'Updated' | 'Deleted' | 'Activated' | 'Deactivated';
 export type AuditOutcome = 'Success' | 'Denied' | 'Failed';
 
 export interface AuditEvent {
@@ -165,6 +172,10 @@ export interface AuditEvent {
   field: string | null;            // what changed, when this event was a change
   before: string | null;
   after: string | null;
+  /** Configuration events only. Null everywhere else — a PHI view or a determination has no
+   *  create/update/delete semantics. Hashed with the rest of the record, so it cannot be edited
+   *  after the fact without breaking the chain. */
+  changeAction?: ConfigChangeAction | null;
   channel: AuditChannel;
   sourceIp: string;
   sessionId: string;
@@ -487,29 +498,63 @@ function operationalEvents(): Draft[] {
   // Configuration changes — criteria sets, auto-approval rules, letter templates, role
   // entitlements. A change here silently rewrites how every subsequent case is decided, so it's
   // the highest-value thing in the log and the first thing a delegation audit asks to see.
-  const configs: { entity: string; field: string; before: string; after: string; reason: string }[] = [
-    { entity: 'CFG-AUTOAPPROVE', field: 'Auto-approval threshold', before: 'confidence ≥ 0.93', after: 'confidence ≥ 0.95', reason: 'CHG-2026-0412' },
-    { entity: 'CFG-CRITERIA-ORTHO', field: 'Criteria set version', before: 'Ortho v2.0', after: 'Ortho v3.0', reason: 'CHG-2026-0431' },
-    { entity: 'CFG-LETTER-DENIAL', field: 'Denial notice template', before: 'v1.1', after: 'v1.2', reason: 'CHG-2026-0447' },
-    { entity: 'CFG-TAT-MEDICAID', field: 'Medicaid standard TAT', before: '14 days', after: '14 days (expedited 72h)', reason: 'CHG-2026-0455' },
-    { entity: 'CFG-ROLE-NURSE', field: 'UM Nurse Reviewer entitlements', before: 'approve, pend', after: 'approve, pend, partial-approve', reason: 'CHG-2026-0468' },
-    { entity: 'CFG-RETENTION', field: 'Audit log retention', before: '6 years', after: '10 years', reason: 'CHG-2026-0472' },
+  const configs: {
+    entity: string; action: ConfigChangeAction; reason: string;
+    changes: { field: string; before: string | null; after: string }[];
+  }[] = [
+    { entity: 'CFG-AUTOAPPROVE', action: 'Updated', reason: 'CHG-2026-0412', changes: [
+      { field: 'Auto-approval confidence threshold', before: '0.93', after: '0.95' },
+      { field: 'Service types in scope', before: 'Imaging, DME', after: 'Imaging, DME, Outpatient Surgery' },
+      { field: 'Effective date', before: null, after: '2026-05-01' },
+    ] },
+    { entity: 'CFG-CRITERIA-ORTHO', action: 'Activated', reason: 'CHG-2026-0431', changes: [
+      { field: 'Criteria set version', before: 'Ortho v2.0', after: 'Ortho v3.0' },
+      { field: 'Conservative-therapy minimum', before: '4 weeks', after: '6 weeks' },
+    ] },
+    { entity: 'CFG-LETTER-DENIAL', action: 'Updated', reason: 'CHG-2026-0447', changes: [
+      { field: 'Denial notice template', before: 'v1.1', after: 'v1.2' },
+      { field: 'Appeal-rights paragraph', before: 'Standard EN', after: 'Standard EN + ES translation block' },
+      { field: 'Reading level target', before: 'Grade 8', after: 'Grade 6' },
+    ] },
+    { entity: 'CFG-TAT-MEDICAID', action: 'Updated', reason: 'CHG-2026-0455', changes: [
+      { field: 'Medicaid standard TAT', before: '14 days', after: '14 days' },
+      { field: 'Medicaid expedited TAT', before: null, after: '72 hours' },
+    ] },
+    { entity: 'CFG-ROLE-NURSE', action: 'Updated', reason: 'CHG-2026-0468', changes: [
+      { field: 'UM Nurse Reviewer entitlements', before: 'approve, pend', after: 'approve, pend, partial-approve' },
+    ] },
+    { entity: 'CFG-RETENTION', action: 'Updated', reason: 'CHG-2026-0472', changes: [
+      { field: 'Audit log retention', before: '6 years', after: '10 years' },
+      { field: 'Disposition method', before: 'Purge', after: 'Certified disposition with terminal hash' },
+    ] },
+    // A rule taken OUT of force. Deletion is the change an auditor most often cannot find, because
+    // a deleted rule leaves nothing behind to inspect — which is exactly why the trail has to hold it.
+    { entity: 'CFG-AUTOAPPROVE-DME', action: 'Deleted', reason: 'CHG-2026-0481', changes: [
+      { field: 'DME auto-approval rule', before: 'Active — confidence ≥ 0.90, cost < $2,500', after: 'Removed' },
+    ] },
   ];
   configs.forEach((cfg, k) => {
-    out.push({
-      timestamp: stamp(addDays(TODAY, -(9 + k * 11)), 0, 600 + k * 23), actor: admin.name, actorId: admin.userId, actorRole: admin.role,
-      category: 'Configuration', action: 'Configuration change published', entityType: 'Configuration', entityId: cfg.entity,
-      memberId: null, lob: null, field: cfg.field, before: cfg.before, after: cfg.after,
-      channel: 'Web UI', sourceIp: ipFor(admin, k), sessionId: `S-${digest(admin.userId + k).slice(0, 8)}`,
-      correlationId: cfg.reason, reasonCode: cfg.reason, phi: false, outcome: 'Success',
+    // One event per field changed, all under the same change ticket. A ticket that moved three
+    // settings is three lines in the trail, not one line naming whichever field happened to be
+    // listed first — you cannot re-explain a determination against a change you cannot see.
+    cfg.changes.forEach((ch, f) => {
+      out.push({
+        timestamp: stamp(addDays(TODAY, -(9 + k * 11)), 0, 600 + k * 23 + f), actor: admin.name, actorId: admin.userId, actorRole: admin.role,
+        category: 'Configuration', action: 'Configuration change published', entityType: 'Configuration', entityId: cfg.entity,
+        memberId: null, lob: null, field: ch.field, before: ch.before, after: ch.after, changeAction: cfg.action,
+        channel: 'Web UI', sourceIp: ipFor(admin, k), sessionId: `S-${digest(admin.userId + k).slice(0, 8)}`,
+        correlationId: cfg.reason, reasonCode: cfg.reason, phi: false, outcome: 'Success',
+      });
     });
     // Two-person control: the publish above is preceded by an approval from someone other than the
-    // person making the change. Where that approval is missing, the Governance tab flags it.
+    // person making the change. One approval per ticket, not per field — that's what gets signed.
+    // Where that approval is missing, the Governance tab flags it.
     if (k % 3 !== 2) {
       out.push({
         timestamp: stamp(addDays(TODAY, -(9 + k * 11)), 0, 580 + k * 23), actor: supervisor.name, actorId: supervisor.userId, actorRole: supervisor.role,
         category: 'Configuration', action: 'Configuration change approved', entityType: 'Configuration', entityId: cfg.entity,
-        memberId: null, lob: null, field: cfg.field, before: null, after: 'Approved',
+        memberId: null, lob: null, field: 'Change ticket', before: null, after: `Approved — ${cfg.changes.length} field${cfg.changes.length > 1 ? 's' : ''}`,
+        changeAction: cfg.action,
         channel: 'Web UI', sourceIp: ipFor(supervisor, k), sessionId: `S-${digest(supervisor.userId + k).slice(0, 8)}`,
         correlationId: cfg.reason, reasonCode: 'CHANGE-APPROVAL', phi: false, outcome: 'Success',
       });
@@ -543,7 +588,7 @@ function buildEvents(): AuditEvent[] {
   let prevHash = '0000000000000000';
   return drafts.map((d, i): AuditEvent => {
     const eventId = `AE-${String(i + 1).padStart(6, '0')}`;
-    const payload = [eventId, d.timestamp, d.actorId, d.action, d.entityType, d.entityId, d.field, d.before, d.after, d.outcome, prevHash].join('|');
+    const payload = [eventId, d.timestamp, d.actorId, d.action, d.entityType, d.entityId, d.field, d.before, d.after, d.changeAction ?? '', d.outcome, prevHash].join('|');
     const recordHash = digest(payload);
     const ev: AuditEvent = { ...d, eventId, prevHash, recordHash };
     prevHash = recordHash;
@@ -586,7 +631,7 @@ export function verifyChain(events: AuditEvent[] = AUDIT_EVENTS): { verified: nu
   let prevHash = '0000000000000000';
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
-    const payload = [e.eventId, e.timestamp, e.actorId, e.action, e.entityType, e.entityId, e.field, e.before, e.after, e.outcome, prevHash].join('|');
+    const payload = [e.eventId, e.timestamp, e.actorId, e.action, e.entityType, e.entityId, e.field, e.before, e.after, e.changeAction ?? '', e.outcome, prevHash].join('|');
     if (digest(payload) !== e.recordHash) return { verified: i, brokenAt: e.eventId };
     prevHash = e.recordHash;
   }
@@ -765,10 +810,16 @@ export function evaluateSod(events: AuditEvent[], users: SystemUser[] = SYSTEM_U
     }
     if (rule.id === 'SOD-2') {
       const approvals = new Set(events.filter((e) => e.action === 'Configuration change approved').map((e) => e.correlationId));
-      events.filter((e) => e.action === 'Configuration change published').forEach((e) => {
-        if (!approvals.has(e.correlationId)) {
-          add(e.actor, `${e.entityId} — "${e.field}" changed to "${e.after}" by ${e.actor} with no independent approval on ${e.correlationId}`, [e.eventId]);
-        }
+      // A change ticket that moved three fields is ONE unapproved change, not three. Grouping by
+      // correlationId before flagging keeps the exception count honest — an inflated count is as
+      // misleading to an auditor as a suppressed one.
+      const byTicket = new Map<string, AuditEvent[]>();
+      events.filter((e) => e.action === 'Configuration change published' && !approvals.has(e.correlationId))
+        .forEach((e) => { const g = byTicket.get(e.correlationId) ?? []; g.push(e); byTicket.set(e.correlationId, g); });
+      byTicket.forEach((evs, ticket) => {
+        const e = evs[0];
+        const fields = evs.map((x) => `"${x.field}"`).join(', ');
+        add(e.actor, `${e.entityId} — ${e.changeAction ?? 'Changed'}: ${fields} by ${e.actor} with no independent approval on ${ticket}`, evs.map((x) => x.eventId));
       });
     }
     if (rule.id === 'SOD-3') {

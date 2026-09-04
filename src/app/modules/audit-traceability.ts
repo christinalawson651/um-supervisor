@@ -184,7 +184,10 @@ const govSection = governanceSection;
                   <td class="strong">{{ r.ev.actor }}<div class="sub">{{ r.ev.actorRole }}</div></td>
                   <td>{{ r.ev.action }}<div class="sub">{{ r.ev.category }}</div></td>
                   <td class="mono">{{ r.ev.entityId }}<div class="sub">{{ r.ev.entityType }}@if (r.ev.phi) { · <span class="phi">PHI</span> }</div></td>
-                  <td>@if (r.ev.field) { <span class="sub">{{ r.ev.field }}:</span> <span class="was">{{ r.ev.before ?? '—' }}</span> → <b>{{ r.ev.after }}</b> } @else { <span class="sub">—</span> }</td>
+                  <td>@if (r.ev.field) {
+                      @if (r.ev.changeAction) { <span class="chg" [attr.data-a]="r.ev.changeAction">{{ r.ev.changeAction }}</span> }
+                      <span class="sub">{{ r.ev.field }}:</span> <span class="was">{{ r.ev.before ?? '—' }}</span> → <b>{{ r.ev.after }}</b>
+                    } @else { <span class="sub">—</span> }</td>
                   <td>{{ r.ev.channel }}</td>
                   <td><span class="badge" [class.green]="r.ev.outcome==='Success'" [class.red]="r.ev.outcome==='Failed'" [class.amber]="r.ev.outcome==='Denied'">{{ r.ev.outcome }}</span></td>
                 </tr>
@@ -1032,6 +1035,11 @@ const govSection = governanceSection;
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
     .sub { font-size: 11px; color: var(--gray-500); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .chg { display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+           padding:1px 6px; border-radius:3px; margin-right:6px; background:var(--gray-100); color:var(--gray-500); vertical-align:1px; }
+    .chg[data-a="Deleted"] { background:var(--red-bg); color:var(--red-fg); }
+    .chg[data-a="Created"], .chg[data-a="Activated"] { background:var(--green-bg); color:var(--green-fg); }
+    .chg[data-a="Deactivated"] { background:var(--amber-bg); color:var(--amber-fg); }
     .was { color: var(--gray-500); text-decoration: line-through; }
     .phi { color: var(--amber); font-weight: 700; }
     .warn { color: var(--amber); }

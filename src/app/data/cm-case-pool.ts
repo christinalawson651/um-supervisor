@@ -24,6 +24,11 @@ export const CM_STAGES = ['Newly Accepted', 'Assessment Scheduled', 'Care Plan D
 // Workforce & Caseload actually manages (staffing/workload), same role UM's 7 auth queues play.
 export const CM_QUEUES = ['New Referral Queue', 'Outreach Queue', 'Reassessment Queue', 'Escalation Queue', 'Discharge Follow-Up Queue', 'Documentation Queue'];
 
+/** What a case's owner reads as while it sits unclaimed in a queue. Deliberately NOT a member of
+ *  CARE_MANAGERS, so queued work never counts toward anyone's utilization. A case is either queued
+ *  or owned — counting it in both places counts it twice in every workload number downstream. */
+export const CM_UNASSIGNED = 'Unassigned';
+
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
 export type Acuity = 'Low' | 'Medium' | 'High';
 
@@ -106,6 +111,9 @@ const DISCIPLINE_RISK_BIAS: Record<string, number> = { 'Complex Care': 0.7, 'Tra
 // Target active caseload per care manager — preserves the same operational scale the CM
 // dashboard has always shown (now 161 total with Kevin Brooks added to Integrated Care Team,
 // so PTO redistribution has a real 3-person team to split across, not just one teammate).
+// Block size per care manager. About a fifth of each block ends up unclaimed (see `unclaimed`
+// below), so the OWNED caseload lands near [27, 22, 25, 18, 21, 16] — which is what
+// CAPACITY_PER_CM is calibrated against.
 const ACTIVE_PER_CM = [34, 28, 31, 22, 26, 20];
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
@@ -145,12 +153,14 @@ function buildActive(): CmCaseRec[] {
       if (acuity === 'High') tags.push('highAcuity');
       if (cost >= 100000) tags.push('highCost');
       if (slaOffset < 0) tags.push('slaAtRisk');
-      // A minority of the caseload has an actionable item queued right now — most members are
-      // steady-state active monitoring with nothing currently waiting on staff.
-      const hasQueueWork = (seedRaw % 100) < 45;
-      const queue = hasQueueWork ? CM_QUEUES[(i * 5 + 3) % CM_QUEUES.length] : null;
+      // Queued XOR owned. About a fifth of the caseload is unclaimed work sitting in a queue for
+      // any care manager to pull; the rest is owned outright and has no queue item against it.
+      // Nothing is ever both — a case in a queue with a named owner is not pullable, and would be
+      // double-counted by every workload, utilization and queue-depth number on the dashboard.
+      const unclaimed = seedRaw < 20;
+      const queue = unclaimed ? CM_QUEUES[(i * 5 + 3) % CM_QUEUES.length] : null;
       const queueAgeH = 6 + (seedRaw % 90);
-      const queueBreached = hasQueueWork && i % 17 === 0;
+      const queueBreached = unclaimed && i % 17 === 0;
       // How this member's current care manager came to own them, not whether work is queued
       // right now — most caseloads build up from the shared intake queue over time (55%), with a
       // system routing rule placing a sizable minority directly (30%) and a supervisor/intake
@@ -206,7 +216,7 @@ function buildActive(): CmCaseRec[] {
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
         dx: DX_POOL[(i * 5 + 2) % DX_POOL.length],
         lob, program: cm.discipline,
-        careManager: cm.name,
+        careManager: unclaimed ? CM_UNASSIGNED : cm.name,
         riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod,
         caseType, consentType, consentExpiresDate, assessmentType, assessmentTatDays, outreachAttempts, outreachSuccessful, utrLetterSent, tags,
         carePlanStatus, carePlanOpenedDate, carePlanClosedDate, carePlanReviewDate, carePlanReopened, memberParticipation, goals,

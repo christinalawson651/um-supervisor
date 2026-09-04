@@ -799,7 +799,7 @@ export const AUDIT_REPORTS: ReportDef[] = [
   },
   {
     id: 'audit-config-changes', module: 'generic', group: AUDIT_GROUP, title: 'Configuration Change Log',
-    description: 'Rule thresholds, criteria-set versions, letter templates, TAT windows and role entitlements — what changed, from what to what, by whom, and whether an independent approval exists on the change ticket.',
+    description: 'Rule thresholds, criteria-set versions, letter templates, TAT windows and role entitlements. One row per field moved, carrying the action taken on it — created, updated, activated or deleted — so a ticket that changed three settings reads as three changes, and a rule taken out of force is visible rather than absent.',
     tables: (ctx) => {
       const evs = auditScope(ctx);
       const published = evs.filter((e) => e.action === 'Configuration change published');
@@ -807,9 +807,9 @@ export const AUDIT_REPORTS: ReportDef[] = [
       const byRule = new Map<string, number>();
       evs.filter((e) => e.channel === 'System Rule' && e.reasonCode).forEach((e) => byRule.set(e.reasonCode as string, (byRule.get(e.reasonCode as string) ?? 0) + 1));
       return [
-        { title: 'Configuration Changes', columns: ['Change Ticket', 'Date', 'Component', 'Field', 'Before', 'After', 'Published By', 'Approved By', 'Two-Person Control'],
+        { title: 'Configuration Changes', columns: ['Change Ticket', 'Date', 'Component', 'Action', 'Field', 'Before', 'After', 'Published By', 'Approved By', 'Two-Person Control'],
           rows: [...published].reverse().map((e) => [
-            e.correlationId, eventDate(e.timestamp), e.entityId, e.field ?? '—', e.before ?? '—', e.after ?? '—',
+            e.correlationId, eventDate(e.timestamp), e.entityId, e.changeAction ?? '—', e.field ?? '—', e.before ?? '—', e.after ?? '—',
             e.actor, approvals.get(e.correlationId) ?? '—', approvals.has(e.correlationId) ? 'Met' : 'NOT MET',
           ]) },
         { title: 'Automated Determination Rules in Force', columns: ['Rule / Version', 'Determinations Attributed'],

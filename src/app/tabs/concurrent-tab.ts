@@ -298,7 +298,7 @@ export class ConcurrentTab {
         if (mode === 'queue') {
           assignedIds.forEach((id) => {
             const row = rows.find((r) => r.authId === id);
-            if (row) { this.data.decrementQueue('Concurrent Review'); this.data.incrementQueue(target); }
+            if (row) this.data.releaseToQueue('Concurrent Review', row.reviewer !== '—' ? row.reviewer : null, target);
           });
           this.ix.toast(`${assignedIds.length} concurrent review(s) moved to ${target}.`);
           this.data.addHistory('swap', 'Concurrent reviews moved to queue', `${assignedIds.length} review(s) → ${target}`, undefined,
@@ -310,7 +310,7 @@ export class ConcurrentTab {
         const fromReviewers = [...new Set(assignedIds.map((id) => rows.find((r) => r.authId === id)?.reviewer).filter((r): r is string => !!r && r !== '—'))];
         assignedIds.forEach((id) => {
           const row = rows.find((r) => r.authId === id);
-          this.data.moveOneCase(row && row.reviewer !== '—' ? row.reviewer : null, target);
+          this.data.claimToNurse('Concurrent Review', row && row.reviewer !== '—' ? row.reviewer : null, target);
         });
         this.ix.toast(`${assignedIds.length} concurrent review(s) reassigned to ${target}.`);
         this.data.addHistory('swap', 'Concurrent reviews reassigned', `${assignedIds.length} review(s) → ${target}`, undefined,
@@ -463,12 +463,12 @@ export class ConcurrentTab {
       nurses, preselectAll: true,
       apply: (_ids, target, mode) => {
         if (mode === 'queue') {
-          this.data.decrementQueue('Concurrent Review'); this.data.incrementQueue(target);
+          this.data.releaseToQueue('Concurrent Review', r.reviewer !== '—' ? r.reviewer : null, target);
           this.ix.toast(`${r.member} moved to ${target}.`);
           this.data.addHistory('swap', 'Concurrent review moved to queue', `${r.member} → ${target}`, undefined, { toStaff: target, members: [r.member] });
           return;
         }
-        this.data.moveOneCase(r.reviewer !== '—' ? r.reviewer : null, target);
+        this.data.claimToNurse('Concurrent Review', r.reviewer !== '—' ? r.reviewer : null, target);
         this.ix.toast(`${r.member} reassigned to ${target}.`);
         this.data.addHistory('swap', 'Concurrent review reassigned', `${r.member} → ${target}`, undefined,
           { fromStaff: r.reviewer !== '—' ? r.reviewer : undefined, toStaff: target, members: [r.member] });

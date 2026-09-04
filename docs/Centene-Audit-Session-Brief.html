@@ -1,0 +1,814 @@
+<title>Centene Audit Session Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Public+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F1F4F5;
+    --surface:    #FFFFFF;
+    --surface-2:  #E9EEEF;
+    --ink:        #14212A;
+    --ink-soft:   #33474F;
+    --muted:      #5F7178;
+    --rule:       #D3DCDF;
+    --rule-soft:  #E3EAEC;
+    --accent:     #0F6B72;
+    --accent-ink: #0B4F55;
+    --met:        #2C7355;
+    --partial:    #9C6408;
+    --gap:        #A63A31;
+    --met-bg:     #E2EFE8;
+    --partial-bg: #F6EBD6;
+    --gap-bg:     #F6E2DF;
+    --on-signal:  #FFFFFF;
+    --shadow:     0 1px 2px rgba(20,33,42,.06), 0 8px 24px -12px rgba(20,33,42,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E171C;
+      --surface:    #16232A;
+      --surface-2:  #1D2E36;
+      --ink:        #E7EEF0;
+      --ink-soft:   #BCCBD0;
+      --muted:      #8CA1A8;
+      --rule:       #2B3E47;
+      --rule-soft:  #22333B;
+      --accent:     #57B6B9;
+      --accent-ink: #8AD2D3;
+      --met:        #6FBF95;
+      --partial:    #E0AB55;
+      --gap:        #E4837A;
+      --met-bg:     #17322A;
+      --partial-bg: #33280F;
+      --gap-bg:     #351F1D;
+      --on-signal:  #0E171C;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0E171C;
+    --surface:    #16232A;
+    --surface-2:  #1D2E36;
+    --ink:        #E7EEF0;
+    --ink-soft:   #BCCBD0;
+    --muted:      #8CA1A8;
+    --rule:       #2B3E47;
+    --rule-soft:  #22333B;
+    --accent:     #57B6B9;
+    --accent-ink: #8AD2D3;
+    --met:        #6FBF95;
+    --partial:    #E0AB55;
+    --gap:        #E4837A;
+    --met-bg:     #17322A;
+    --partial-bg: #33280F;
+    --gap-bg:     #351F1D;
+    --on-signal:  #0E171C;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    display: grid;
+    gap: 20px;
+    padding: 56px 0 30px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: "Newsreader", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    font-size: clamp(38px, 6vw, 62px);
+    line-height: 1.03;
+    letter-spacing: -.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: clamp(17px, 2.2vw, 21px);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 0;
+  }
+  .colophon {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 18px 28px;
+    padding-top: 8px;
+  }
+  .colophon div { display: grid; gap: 3px; align-content: start; }
+  .colophon dt, .col-k {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .col-v { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .col-v a { color: var(--accent); text-decoration-color: var(--rule); text-underline-offset: 3px; }
+
+  /* ---------- section scaffolding: workpaper margin ---------- */
+  section { padding: 44px 0 8px; border-bottom: 1px solid var(--rule-soft); }
+  section:last-of-type { border-bottom: 0; }
+  .sec-grid {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 0 28px;
+    align-items: start;
+  }
+  .sec-mark {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    color: var(--accent);
+    padding-top: 9px;
+    border-top: 2px solid var(--accent);
+  }
+  h2 {
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(25px, 3.4vw, 33px);
+    line-height: 1.15;
+    letter-spacing: -.015em;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  .lede { color: var(--ink-soft); max-width: 66ch; margin: 0 0 22px; }
+  .lede:last-child { margin-bottom: 0; }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  /* ---------- distinction: two columns ---------- */
+  .split {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+    gap: 2px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .split > div { background: var(--surface); padding: 22px 22px 24px; display: grid; gap: 14px; align-content: start; }
+  .split h3 {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 20px; font-weight: 600; margin: 0; line-height: 1.2;
+  }
+  .split .q { font-style: italic; color: var(--ink-soft); font-family: "Newsreader", Georgia, serif; font-size: 17px; line-height: 1.4; }
+  .kv { display: grid; gap: 8px; margin: 0; }
+  .kv > div { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 12px; align-items: baseline; }
+  .kv .k {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); padding-top: 3px;
+  }
+  .kv .v { font-size: 13.5px; color: var(--ink); line-height: 1.45; }
+
+  /* ---------- run of show ---------- */
+  .runlist { display: grid; gap: 0; margin-top: 4px; }
+  .run {
+    display: grid;
+    grid-template-columns: 34px minmax(0,1fr) auto;
+    gap: 6px 18px;
+    padding: 20px 0;
+    border-top: 1px solid var(--rule-soft);
+    align-items: baseline;
+  }
+  .run:first-child { border-top: 1px solid var(--rule); }
+  .run-n {
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; font-weight: 600;
+    color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  .run h3 { font-size: 17px; font-weight: 700; margin: 0; font-family: "Public Sans", sans-serif; letter-spacing: -.01em; }
+  .run-min {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500;
+    color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .run-body { grid-column: 2 / -1; display: grid; gap: 10px; }
+  .run-where {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--accent-ink);
+    background: var(--surface-2); border-radius: 2px; padding: 4px 8px; justify-self: start;
+  }
+  .run-body ul { margin: 0; padding-left: 17px; display: grid; gap: 7px; max-width: 68ch; }
+  .run-body li { line-height: 1.55; }
+  .run-body li::marker { color: var(--rule); }
+  .beat {
+    border-left: 3px solid var(--accent);
+    padding: 2px 0 2px 14px;
+    max-width: 66ch;
+    color: var(--ink);
+  }
+  .beat b { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 2px; }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; margin: 4px 0 6px; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13.5px; }
+  th {
+    text-align: left; font-family: "IBM Plex Mono", monospace; font-weight: 500;
+    font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+    padding: 0 16px 9px 0; border-bottom: 1px solid var(--ink); white-space: nowrap;
+  }
+  td { padding: 13px 16px 13px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; line-height: 1.5; }
+  tr:last-child td { border-bottom: 0; }
+  td.cite, .cite { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  td.where { color: var(--ink-soft); }
+  .rid {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; font-weight: 600;
+    color: var(--accent); white-space: nowrap;
+  }
+
+  /* ---------- register ---------- */
+  .tally {
+    display: grid; gap: 14px; margin: 0 0 26px;
+    padding: 20px 22px; background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+  }
+  .tally-top { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: baseline; }
+  .tally-lead { font-family: "Newsreader", Georgia, serif; font-size: 21px; font-weight: 600; }
+  .tally-note { font-size: 13px; color: var(--muted); }
+  .bar { display: flex; height: 12px; border-radius: 2px; overflow: hidden; background: var(--surface-2); }
+  .bar span { display: block; }
+  .bar .b-met { background: var(--met); }
+  .bar .b-par { background: var(--partial); }
+  .bar .b-gap { background: var(--gap); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+  .legend div { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: block; transform: translateY(1px); }
+  .legend b { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+  .band { display: grid; gap: 0; margin-bottom: 30px; }
+  .band-head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding: 0 0 10px; border-bottom: 2px solid var(--ink);
+  }
+  .prio {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; letter-spacing: .08em;
+    padding: 3px 8px; border-radius: 2px; color: var(--on-signal);
+  }
+  .prio.p1 { background: var(--gap); }
+  .prio.p2 { background: var(--partial); }
+  .prio.p3 { background: var(--muted); }
+  .band-when { font-size: 14px; color: var(--ink-soft); font-family: "Newsreader", Georgia, serif; font-style: italic; }
+
+  .item {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.95fr);
+    gap: 6px 30px;
+    padding: 20px 0 20px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    border-left: 3px solid var(--rule);
+  }
+  .item.s-gap { border-left-color: var(--gap); }
+  .item.s-partial { border-left-color: var(--partial); }
+  .item:last-child { border-bottom: 0; }
+  .item-head { display: grid; gap: 6px; align-content: start; }
+  .item-title { font-weight: 700; font-size: 15px; line-height: 1.4; }
+  .item-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .status {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px;
+  }
+  .status.met { background: var(--met-bg); color: var(--met); }
+  .status.partial { background: var(--partial-bg); color: var(--partial); }
+  .status.gap { background: var(--gap-bg); color: var(--gap); }
+  .owner { font-size: 12px; color: var(--muted); }
+  .item-body { display: grid; gap: 9px; }
+  .item-body p { margin: 0; max-width: 62ch; }
+  .nextstep { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; align-items: baseline; }
+  .nextstep b {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .nextstep span { color: var(--ink); }
+
+  /* ---------- asks ---------- */
+  .asks { display: grid; gap: 0; counter-reset: ask; }
+  .ask {
+    display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 4px 16px;
+    padding: 16px 0; border-top: 1px solid var(--rule-soft);
+  }
+  .ask:first-child { border-top: 1px solid var(--rule); }
+  .ask::before {
+    counter-increment: ask; content: counter(ask, decimal-leading-zero);
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted);
+    font-variant-numeric: tabular-nums; padding-top: 2px;
+  }
+  .ask-q { font-weight: 700; }
+  .ask-d { grid-column: 2; color: var(--ink-soft); max-width: 64ch; }
+
+  /* ---------- caveats ---------- */
+  .caveats {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent); border-radius: 3px;
+    padding: 26px 26px 22px;
+  }
+  .caveats h3 { margin: 0 0 4px; font-family: "Newsreader", Georgia, serif; font-size: 21px; font-weight: 600; }
+  .caveats > p { color: var(--muted); font-size: 13.5px; margin-bottom: 18px; }
+  .caveats ul { margin: 0; padding-left: 18px; display: grid; gap: 12px; }
+  .caveats li { max-width: 70ch; line-height: 1.55; }
+  .caveats li::marker { color: var(--accent); }
+
+  .foot {
+    padding-top: 34px; color: var(--muted); font-size: 12.5px;
+    display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: baseline;
+  }
+  .foot code { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-soft); }
+
+  code, .mono { font-family: "IBM Plex Mono", monospace; font-size: .92em; }
+
+  @media (max-width: 720px) {
+    .sec-grid { grid-template-columns: minmax(0,1fr); gap: 12px; }
+    .sec-mark { border-top: 0; padding-top: 0; }
+    .item { grid-template-columns: minmax(0,1fr); gap: 14px; }
+    .run { grid-template-columns: 30px minmax(0,1fr); }
+    .run-min { grid-column: 2; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="eyebrow">Client session brief &nbsp;·&nbsp; Zyter TruCare</div>
+    <h1>Audit &amp; Traceability</h1>
+    <p class="standfirst">Demonstrate audit trails, user activity monitoring, governance controls and compliance evidence across UM, CM and Appeals — then work the gap list, the priorities, and what happens next.</p>
+    <div class="colophon">
+      <div><span class="col-k">Audience</span><span class="col-v">Centene audit, compliance &amp; oversight</span></div>
+      <div><span class="col-k">Where it runs</span><span class="col-v">UM Supervisor Dashboard → Audit &amp; Traceability</span></div>
+      <div><span class="col-k">Session length</span><span class="col-v">≈36 min demo, then discussion</span></div>
+      <div><span class="col-k">Build</span><span class="col-v mono">72cf678 · main</span></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">00</div>
+      <div>
+        <h2>The distinction to set up front</h2>
+        <p class="lede">Two different things get called “audit,” and the session goes sideways if they blur together. Lead with the second — that’s what this room is here for — and use the first as the “and here’s the clinical layer on top of it” close.</p>
+        <div class="split">
+          <div>
+            <h3>Clinical quality audit</h3>
+            <p class="q">“Did the reviewer apply the criteria correctly?”</p>
+            <div class="kv">
+              <div><span class="k">In demo</span><span class="v">UM → Audit &amp; Compliance · CM → Audit &amp; Compliance</span></div>
+              <div><span class="k">Evidence</span><span class="v">IRR sample, file / chart review, regulatory TAT</span></div>
+              <div><span class="k">Who asks</span><span class="v">NCQA / URAC surveyor, delegation oversight clinician</span></div>
+            </div>
+          </div>
+          <div>
+            <h3>System audit &amp; traceability</h3>
+            <p class="q">“Who did what, when, from where — and is the record unaltered?”</p>
+            <div class="kv">
+              <div><span class="k">In demo</span><span class="v">Audit &amp; Traceability module</span></div>
+              <div><span class="k">Evidence</span><span class="v">Event log, user activity, access governance, control register</span></div>
+              <div><span class="k">Who asks</span><span class="v">CMS program audit, HIPAA security review, SOC 2, plan IT security</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">01</div>
+      <div>
+        <h2>Run of show</h2>
+        <p class="lede">Seven segments. Numbered because the order carries the argument: prove the record exists, prove the machine input inside it is accountable, prove it’s watched, prove access is governed, prove it survives the retention period, then open the gap list.</p>
+
+        <div class="runlist">
+
+          <article class="run">
+            <div class="run-n">1</div>
+            <h3>Audit Trail</h3>
+            <div class="run-min">6 min</div>
+            <div class="run-body">
+              <div class="run-where">Audit &amp; Traceability → Audit Trail</div>
+              <ul>
+                <li>~3,800 events across authorizations, CM cases, members, reports, user accounts and configuration.</li>
+                <li>Every event carries actor + access role, timestamp, category, action, entity, <strong>field changed with before → after</strong>, channel, source IP, session ID, correlation ID, reason code, PHI flag, outcome.</li>
+                <li>Filter channel to <span class="mono">Fax / OCR Intake</span>, then <span class="mono">API</span>, then <span class="mono">System Rule</span> — the trail proves <em>how</em> a request physically arrived, which is the first thing disputed when a provider argues a receipt date.</li>
+                <li>Click a row for full event detail, including previous hash and record hash.</li>
+                <li><strong>Verify chain</strong> re-walks every event in timestamp order and reports whether the chain is intact — tamper-evidence as a check anyone in the room can run.</li>
+              </ul>
+              <div class="beat"><b>The money filter</b>Category = Configuration. Rule thresholds, criteria-set versions, letter templates, TAT windows and role entitlements all log before → after with a change ticket. Auto-approvals carry the firing rule <em>and version</em> as their reason code, so any automated determination traces back to the exact rule that produced it.</div>
+            </div>
+          </article>
+
+          <article class="run">
+            <div class="run-n">2</div>
+            <h3>AI Oversight</h3>
+            <div class="run-min">6 min</div>
+            <div class="run-body">
+              <div class="run-where">Audit &amp; Traceability → AI Oversight</div>
+              <ul>
+                <li>Every determination the model touched — what it recommended, at what confidence, on which model version, and what the clinician decided instead. <strong>247 scored · 94 auto-cleared · 153 clinician-reviewed.</strong></li>
+                <li><strong>Confidence calibration is the answer to “what evidence supports their reliability”.</strong> A band claiming 0.95 should be right about 95% of the time. The <strong>0.90–1.00 band claims 0.95 and observes 86% — nine points hot, across 85 of 247 determinations.</strong></li>
+                <li>Override reasons carry <strong>attribution</strong>: model-attributable versus legitimate clinical divergence. The top reason is <em>Criteria not applicable to this presentation</em> — model-attributable, and concentrated in the over-confident band. That is a clinical-content loop, not a reviewer problem.</li>
+                <li>Agreement by clinician is a <strong>signal, not a score</strong> — a reviewer below the group may be catching what the model misses. Nobody gets a rate below 20 scored determinations.</li>
+                <li>Agreement by procedure names where it breaks down: Behavioral Health PHP and Cardiac Catheterization sit lowest.</li>
+                <li>Confidence display is <strong>role-configured</strong> on the permission matrix — nurse reviewers see it only after recording their own assessment, appeals reviewers are blinded.</li>
+              </ul>
+              <div class="beat"><b>Say it in this order</b>Decision agreement is <strong>85% against a 90% target</strong> and the override rate <strong>17% against a 15% ceiling</strong> — both miss, and the calibration table explains why. An aggregate that passed while a band ran nine points hot would be the more dangerous result, which is why the acceptance gate fails on a single over-confident band regardless of the average.</div>
+            </div>
+          </article>
+
+          <article class="run">
+            <div class="run-n">3</div>
+            <h3>User Activity Monitoring</h3>
+            <div class="run-min">5 min</div>
+            <div class="run-body">
+              <div class="run-where">Audit &amp; Traceability → User Activity Monitoring</div>
+              <ul>
+                <li>Sign-ins, off-hours access (outside 07:00–19:00), failed sign-ins, out-of-scope access <em>denied</em> by RBAC, break-the-glass grants, and data exports with row counts.</li>
+                <li>Per-account signals: break-the-glass, external IP, no MFA, repeated failed sign-ins, off-hours pattern, high export volume. Click any account for its own trail.</li>
+              </ul>
+              <div class="beat"><b>Point to make</b>Out-of-scope access <em>denied</em> is the control working. Break-the-glass <em>granted</em> is the control being deliberately overridden — and each one is a reviewable PHI disclosure, not a silent exception.</div>
+            </div>
+          </article>
+
+          <article class="run">
+            <div class="run-n">4</div>
+            <h3>Governance &amp; Access Controls</h3>
+            <div class="run-min">6 min</div>
+            <div class="run-body">
+              <div class="run-where">Audit &amp; Traceability → Governance &amp; Access Controls</div>
+              <ul>
+                <li>Four segregation-of-duty rules, each evaluated against the live trail rather than asserted. A clean rule reads <em>“Control passing across N events in window”</em> — an auditable statement, not a green checkmark.</li>
+                <li>Role → permission matrix — ten permissions across ten access roles. The constraint text is the point: “Yes — assigned caseload” is a materially different control than an unconditional grant, and it’s the distinction an auditor writes up.</li>
+                <li>Account inventory with MFA status and last entitlement review against a 90-day cycle.</li>
+              </ul>
+              <div class="scroll">
+                <table>
+                  <thead><tr><th>Rule</th><th>Tests for</th><th>Citation</th></tr></thead>
+                  <tbody>
+                    <tr><td class="rid">SOD-1</td><td>Appeal reviewed by the original decision-maker</td><td class="cite">42 CFR §438.406(b)(2) · §422.590</td></tr>
+                    <tr><td class="rid">SOD-2</td><td>Configuration change published without independent approval</td><td class="cite">SOC 2 CC8.1 · NCQA UM 2</td></tr>
+                    <tr><td class="rid">SOD-3</td><td>Denial issued by a non-clinician</td><td class="cite">42 CFR §438.210(b)(3) · NCQA UM 4</td></tr>
+                    <tr><td class="rid">SOD-4</td><td>Administrator with standing PHI access</td><td class="cite">HIPAA §164.308(a)(4)</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="beat"><b>Live finding</b>SOD-2 currently returns two real conflicts — configuration changes published with no independent approval on the change ticket. Click through to them; a demo where every control passes is the least persuasive version of this screen.</div>
+            </div>
+          </article>
+
+          <article class="run">
+            <div class="run-n">5</div>
+            <h3>Compliance Requirements &amp; Gaps</h3>
+            <div class="run-min">5 min</div>
+            <div class="run-body">
+              <div class="run-where">Audit &amp; Traceability → Compliance Requirements &amp; Gaps</div>
+              <ul>
+                <li>14 tracked requirements, each stated as requirement → control today → where the evidence lives → status → gap → next step → owner, grouped by domain.</li>
+                <li>Put it on screen and drive the discussion from it rather than from slides. It exports straight into the follow-up packet.</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="run">
+            <div class="run-n">6</div>
+            <h3>Retention &amp; Archive</h3>
+            <div class="run-min">5 min</div>
+            <div class="run-body">
+              <div class="run-where">Audit &amp; Traceability → Retention &amp; Archive</div>
+              <ul>
+                <li>The Audit Trail queries the <strong>online store</strong>. This tab is everything behind it — say so out loud, because “3,824 events” invites “and where is year seven?” and that answer shouldn’t be improvised.</li>
+                <li><strong>3,824 online · 133,745 archived across 46 sealed quarterly segments · 137,569 total retained</strong>, back to 2014-10-01.</li>
+                <li>Retention is per record class, not one number: authorization, appeal, CM and audit records at 10 years (42 CFR §422.504(d)); PHI disclosure accounting at 6 (HIPAA §164.528(a)(1)); configuration changes for the life of every record they governed.</li>
+                <li><strong>Verify archive chain</strong> walks the sealed segments and confirms each one’s first hash derives from the previous segment’s last — continuous across the archive boundary and on into the online store.</li>
+                <li>Restore requests from cold storage are tracked with requester, reason and turnaround against a 5-day retrieval SLA.</li>
+              </ul>
+              <div class="beat"><b>Run the control, do not describe it</b>Press <strong>Dispose</strong> on a segment under legal hold and it refuses, naming the hold that stopped it. Then run one that is past retention and not held: it takes an independent countersignature and issues a certificate of destruction carrying the retained terminal hash. That is REQ-16 and REQ-17 closing on screen rather than being asserted.</div>
+            </div>
+          </article>
+
+          <article class="run">
+            <div class="run-n">7</div>
+            <h3>Clinical audit layer</h3>
+            <div class="run-min">3 min</div>
+            <div class="run-body">
+              <div class="run-where">UM → Audit &amp; Compliance &nbsp;·&nbsp; CM → Audit &amp; Compliance</div>
+              <ul>
+                <li><strong>UM:</strong> IRR sample with independent re-determination, discrepancy reason codes, corrective-action lifecycle, regulatory TAT compliance per line of business.</li>
+                <li><strong>CM:</strong> documentation file review scored element-by-element, pass rate by care manager, rubric-element findings, second-reviewer IRR on the rubric itself, assessment and care-plan window compliance per program, and live compliance exceptions on member records.</li>
+                <li><strong>Appeals has no audit tab, deliberately.</strong> It runs on a small hand-authored set of appeal records rather than a generated pool, so there is nothing to sample or aggregate — the thin placeholder that used to sit there was removed rather than shown.</li>
+              </ul>
+            </div>
+          </article>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">02</div>
+      <div>
+        <h2>Mapping to Centene’s oversight objectives</h2>
+        <p class="lede">If someone in the room asks “where would I see that,” this is the answer sheet.</p>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Objective</th><th>What the platform shows</th><th>Where</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Prove system-of-record integrity</strong></td><td>Hash-chained event log, verifiable on demand</td><td class="where">Audit Trail → Verify chain</td></tr>
+              <tr><td><strong>Attribute every clinical action</strong></td><td>Actor + access role on every determination, criteria application and letter</td><td class="where">Audit Trail</td></tr>
+              <tr><td><strong>Prove automated decisions are governed</strong></td><td>Auto-approval reason code names the rule version; rule changes logged with before → after and approver</td><td class="where">Audit Trail → Configuration</td></tr>
+              <tr><td><strong>Minimum-necessary / PHI control</strong></td><td>RBAC scoping, denied out-of-scope access, break-the-glass with reason code</td><td class="where">User Activity</td></tr>
+              <tr><td><strong>Delegation oversight evidence</strong></td><td>IRR, file audit, regulatory TAT, corrective actions — all exportable</td><td class="where">UM &amp; CM Audit &amp; Compliance</td></tr>
+              <tr><td><strong>Program-audit readiness</strong></td><td>Filtered, dated extracts with provenance</td><td class="where">Reports module + Audit Trail export</td></tr>
+              <tr><td><strong>Access governance</strong></td><td>Role → permission matrix, SOD evaluation, entitlement attestation</td><td class="where">Governance &amp; Access Controls</td></tr>
+              <tr><td><strong>Records retention &amp; defensible disposition</strong></td><td>Per-class retention schedule, sealed archive index with a continuous hash chain, legal holds, disposition queue, restore SLA</td><td class="where">Retention &amp; Archive</td></tr>
+              <tr><td><strong>AI decision transparency</strong></td><td>Recommendation, confidence, model version and criteria logged per determination; override logged separately with a structured reason</td><td class="where">AI Oversight · Audit Trail</td></tr>
+              <tr><td><strong>Confidence reliability</strong></td><td>Per-band calibration against claimed accuracy, with a sample floor before any band is reported</td><td class="where">AI Oversight — calibration</td></tr>
+              <tr><td><strong>Model drift</strong></td><td>Decision agreement and mean confidence by month against the model version in force</td><td class="where">AI Oversight — drift</td></tr>
+              <tr><td><strong>Clinical AI governance</strong></td><td>Model versions governed like policy — versioned, two-person approved, logged with before/after</td><td class="where">AI Oversight · Configuration Change Log</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">03</div>
+      <div>
+        <h2>Gaps, priorities and next steps</h2>
+        <p class="lede">Taken straight from the in-app register. Export it from <span class="mono">Compliance Requirements &amp; Gaps</span> for the follow-up packet — the wording below is the wording in the product.</p>
+
+        <div class="tally">
+          <div class="tally-top">
+            <div class="tally-lead">21 requirements tracked</div>
+            <div class="tally-note">Five P1 items are still open. Three closed since the build began — legal hold, certified disposition, and the oversight packet.</div>
+          </div>
+          <div class="bar" role="img" aria-label="21 requirements: 10 met, 8 partial, 3 gap">
+            <span class="b-met" style="width:47.6%"></span>
+            <span class="b-par" style="width:38.1%"></span>
+            <span class="b-gap" style="width:14.3%"></span>
+          </div>
+          <div class="legend">
+            <div><i style="background:var(--met)"></i><b>10</b> Met</div>
+            <div><i style="background:var(--partial)"></i><b>8</b> Partial</div>
+            <div><i style="background:var(--gap)"></i><b>3</b> Gap</div>
+          </div>
+        </div>
+
+        <div class="band">
+          <div class="band-head">
+            <span class="prio" style="background:var(--met)">Closed</span>
+            <span class="band-when">Since this build began</span>
+          </div>
+          <div class="item" style="border-left-color: var(--met)">
+            <div class="item-head">
+              <div class="item-title">Three requirements closed during the build</div>
+              <div class="item-meta"><span class="rid">REQ-11 · REQ-16 · REQ-17</span><span class="status met">Met</span></div>
+            </div>
+            <div class="item-body">
+              <p><b>REQ-16</b> — a legal hold is now a hard precondition on disposition, not a note: the disposal action refuses outright and names the hold that stopped it.<br>
+                 <b>REQ-17</b> — destruction issues a certificate carrying the period, event count, retained terminal hash, retention basis and both signatories, so there is evidence the record existed and was lawfully destroyed.<br>
+                 <b>REQ-11</b> — the Delegation Oversight Packet assembles the whole artifact set into one dated document with a content stamp.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="band">
+          <div class="band-head">
+            <span class="prio p1">P1</span>
+            <span class="band-when">Address before a plan audit</span>
+          </div>
+          <div class="item s-gap">
+            <div class="item-head">
+              <div class="item-title">MFA on every account with PHI access</div>
+              <div class="item-meta"><span class="rid">REQ-08</span><span class="status gap">Gap</span><span class="owner">IT Operations</span></div>
+            </div>
+            <div class="item-body">
+              <p>A minority of accounts still authenticate password-only, including at least one with standing PHI access.</p>
+              <div class="nextstep"><b>Next</b><span>Enforce MFA at the identity provider; disable password-only sign-in for every clinical role.</span></div>
+            </div>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Regular information-system activity review</div>
+              <div class="item-meta"><span class="rid">REQ-03</span><span class="status partial">Partial</span><span class="owner">Compliance</span></div>
+            </div>
+            <div class="item-body">
+              <p>Review is available on demand, but nothing records that a named reviewer actually looked, or when.</p>
+              <div class="nextstep"><b>Next</b><span>Monthly activity-review task with reviewer sign-off captured as its own audit event.</span></div>
+            </div>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Break-the-glass justified and reviewed</div>
+              <div class="item-meta"><span class="rid">REQ-04</span><span class="status partial">Partial</span><span class="owner">Compliance</span></div>
+            </div>
+            <div class="item-body">
+              <p>Reason codes are captured; narrative justification is not required and no follow-up review is forced.</p>
+              <div class="nextstep"><b>Next</b><span>Require narrative justification at point of access; auto-route each event to Compliance for 5-day review.</span></div>
+            </div>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Periodic entitlement review and attestation</div>
+              <div class="item-meta"><span class="rid">REQ-06</span><span class="status partial">Partial</span><span class="owner">IT Operations</span></div>
+            </div>
+            <div class="item-body">
+              <p>Attestation is tracked but not enforced — an account past its cycle keeps full access.</p>
+              <div class="nextstep"><b>Next</b><span>Escalate at 90 days, auto-suspend entitlements at 120 unless re-attested.</span></div>
+            </div>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Confidence scores calibrated and monitored for drift</div>
+              <div class="item-meta"><span class="rid">REQ-20</span><span class="status partial">Partial</span><span class="owner">Clinical Content</span></div>
+            </div>
+            <div class="item-body">
+              <p>Calibration is measured and visible, but nothing alerts when a band drifts outside tolerance. The 0.90–1.00 band is currently running over-confident.</p>
+              <div class="nextstep"><b>Next</b><span>Alert on any adequately-sampled band exceeding the deviation tolerance, and gate model promotion on the same check.</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="band">
+          <div class="band-head">
+            <span class="prio p2">P2</span>
+            <span class="band-when">Required for scale and for plan-side ingestion</span>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Program-audit universes on request</div>
+              <div class="item-meta"><span class="rid">REQ-10</span><span class="status partial">Partial</span><span class="owner">Reporting</span></div>
+            </div>
+            <div class="item-body">
+              <p>Extracts are not shaped to the CMS ODAG/CDAG record layouts, so a universe request still needs manual reformatting. The bundled oversight packet now exists; the record layouts do not.</p>
+              <div class="nextstep"><b>Next</b><span>ODAG/CDAG universe templates with field-level mapping and a record-count reconciliation page.</span></div>
+            </div>
+          </div>
+          <div class="item s-gap">
+            <div class="item-head">
+              <div class="item-title">Audit data exportable to the plan's SIEM</div>
+              <div class="item-meta"><span class="rid">REQ-12</span><span class="status gap">Gap</span><span class="owner">Platform Engineering</span></div>
+            </div>
+            <div class="item-body">
+              <p>CSV pull only; no streaming or scheduled feed for continuous ingestion.</p>
+              <div class="nextstep"><b>Next</b><span>Append-only audit event API plus a nightly signed batch feed.</span></div>
+            </div>
+          </div>
+          <div class="item s-gap">
+            <div class="item-head">
+              <div class="item-title">Alerting on anomalous access</div>
+              <div class="item-meta"><span class="rid">REQ-13</span><span class="status gap">Gap</span><span class="owner">Compliance</span></div>
+            </div>
+            <div class="item-body">
+              <p>Signals surface in the notifications bell and open the screen that owns them, and every one has a named owner and a review window in the notification rules — but nothing leaves the platform. No email, page or ticket when a threshold is crossed.</p>
+              <div class="nextstep"><b>Next</b><span>Define thresholds per signal and route breaches outward, not only inward.</span></div>
+            </div>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Archived records retrievable within the requested window</div>
+              <div class="item-meta"><span class="rid">REQ-18</span><span class="status partial">Partial</span><span class="owner">Platform Engineering</span></div>
+            </div>
+            <div class="item-body">
+              <p>Turnaround is recorded after the fact; nothing alerts when a restore request approaches or passes the 5-day retrieval SLA.</p>
+              <div class="nextstep"><b>Next</b><span>Surface open restore requests with an SLA countdown, the same treatment the UM queues get.</span></div>
+            </div>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Clinician overrides captured with a structured reason and reviewed</div>
+              <div class="item-meta"><span class="rid">REQ-21</span><span class="status partial">Partial</span><span class="owner">Clinical Content</span></div>
+            </div>
+            <div class="item-body">
+              <p>Reasons are coded, reportable and split between model-attributable and clinical divergence — but model-attributable overrides do not route anywhere.</p>
+              <div class="nextstep"><b>Next</b><span>Route model-attributable overrides to Clinical Content as a work item, and report closure alongside the IRR corrective-action loop.</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="band">
+          <div class="band-head">
+            <span class="prio p3">P3</span>
+            <span class="band-when">Backlog</span>
+          </div>
+          <div class="item s-partial">
+            <div class="item-head">
+              <div class="item-title">Member-facing accounting of disclosures</div>
+              <div class="item-meta"><span class="rid">REQ-14</span><span class="status partial">Partial</span><span class="owner">Compliance</span></div>
+            </div>
+            <div class="item-body">
+              <p>Underlying events exist; there is no per-member disclosure report a member request could be answered with.</p>
+              <div class="nextstep"><b>Next</b><span>Member-scoped disclosure report covering the trailing 6 years.</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">04</div>
+      <div>
+        <h2>Questions to put back to Centene</h2>
+        <p class="lede">Leave the session with answers to these, not just a demo they liked.</p>
+        <div class="asks">
+          <div class="ask">
+            <div class="ask-q">Universe layouts</div>
+            <div class="ask-d">Which ODAG/CDAG record layouts and versions should we build to, and does Centene supply the reconciliation template?</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">SIEM ingestion</div>
+            <div class="ask-d">Push into Centene’s SIEM or pull from ours — and what authentication and signing does their security team require?</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">Retention and disposition</div>
+            <div class="ask-d">The schedule holds ten years for authorization, appeal, CM and audit records, six for disclosure accounting. Confirm against Centene’s own schedule and any state overrides — and confirm who signs a certificate of destruction, since that step does not exist yet.</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">Attestation cadence and owner</div>
+            <div class="ask-d">Is the 90-day entitlement cycle Centene’s standard, and who signs?</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">Break-the-glass SLA</div>
+            <div class="ask-d">What review window is expected between an emergent-access grant and compliance sign-off?</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">Delegation packet contents</div>
+            <div class="ask-d">Which artifacts must the oversight packet contain, and at what cadence?</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">AI governance thresholds</div>
+            <div class="ask-d">Are 90% decision agreement, ±5 points calibration tolerance and ≤15% override the right lines, or does Centene carry its own? And should adverse determinations be held to a higher bar, given the appeal exposure?</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">Confidence display</div>
+            <div class="ask-d">Does Centene have a position on showing scores to reviewers — and does reveal-after-assessment work operationally? It keeps the decision agreement measurement honest but costs a workflow step.</div>
+          </div>
+          <div class="ask">
+            <div class="ask-q">Retrieval SLA</div>
+            <div class="ask-d">Is five days the right retrieval window for archived periods, and does Centene expect a standing feed rather than request-by-request restore?</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">05</div>
+      <div>
+        <div class="caveats">
+          <h3>State these in the room</h3>
+          <p>Volunteering the limits is what makes the rest credible.</p>
+          <ul>
+            <li>The hash chain in this build uses a lightweight digest so the mechanism is demonstrable in-browser. Production chain-of-custody is server-side SHA-256 — the property being shown is the same: any alteration changes that record’s hash and every hash after it.</li>
+            <li>Regulatory citations throughout are directional. Commercial PPO and ACA Exchange have <strong>no</strong> federal care-management clock, so those rows measure accreditation and plan policy, not statute. Exact subsections need Compliance validation before anything goes in front of a surveyor.</li>
+            <li>IRR thresholds (90% agreement) and the CM file-audit pass line (80% of rubric) are org policy choices. NCQA and URAC require a defined, followed methodology — not one universal number.</li>
+            <li>The confidence scores, calibration curve and decision agreement rates are generated demo data, not measurements of a production model. The <em>shape</em> is realistic and the failure it contains is a real one — over-confidence at the top of the range — but no claim is being made about a live scorer's accuracy.</li>
+            <li>Decision agreement is measured against what the clinician decided, and in this build the clinician could see the score. That measures agreement, not independent accuracy. A blinded parallel run is the honest test, and it is section 4.2 of the Model Office plan.</li>
+            <li>The clinical audit layer covers UM and CM. <strong>Appeals does not have one yet</strong> — extending the same pattern needs an appeals pool built first: decided appeals across levels and lines of business, with acknowledgment and resolution clocks, reviewer credential and independence, and notice-content elements. Say it as roadmap; the pattern is proven twice over.</li>
+            <li>The archive is represented by <strong>segment metadata</strong> — period, event count, hash range, storage tier, hold status per sealed quarter — not by materialising a decade of individual events. That is how a real tiered store exposes cold data, and it is the honest way to show ten years in a browser. Say it, rather than letting “137,569 retained” imply that many rows sit behind the screen.</li>
+            <li>Demo data is deterministically generated from the UM and CM case pools. Realistic in shape and stable across runs, but it is not Centene data.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>Source: <code>docs/Audit-Traceability-Session-Brief.md</code></span>
+    <span>Module: <code>src/app/modules/audit-traceability.ts</code></span>
+    <span>Data: <code>src/app/data/audit-trail.ts</code> · <code>cm-audit.ts</code></span>
+  </div>
+
+</div>

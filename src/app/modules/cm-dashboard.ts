@@ -12,7 +12,7 @@ import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
-import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow, CmProgramStat } from '../shared/cm-data';
+import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow, CmProgramStat, CM_UNASSIGNED } from '../shared/cm-data';
 import { CareProgramName, ProgramDisenrollReason } from '../data/cm-programs';
 import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
 import { CARE_MANAGERS, CmCaseRec, AssignmentMethod } from '../data/cm-case-pool';
@@ -1775,7 +1775,7 @@ export class CmDashboard {
   openAssignmentMethod(method: AssignmentMethod) {
     const team = this.assignTeamFilter();
     const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
-    const cases = this.scopedCases().filter((c) => c.assignmentMethod === method && (team === 'all' || teamOf.get(c.careManager) === team));
+    const cases = this.scopedCases().filter((c) => c.careManager !== CM_UNASSIGNED && c.assignmentMethod === method && (team === 'all' || teamOf.get(c.careManager) === team));
     this.openCmCases(`${method}${team === 'all' ? '' : ' · ' + team}`, cases, `${slug(method)}${team === 'all' ? '' : '-' + slug(team)}`);
   }
 

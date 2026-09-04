@@ -1,0 +1,320 @@
+<title>Audit &amp; Traceability Capability Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F1F4F5;
+    --surface:    #FFFFFF;
+    --surface-2:  #E8EEEF;
+    --ink:        #14212A;
+    --ink-soft:   #33474F;
+    --muted:      #5F7178;
+    --rule:       #D3DCDF;
+    --rule-soft:  #E3EAEC;
+    --accent:     #0F6B72;
+    --accent-ink: #0B4F55;
+    --accent-wash:#E1EEEE;
+    --met:        #2C7355;
+    --partial:    #9C6408;
+    --gap:        #A63A31;
+    --on-signal:  #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0E171C; --surface: #16232A; --surface-2: #1D2E36;
+      --ink: #E7EEF0; --ink-soft: #BCCBD0; --muted: #8CA1A8;
+      --rule: #2B3E47; --rule-soft: #22333B;
+      --accent: #57B6B9; --accent-ink: #8AD2D3; --accent-wash: #12333A;
+      --met: #6FBF95; --partial: #E0AB55; --gap: #E4837A; --on-signal: #0E171C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0E171C; --surface: #16232A; --surface-2: #1D2E36;
+    --ink: #E7EEF0; --ink-soft: #BCCBD0; --muted: #8CA1A8;
+    --rule: #2B3E47; --rule-soft: #22333B;
+    --accent: #57B6B9; --accent-ink: #8AD2D3; --accent-wash: #12333A;
+    --met: #6FBF95; --partial: #E0AB55; --gap: #E4837A; --on-signal: #0E171C;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .sheet { max-width: 940px; margin: 0 auto; padding: 0 26px 72px; }
+  .mono, code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; }
+
+  /* ---------- masthead ---------- */
+  .masthead { display: grid; gap: 14px; padding: 44px 0 22px; border-bottom: 3px solid var(--ink); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--accent);
+  }
+  h1 {
+    font-family: "Newsreader", Georgia, serif; font-weight: 600;
+    font-size: clamp(34px, 5.4vw, 54px); line-height: 1.02; letter-spacing: -.02em;
+    margin: 0; text-wrap: balance;
+  }
+  .standfirst {
+    font-family: "Newsreader", Georgia, serif; font-size: clamp(16px, 2vw, 19px);
+    line-height: 1.5; color: var(--ink-soft); max-width: 64ch; margin: 0;
+  }
+
+  h2 {
+    font-family: "Newsreader", Georgia, serif; font-weight: 600;
+    font-size: 25px; line-height: 1.15; letter-spacing: -.015em; margin: 0 0 4px;
+  }
+  section { padding: 30px 0 4px; }
+  section + section { border-top: 1px solid var(--rule-soft); }
+  .lede { color: var(--ink-soft); max-width: 70ch; margin: 0 0 18px; }
+  p { margin: 0 0 12px; max-width: 72ch; }
+
+  /* ---------- the distinction ---------- */
+  .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2px;
+           background: var(--rule); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .split > div { background: var(--surface); padding: 18px 20px 20px; display: grid; gap: 8px; align-content: start; }
+  .split h3 { font-family: "Newsreader", Georgia, serif; font-size: 18px; font-weight: 600; margin: 0; }
+  .split .q { font-family: "Newsreader", Georgia, serif; font-style: italic; font-size: 15.5px; color: var(--ink-soft); line-height: 1.4; }
+  .split .w { font-size: 12.5px; color: var(--muted); }
+  .split .w b { color: var(--ink); font-weight: 600; }
+  .split .lead-here { border-left: 3px solid var(--accent); }
+
+  /* ---------- capability cards ---------- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+  .card {
+    border: 1px solid var(--rule); border-radius: 3px; background: var(--surface);
+    padding: 16px 18px 18px; display: grid; gap: 8px; align-content: start;
+  }
+  .card h3 { margin: 0; font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; }
+  .card .cite { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); }
+  .card p { margin: 0; font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+  .figs { display: flex; flex-wrap: wrap; gap: 5px 6px; }
+  .fig {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-variant-numeric: tabular-nums;
+    background: var(--surface-2); border-radius: 2px; padding: 2px 6px; color: var(--ink-soft);
+  }
+  .fig b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13px; }
+  th {
+    text-align: left; font-family: "IBM Plex Mono", monospace; font-weight: 500;
+    font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+    padding: 0 14px 8px 0; border-bottom: 1px solid var(--ink); white-space: nowrap;
+  }
+  td { padding: 11px 14px 11px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; line-height: 1.45; }
+  tr:last-child td { border-bottom: 0; }
+  td.val { font-family: "IBM Plex Mono", monospace; font-size: 12px; white-space: nowrap; }
+  td.sub, .sub { color: var(--muted); font-size: 12px; }
+
+  .pill {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 9.5px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px;
+    background: var(--accent-wash); color: var(--accent-ink); white-space: nowrap;
+  }
+
+  .beat {
+    border-left: 3px solid var(--accent); padding: 4px 0 4px 14px;
+    max-width: 70ch; margin: 4px 0 16px; color: var(--ink); font-size: 13.5px; line-height: 1.55;
+  }
+  .beat b { display: block; font-family: "IBM Plex Mono", monospace; font-size: 10px;
+            letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+
+
+  .foot {
+    margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--rule);
+    display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: baseline;
+    font-size: 12px; color: var(--muted);
+  }
+  .foot b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- print: this is a leave-behind ---------- */
+  @media print {
+    body { background: #fff; color: #111; font-size: 10.5pt; }
+    .sheet { max-width: none; padding: 0; }
+    section { padding: 16px 0 2px; break-inside: avoid; }
+    .card, .split > div { break-inside: avoid; }
+    .masthead { padding-top: 0; }
+    h1 { font-size: 30pt; }
+    a { text-decoration: none; color: #111; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="eyebrow">Capability sheet &nbsp;·&nbsp; Zyter TruCare &nbsp;·&nbsp; September 2026</div>
+    <h1>Audit &amp; Traceability</h1>
+    <p class="standfirst">Proving who did what, when, from where — and that the record has not changed since. Across utilization management, care management and appeals, including the decisions a model influenced.</p>
+  </header>
+
+  <section>
+    <h2>Two things get called “audit”</h2>
+    <p class="lede">They need different evidence, and conflating them is how an audit conversation goes wrong. Both are in the platform.</p>
+    <div class="split">
+      <div>
+        <h3>Clinical quality audit</h3>
+        <p class="q">“Did the reviewer apply the criteria correctly?”</p>
+        <p class="w"><b>Evidence:</b> inter-rater reliability against an independent re-determination, documentation file review, regulatory turnaround by program.</p>
+        <p class="w"><b>Asked by:</b> NCQA and URAC surveyors, delegation-oversight clinicians.</p>
+      </div>
+      <div class="lead-here">
+        <h3>System audit &amp; traceability</h3>
+        <p class="q">“Who did what, when, from where — and is the record unaltered?”</p>
+        <p class="w"><b>Evidence:</b> hash-chained event log, user activity review, access governance, model oversight, retention and disposition.</p>
+        <p class="w"><b>Asked by:</b> CMS program audit, HIPAA security review, SOC 2, plan IT security.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the platform holds</h2>
+    <p class="lede">Six surfaces, all reading one derived event log — so a case drilled from a dashboard and the same case in the audit trail cannot disagree. Figures below are from the demonstration dataset.</p>
+    <div class="cards">
+
+      <div class="card">
+        <h3>Audit Trail</h3>
+        <div class="cite">HIPAA §164.312(b)</div>
+        <p>Every create, read and change against an authorization, care-management case, member, appeal, report or configuration — with actor and access role, field-level before/after, arrival channel, source IP, session and correlation ID, reason code, PHI flag and outcome. Hash-chained and verifiable on demand.</p>
+        <div class="figs"><span class="fig"><b>3,824</b> events online</span><span class="fig"><b>731</b> records</span><span class="fig">verify chain</span></div>
+      </div>
+
+      <div class="card">
+        <h3>AI Oversight</h3>
+        <div class="cite">Clinical AI governance</div>
+        <p>What the model recommended, at what confidence, on which model version and against which criteria — versus what the clinician decided. Confidence calibration against observed agreement, drift by month, overrides coded and attributed to model defect or clinical divergence.</p>
+        <div class="figs"><span class="fig"><b>247</b> scored</span><span class="fig"><b>87%</b> decision agreement</span><span class="fig"><b>12%</b> override rate</span></div>
+      </div>
+
+      <div class="card">
+        <h3>User Activity Monitoring</h3>
+        <div class="cite">HIPAA §164.308(a)(1)(ii)(D)</div>
+        <p>Per-account activity review with off-hours access, external IP, failed sign-ins, out-of-scope access denied by role-based control, break-the-glass grants and bulk export volume.</p>
+        <div class="figs"><span class="fig"><b>539</b> sign-ins</span><span class="fig"><b>10</b> break-the-glass</span><span class="fig"><b>4</b> denied</span></div>
+      </div>
+
+      <div class="card">
+        <h3>Governance &amp; Access Controls</h3>
+        <div class="cite">SOC 2 CC6.2 · 42 CFR §438.406(b)(2)</div>
+        <p>Ten access roles across ten permissions, carrying the <em>constraint</em> and not just a yes or no. Four segregation-of-duty rules evaluated against the live trail rather than asserted, plus MFA coverage and entitlement attestation.</p>
+        <div class="figs"><span class="fig"><b>22</b> accounts</span><span class="fig"><b>91%</b> MFA</span><span class="fig"><b>4</b> SOD rules</span></div>
+      </div>
+
+      <div class="card">
+        <h3>Retention &amp; Archive</h3>
+        <div class="cite">42 CFR §422.504(d) · HIPAA §164.316(b)(2)(i)</div>
+        <p>Retention per record class, sealed quarterly archive segments with a hash chain continuous across the archive boundary, and certified disposition: a legal hold blocks disposal outright rather than warning about it, and destruction issues a certificate retaining the segment's terminal hash so the chain it closed can still be confirmed.</p>
+        <div class="figs"><span class="fig"><b>137,569</b> retained</span><span class="fig"><b>46</b> segments</span><span class="fig">back to <b>2014</b></span></div>
+      </div>
+
+      <div class="card">
+        <h3>Compliance Requirements &amp; Gaps</h3>
+        <div class="cite">Control register</div>
+        <p>Requirement, the control satisfying it today, where the evidence lives, status, the open gap and the next step, with a named owner. Written to be worked from, not presented from.</p>
+        <div class="figs"><span class="fig"><b>21</b> requirements</span><span class="fig"><b>7</b> met</span><span class="fig"><b>10</b> partial</span><span class="fig"><b>4</b> gap</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Configurability</h2>
+    <p class="lede">Nothing below is compiled into behaviour that only engineering can reach. Every threshold, window and rule set is data — versioned, and changed through a governed path rather than a support ticket.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>What</th><th>Configured as</th><th>Demo value</th><th>Scoped by</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Regulatory decision windows</strong><div class="sub">standard and expedited turnaround</div></td><td>Per line of business, with the citation carried alongside</td><td class="val">14–15 days<br>72 hours</td><td class="sub">LOB</td></tr>
+          <tr><td><strong>Care-management windows</strong><div class="sub">assessment and individualized care plan</div></td><td>Per line of business, with basis and citation</td><td class="val">90d / 30d<br>30d / 15d</td><td class="sub">LOB</td></tr>
+          <tr><td><strong>Retention schedule</strong></td><td>Per record class, with legal basis and disposition action</td><td class="val">10 years<br>6 years (disclosure)</td><td class="sub">Record class</td></tr>
+          <tr><td><strong>Access roles and permissions</strong></td><td>Role × permission grid holding the constraint text, not a boolean</td><td class="val">10 × 10</td><td class="sub">Role</td></tr>
+          <tr><td><strong>Confidence-score visibility</strong></td><td>A permission like any other — shown, hidden, or gated behind the reviewer's own assessment</td><td class="val">per role</td><td class="sub">Role</td></tr>
+          <tr><td><strong>Segregation-of-duty rules</strong></td><td>Rule definitions evaluated against the event log</td><td class="val">4 rules</td><td class="sub">Tenant</td></tr>
+          <tr><td><strong>AI governance thresholds</strong></td><td>Decision agreement floor, calibration tolerance, override and escalation ceilings, minimum band sample</td><td class="val">90% · ±5 pts<br>15% · 12% · n=20</td><td class="sub">Tenant</td></tr>
+          <tr><td><strong>Confidence gates</strong></td><td>Auto-approve floor and auto-pend floor, serving live</td><td class="val">≥ 0.80 clear<br>&lt; 0.70 pend</td><td class="sub">Workflow version</td></tr>
+          <tr><td><strong>Inter-rater reliability</strong></td><td>Agreement target and minimum sample before a reviewer is rated at all</td><td class="val">90% · n=3</td><td class="sub">Program</td></tr>
+          <tr><td><strong>Documentation file audit</strong></td><td>Rubric elements, pass line, minimum files per care manager</td><td class="val">6 elements · 80%</td><td class="sub">Program</td></tr>
+          <tr><td><strong>Entitlement attestation cycle</strong></td><td>Days before an account's entitlements are flagged overdue</td><td class="val">90 days</td><td class="sub">Tenant</td></tr>
+          <tr><td><strong>Archive retrieval SLA</strong></td><td>Days allowed to restore a sealed segment from cold storage</td><td class="val">5 days</td><td class="sub">Tenant</td></tr>
+          <tr><td><strong>Business hours</strong><div class="sub">defines off-hours access</div></td><td>Daily window outside which access is flagged for review</td><td class="val">07:00–19:00</td><td class="sub">Tenant</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="beat" style="margin-top:18px"><b>The part that matters to an auditor</b>
+      A configuration change is not a quiet edit. Publishing one writes an event carrying the field, the value before and after, the person, and the change ticket — and it is checked for an independent approval by someone other than the publisher. A criteria set, a letter template, a turnaround window, a role entitlement and a model version are all governed the same way, because each of them silently rewrites how every subsequent case is decided.
+    </div>
+
+    <p><span class="pill">Direction</span> &nbsp;Configuration is versioned data today, changed through governed release. The roadmap is a headless rules runtime with an authoring portal, so a compliance or clinical-content owner edits a threshold or a rubric directly — under the same versioning, approval and audit-logging the platform already applies.</p>
+  </section>
+
+  <section>
+    <h2>Evidence you can take away</h2>
+    <p class="lede">Ten extracts, printable and exportable, each computed from the same function that backs the screen — so a report can never disagree with what was demonstrated.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Report</th><th>Answers</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Audit Trail — Access &amp; Change Log</strong></td><td>Full event log with a chain-integrity header</td></tr>
+          <tr><td><strong>User Activity Review</strong></td><td>The information-system activity review evidence, per account</td></tr>
+          <tr><td><strong>PHI Access &amp; Disclosure Log</strong></td><td>Underpins accounting of disclosures</td></tr>
+          <tr><td><strong>Configuration Change Log</strong></td><td>What changed, by whom, and whether two-person control held</td></tr>
+          <tr><td><strong>Segregation-of-Duties Exceptions</strong></td><td>Each rule and the event count it was tested over</td></tr>
+          <tr><td><strong>User Entitlements &amp; Attestation</strong></td><td>Account inventory, MFA, attestation age, permission grid</td></tr>
+          <tr><td><strong>Retention &amp; Archive Register</strong></td><td>Schedule, segment index, holds, disposition queue, restores</td></tr>
+          <tr><td><strong>AI Oversight &amp; Decision agreement</strong></td><td>Calibration, drift, override attribution, model versions</td></tr>
+          <tr><td><strong>Compliance Control Register</strong></td><td>Requirement → control → evidence → gap → next step → owner</td></tr>
+          <tr><td><strong>Delegation Oversight Packet</strong></td><td>The whole artifact set in one dated document with a content stamp, open findings and an attestation block</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Configured to Centene</h2>
+    <p class="lede">Every threshold, schedule, rule and role in this layer is versioned data rather than code — set to your policy, changed under the same two-person control the trail records, and re-explainable afterwards against the version that was in force at the time.</p>
+    <p>The middle column is simply what the demonstration environment happens to ship with. None of it is a fixed position.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Configuration surface</th><th>Ships as</th><th>Set to</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Retention schedule</strong></td><td class="sub">Six record classes — ten years to the CMS window, six for disclosure accounting; write-once after close</td><td>Your schedule per record class, jurisdiction and program</td></tr>
+          <tr><td><strong>Policy resolution</strong></td><td class="sub">Line of business × state, versioned and effective-dated</td><td>Your policy hierarchy, across every market and state you write in</td></tr>
+          <tr><td><strong>Access roles and permissions</strong></td><td class="sub">Ten roles × ten permissions, carrying constraint text rather than a boolean</td><td>Your role model, mapped to your directory groups</td></tr>
+          <tr><td><strong>Segregation of duties</strong></td><td class="sub">Four rules, evaluated against the live trail rather than asserted</td><td>The separations your compliance team defines</td></tr>
+          <tr><td><strong>AI confidence gates</strong></td><td class="sub">Auto-clear at 0.80, clinician review at 0.70, bound to a workflow version</td><td>Your thresholds, per program and per service type</td></tr>
+          <tr><td><strong>AI performance targets</strong></td><td class="sub">Decision agreement 90%, groundedness 90%, override ≤ 15%, calibration within 5 pts</td><td>The bar you hold the model to — and what counts as breaching it</td></tr>
+          <tr><td><strong>Signal rules and ownership</strong></td><td class="sub">Eleven rules, each with a named owner and a review window</td><td>Your escalation paths, owners and response windows</td></tr>
+          <tr><td><strong>Regulatory windows</strong></td><td class="sub">Medicare Advantage, Medicaid, Commercial and ACA Exchange turnaround clocks</td><td>Every program and state schedule you operate under</td></tr>
+          <tr><td><strong>Compliance control register</strong></td><td class="sub">Twenty-one requirements → control → evidence → owner → next step</td><td>Your control set, your framework, your audit calendar</td></tr>
+          <tr><td><strong>Audit extracts</strong></td><td class="sub">Ten packaged extracts plus the delegation oversight packet, each with a content stamp</td><td>Your program-audit record layouts — CMS ODAG and CDAG included</td></tr>
+          <tr><td><strong>Downstream delivery</strong></td><td class="sub">On-demand export; signals routed in-app to the screen that owns the problem</td><td>Your SIEM, mail, paging or ticketing, on your security team’s requirements</td></tr>
+          <tr><td><strong>Module coverage</strong></td><td class="sub">Clinical audit in UM and Care Management; system audit across every module</td><td>The programs you delegate — Appeals on the same pattern</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="beat" style="margin-top:20px">
+      <b>Which shapes the next conversation</b>
+      Not whether the controls exist, but what you want them set to — and who on your side owns each answer.
+    </div>
+  </section>
+
+  <div class="foot">
+    <span><b>Live demonstration environment</b> um-supervisor.onrender.com</span>
+    <span><b>Companion</b> Model Office AI Validation Plan</span>
+    <span>Figures from the demonstration dataset — realistic in shape, not client data</span>
+  </div>
+
+</div>

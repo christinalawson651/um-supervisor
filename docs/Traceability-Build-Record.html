@@ -1,0 +1,904 @@
+<title>Traceability Build Record</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Public+Sans:ital,wght@0,400;0,500;0,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F1F4F5;
+    --surface:    #FFFFFF;
+    --surface-2:  #E9EEEF;
+    --ink:        #14212A;
+    --ink-soft:   #33474F;
+    --muted:      #5F7178;
+    --rule:       #D3DCDF;
+    --rule-soft:  #E3EAEC;
+    --accent:     #0F6B72;
+    --accent-ink: #0B4F55;
+    --accent-wash:#E1EEEE;
+    --met:        #2C7355;
+    --partial:    #9C6408;
+    --gap:        #A63A31;
+    --met-bg:     #E2EFE8;
+    --gap-bg:     #F6E2DF;
+    --on-signal:  #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E171C;
+      --surface:    #16232A;
+      --surface-2:  #1D2E36;
+      --ink:        #E7EEF0;
+      --ink-soft:   #BCCBD0;
+      --muted:      #8CA1A8;
+      --rule:       #2B3E47;
+      --rule-soft:  #22333B;
+      --accent:     #57B6B9;
+      --accent-ink: #8AD2D3;
+      --accent-wash:#12333A;
+      --met:        #6FBF95;
+      --partial:    #E0AB55;
+      --gap:        #E4837A;
+      --met-bg:     #17322A;
+      --gap-bg:     #351F1D;
+      --on-signal:  #0E171C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0E171C;
+    --surface:    #16232A;
+    --surface-2:  #1D2E36;
+    --ink:        #E7EEF0;
+    --ink-soft:   #BCCBD0;
+    --muted:      #8CA1A8;
+    --rule:       #2B3E47;
+    --rule-soft:  #22333B;
+    --accent:     #57B6B9;
+    --accent-ink: #8AD2D3;
+    --accent-wash:#12333A;
+    --met:        #6FBF95;
+    --partial:    #E0AB55;
+    --gap:        #E4837A;
+    --met-bg:     #17322A;
+    --gap-bg:     #351F1D;
+    --on-signal:  #0E171C;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sheet { max-width: 1000px; margin: 0 auto; padding: 0 28px 96px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; font-weight: 500; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .mono, code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; }
+
+  /* ---------- masthead ---------- */
+  .masthead { display: grid; gap: 18px; padding: 56px 0 26px; border-bottom: 2px solid var(--ink); }
+  h1 {
+    font-family: "Newsreader", Georgia, "Times New Roman", serif;
+    font-weight: 600; font-size: clamp(36px, 5.6vw, 58px); line-height: 1.04;
+    letter-spacing: -.02em; margin: 0; text-wrap: balance;
+  }
+  .standfirst {
+    font-family: "Newsreader", Georgia, serif; font-size: clamp(17px, 2.1vw, 20px);
+    line-height: 1.5; color: var(--ink-soft); max-width: 62ch; margin: 0;
+  }
+  .ledger {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 16px 26px; padding-top: 10px;
+  }
+  .ledger div { display: grid; gap: 2px; align-content: start; }
+  .l-k {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .l-v { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .l-v.add { color: var(--met); }
+  .l-v.del { color: var(--gap); }
+
+  /* ---------- sections ---------- */
+  section { padding: 46px 0 10px; border-bottom: 1px solid var(--rule-soft); }
+  section:last-of-type { border-bottom: 0; }
+  .sec-grid { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 0 28px; align-items: start; }
+  .sec-mark {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .1em; color: var(--accent); padding-top: 9px; border-top: 2px solid var(--accent);
+  }
+  h2 {
+    font-family: "Newsreader", Georgia, serif; font-weight: 600;
+    font-size: clamp(24px, 3.2vw, 32px); line-height: 1.15; letter-spacing: -.015em;
+    margin: 0 0 10px; text-wrap: balance;
+  }
+  h3 { font-size: 17px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  .lede { color: var(--ink-soft); max-width: 66ch; margin: 0 0 24px; }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ---------- change entries ---------- */
+  .change {
+    display: grid; gap: 16px;
+    padding: 24px 0 26px; border-top: 1px solid var(--rule);
+  }
+  .change:first-of-type { border-top: 0; padding-top: 4px; }
+  .change-head { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: baseline; }
+  .tag {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; padding: 3px 8px; border-radius: 2px;
+    color: var(--on-signal);
+  }
+  .tag.new { background: var(--accent); }
+  .tag.rebuilt { background: var(--partial); }
+  .tag.fixed { background: var(--gap); }
+  .tag.wiring { background: var(--muted); }
+  .path {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--accent-ink);
+    background: var(--accent-wash); border-radius: 2px; padding: 3px 8px;
+  }
+
+  .ba { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: 2px;
+        background: var(--rule); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .ba > div { background: var(--surface); padding: 18px 20px 20px; display: grid; gap: 10px; align-content: start; }
+  .ba .lab {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .ba .before .lab { color: var(--muted); }
+  .ba .after .lab { color: var(--accent); }
+  .ba ul { margin: 0; padding-left: 17px; display: grid; gap: 6px; }
+  .ba li { font-size: 13.5px; line-height: 1.5; }
+  .ba li::marker { color: var(--rule); }
+  .ba .after { border-left: 3px solid var(--accent); }
+
+  .tabs { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+  .tabrow {
+    display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.5fr);
+    gap: 4px 24px; padding: 16px 0; border-bottom: 1px solid var(--rule-soft);
+  }
+  .tabrow:last-child { border-bottom: 0; }
+  .tabrow h4 { margin: 0; font-size: 15px; font-weight: 700; }
+  .tabrow .cite {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--muted);
+    display: block; margin-top: 3px;
+  }
+  .tabrow p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  .figs { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 8px; }
+  .fig {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; font-variant-numeric: tabular-nums;
+    background: var(--surface-2); border-radius: 2px; padding: 3px 7px; color: var(--ink-soft);
+  }
+  .fig b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- figures ---------- */
+  figure { margin: 6px 0 4px; display: grid; gap: 12px; }
+  .figbox {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+    padding: 22px 18px; overflow-x: auto;
+  }
+  figure svg { max-width: 100%; height: auto; display: block; margin: 0 auto; min-width: 620px; }
+  figcaption { font-size: 13px; color: var(--muted); max-width: 68ch; line-height: 1.55; }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  .svg-box { fill: var(--surface-2); stroke: currentColor; stroke-width: 1; }
+  .svg-box-a { fill: var(--accent-wash); stroke: var(--accent); stroke-width: 1.4; }
+  .svg-box-bad { fill: var(--gap-bg); stroke: var(--gap); stroke-width: 1.4; }
+  .svg-box-good { fill: var(--met-bg); stroke: var(--met); stroke-width: 1.4; }
+  .svg-t { fill: currentColor; font-family: "Public Sans", sans-serif; font-size: 12px; }
+  .svg-t-b { fill: currentColor; font-family: "Public Sans", sans-serif; font-size: 12px; font-weight: 700; }
+  .svg-m { fill: currentColor; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; }
+  .svg-dim { fill: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .08em; }
+  .svg-acc { fill: var(--accent); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 600; }
+  .svg-bad { fill: var(--gap); font-family: "Public Sans", sans-serif; font-size: 12px; font-weight: 700; }
+  .svg-good { fill: var(--met); font-family: "Public Sans", sans-serif; font-size: 12px; font-weight: 700; }
+  .svg-line { stroke: currentColor; stroke-width: 1.2; fill: none; }
+  .svg-line-a { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .svg-line-bad { stroke: var(--gap); stroke-width: 1.6; fill: none; }
+  .svg-head { fill: currentColor; }
+  .svg-head-a { fill: var(--accent); }
+  .svg-head-bad { fill: var(--gap); }
+
+  /* ---------- manifest ---------- */
+  .manifest { display: grid; gap: 0; border-top: 1px solid var(--ink); }
+  .mrow {
+    display: grid; grid-template-columns: minmax(0,1fr) 108px 62px;
+    gap: 16px; align-items: center; padding: 11px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .mrow:last-child { border-bottom: 0; }
+  .mname { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+  .mname i { font-style: normal; color: var(--muted); }
+  .mbar { height: 7px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .mbar span { display: block; height: 100%; background: var(--accent); }
+  .mbar span.wire { background: var(--muted); }
+  .mbar span.doc { background: var(--partial); }
+  .mnum { text-align: right; font-family: "IBM Plex Mono", monospace; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+
+  /* ---------- checks ---------- */
+  .checks { display: grid; gap: 0; }
+  .check {
+    display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 4px 12px;
+    padding: 13px 0; border-top: 1px solid var(--rule-soft); align-items: start;
+  }
+  .check:first-child { border-top: 1px solid var(--rule); }
+  .check svg { width: 14px; height: 14px; margin-top: 5px; }
+  .check b { font-weight: 700; }
+  .check span { color: var(--ink-soft); }
+
+  .openbox {
+    background: var(--surface); border: 1px solid var(--rule); border-top: 3px solid var(--partial);
+    border-radius: 3px; padding: 24px 24px 22px;
+  }
+  .openbox h3 { font-family: "Newsreader", Georgia, serif; font-size: 20px; font-weight: 600; margin: 0 0 10px; }
+
+  .foot { padding-top: 34px; color: var(--muted); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+  .foot code { font-size: 11.5px; color: var(--ink-soft); }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  @media (max-width: 720px) {
+    .sec-grid { grid-template-columns: minmax(0,1fr); gap: 12px; }
+    .sec-mark { border-top: 0; padding-top: 0; }
+    .tabrow { grid-template-columns: minmax(0,1fr); }
+    .mrow { grid-template-columns: minmax(0,1fr) 62px; }
+    .mrow .mbar { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="eyebrow">Build record &nbsp;·&nbsp; UM Supervisor Dashboard</div>
+    <h1>Audit &amp; Traceability</h1>
+    <p class="standfirst">A new module, a rebuilt tab, an attribution fix — then passes that made the time range honest, put the extracts in Reports, answered what sits behind the online store, and made the machine input inside a determination accountable.</p>
+    <div class="ledger">
+      <div><span class="l-k">Commits</span><span class="l-v mono">72cf678 → 14d53e3 (12)</span></div>
+      <div><span class="l-k">Branches</span><span class="l-v mono">main · command-center</span></div>
+      <div><span class="l-k">Files</span><span class="l-v">22</span></div>
+      <div><span class="l-k">Added</span><span class="l-v add">+4,300</span></div>
+      <div><span class="l-k">Removed</span><span class="l-v del">−190</span></div>
+      <div><span class="l-k">Deploy</span><span class="l-v">Render static site</span></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">01</div>
+      <div>
+        <h2>What changed</h2>
+        <p class="lede">Nine entries across seven commits. The first is the substance; the wiring at the end is three lines of routing that make it reachable.</p>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>Audit &amp; Traceability module</h3>
+            <span class="path">src/app/modules/audit-traceability.ts</span>
+          </div>
+          <p>A top-level module beside Reports, visible to every role — the trail is role-independent, and a supervisor who cannot see it cannot answer for it. Four tabs, all reading one derived event log.</p>
+          <div class="tabs">
+            <div class="tabrow">
+              <div><h4>Audit Trail</h4><span class="cite">HIPAA §164.312(b)</span></div>
+              <div>
+                <p>Every create, read and change with actor + access role, before → after, channel, source IP, session and correlation ID, reason code, PHI flag, outcome. <b>Verify chain</b> re-walks the hash chain on demand.</p>
+                <div class="figs">
+                  <span class="fig"><b>3,824</b> events</span>
+                  <span class="fig"><b>3,226</b> PHI</span>
+                  <span class="fig"><b>687</b> decisions</span>
+                  <span class="fig"><b>10</b> config changes</span>
+                  <span class="fig"><b>731</b> records touched</span>
+                </div>
+              </div>
+            </div>
+            <div class="tabrow">
+              <div><h4>User Activity Monitoring</h4><span class="cite">HIPAA §164.308(a)(1)(ii)(D)</span></div>
+              <div>
+                <p>Per-account rollups with computed signals: off-hours pattern, external IP, no MFA, repeated failed sign-ins, high export volume, break-the-glass.</p>
+                <div class="figs">
+                  <span class="fig"><b>539</b> sign-ins</span>
+                  <span class="fig"><b>65</b> off-hours</span>
+                  <span class="fig"><b>27</b> failed</span>
+                  <span class="fig"><b>4</b> denied out-of-scope</span>
+                  <span class="fig"><b>10</b> break-the-glass</span>
+                  <span class="fig"><b>10,660</b> rows exported</span>
+                </div>
+              </div>
+            </div>
+            <div class="tabrow">
+              <div><h4>Governance &amp; Access Controls</h4><span class="cite">SOC 2 CC6.2 · 42 CFR §438.406(b)(2)</span></div>
+              <div>
+                <p>Nine permissions across ten access roles, with the constraint text carried in each cell. Four segregation-of-duty rules evaluated against the live trail rather than asserted.</p>
+                <div class="figs">
+                  <span class="fig"><b>22</b> accounts</span>
+                  <span class="fig"><b>10</b> roles</span>
+                  <span class="fig"><b>91%</b> MFA</span>
+                  <span class="fig"><b>12</b> attestations overdue</span>
+                  <span class="fig"><b>2</b> SOD conflicts</span>
+                </div>
+              </div>
+            </div>
+            <div class="tabrow">
+              <div><h4>AI Oversight</h4><span class="cite">Clinical AI governance</span></div>
+              <div>
+                <p>What the model recommended, at what confidence and on which version, against what the clinician decided. Confidence calibration with a sample floor, drift by month, override reasons split by attribution, agreement by clinician and by procedure.</p>
+                <div class="figs">
+                  <span class="fig"><b>247</b> scored</span>
+                  <span class="fig"><b>87%</b> decision agreement</span>
+                  <span class="fig"><b>12%</b> override rate</span>
+                  <span class="fig"><b>−14</b> pts on the 95%+ band</span>
+                </div>
+              </div>
+            </div>
+            <div class="tabrow">
+              <div><h4>Retention &amp; Archive</h4><span class="cite">42 CFR §422.504(d) · HIPAA §164.316(b)(2)(i)</span></div>
+              <div>
+                <p>What sits behind the online store: per-class retention schedule, sealed archive segment index with a hash chain that stays continuous across the archive boundary, legal holds, disposition queue and cold-storage restore SLA.</p>
+                <div class="figs">
+                  <span class="fig"><b>133,745</b> archived</span>
+                  <span class="fig"><b>46</b> sealed segments</span>
+                  <span class="fig"><b>137,569</b> total retained</span>
+                  <span class="fig"><b>2</b> legal holds</span>
+                  <span class="fig"><b>5</b> past retention</span>
+                </div>
+              </div>
+            </div>
+            <div class="tabrow">
+              <div><h4>Compliance Requirements &amp; Gaps</h4><span class="cite">Control register</span></div>
+              <div>
+                <p>Requirement → control today → evidence location → status → gap → next step → owner, grouped by domain and exportable as the follow-up packet.</p>
+                <div class="figs">
+                  <span class="fig"><b>21</b> requirements</span>
+                  <span class="fig"><b>10</b> met</span>
+                  <span class="fig"><b>8</b> partial</span>
+                  <span class="fig"><b>3</b> gap</span>
+                  <span class="fig"><b>5</b> P1 open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag rebuilt">Rebuilt</span>
+            <h3>CM → Audit &amp; Compliance</h3>
+            <span class="path">src/app/tabs/cm-audit-tab.ts</span>
+          </div>
+          <p>CM has no determination to re-determine, so copying UM's inter-rater model would have been the wrong shape. Its accreditation evidence is a file audit — a QI reviewer scores a sampled member record element by element — and IRR applies one layer up, on whether the rubric itself is applied consistently.</p>
+          <div class="ba">
+            <div class="before">
+              <div class="lab">Before</div>
+              <ul>
+                <li>Three hardcoded percentages: 92% / 85% / 97%</li>
+                <li>Three static audit-flag rows pointing at member IDs that exist nowhere in the data</li>
+                <li>Nothing clickable, nothing exportable, nothing that moved when the filters changed</li>
+              </ul>
+            </div>
+            <div class="after">
+              <div class="lab">After</div>
+              <ul>
+                <li>Six-element rubric scored off real case fields across all <b>161</b> member records</li>
+                <li><b>43</b> files audited, <b>77%</b> pass rate, pass rate by care manager with an insufficient-sample guard</li>
+                <li>Rubric-element findings and finding codes; second-reviewer IRR on the rubric</li>
+                <li>Assessment and care-plan window compliance per program — 90 / 95 / 98 / 95%</li>
+                <li>Audit flags derived live from expired consents, overdue reassessments, goals with no intervention, failed outreach with no UTR letter</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag fixed">Fixed</span>
+            <h3>Adverse determinations were attributed to the wrong actor</h3>
+            <span class="path">src/app/data/audit-trail.ts</span>
+          </div>
+          <p>A nurse reviewer can approve within criteria but cannot deny — that is what the permission matrix says, and what SOD-3 tests for. The event generator was recording every determination against the nurse who worked the case, so SOD-3 fired on all 44 nurse-recorded denials. That reads as a broken model, not a finding. Determination events for denials and partials now carry the Medical Director who signed them.</p>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag fixed">Fixed</span>
+            <h3>Widening the time range made the event count go down</h3>
+            <span class="path">audit-traceability.ts · shell.html</span>
+          </div>
+          <p>The module was borrowing the shared dashboard period bar, where <code>30 days</code> is secretly the <em>unfiltered</em> baseline — every pending case falls inside it, so it stands in for "everything". That is fine on a caseload tab and wrong on a log that spans a decade: moving from 30 days to QTD narrowed the view from all events down to ninety days, and the count fell.</p>
+          <div class="ba">
+            <div class="before">
+              <div class="lab">Before</div>
+              <ul>
+                <li>Shared period bar: Today / 7 days / <b>30 days = everything</b> / QTD</li>
+                <li>Widening the window reduced the result</li>
+                <li>Nothing stated how much history existed</li>
+              </ul>
+            </div>
+            <div class="after">
+              <div class="lab">After</div>
+              <ul>
+                <li>Own Range control: Today / 7 / 30 / 90 days / 12 months / <b>All history</b>, defaulting to All</li>
+                <li>Every option means what it says</li>
+                <li>The bar states the real span outright — <span class="mono">Online store: 3,824 events, 2026-04-04 → 2026-07-17</span>, with the archived count beside it</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>Sorting, filtering and the whole history</h3>
+            <span class="path">audit-traceability.ts · shared/sort.ts</span>
+          </div>
+          <p>Every column sorts. Record type, actor, outcome and an off-hours toggle join the existing search, category, channel and PHI filters, and the table pages through all 3,824 events fifty at a time instead of showing the newest 120 with no way further back. Every filter resets paging.</p>
+          <div class="beat"><b>A real bug behind it</b><code>compareRows()</code> ran every value through <code>parseFloat</code> first, so <code>2026-04-04T08:14</code> became <code>2026</code> and every row in the same year compared equal. Sorting any date or timestamp column silently did nothing — app-wide, not only here. ISO-shaped strings now route to string comparison, which orders them correctly; non-ISO values keep the lenient behaviour for <code>3.2d</code> and <code>$42,000</code>.</div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>Eight audit extracts in Reports</h3>
+            <span class="path">src/app/data/report-registry.ts</span>
+          </div>
+          <p>Under <b>Reports → Audit &amp; Traceability</b>, visible to every role: Access &amp; Change Log (with a chain-integrity header), User Activity Review, PHI Access &amp; Disclosure Log, Configuration Change Log with two-person-control reconciliation, Segregation-of-Duties Exceptions, User Entitlements &amp; Attestation, Retention &amp; Archive Register, and the Compliance Control Register. Printable, exportable, schedulable like every other report.</p>
+          <p><code>userActivityRollup()</code> and <code>evaluateSod()</code> moved into the data layer so the reports call the same function the screen does. The registry's own rule is that a report never recomputes independently — an audit report that disagreed with the audit screen would be worse than no report at all.</p>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>Retention &amp; Archive</h3>
+            <span class="path">audit-trail.ts · audit-traceability.ts</span>
+          </div>
+          <p>The Audit Trail queries the online store, and the screen implied that was the whole retained record. It is not, and "where is year seven?" is the first question a records-retention reviewer asks.</p>
+          <p>Archived periods are represented by <b>segment metadata</b> — period, event count, hash range, storage tier, seal date, WORM lock, last verification, purge-eligible date, hold status — rather than by materialising a decade of individual events. That is how a real tiered store exposes cold data, and materialising them would misrepresent what is actually there.</p>
+          <div class="beat"><b>The archive deliberately outruns the retention window</b>An archive that stops at the ten-year boundary has no disposition queue and no segment a legal hold could matter to — the two things a records reviewer actually asks about. It reaches back to 2014-10-01 so that five segments sit past retention and two are held.</div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>AI Oversight</h3>
+            <span class="path">src/app/data/ai-oversight.ts</span>
+          </div>
+          <p>Built because the agenda's second topic had no answer in the product. What existed was three hardcoded next-best-action cards carrying confidence numbers and a static distribution bar — nothing on how a score is produced, whether it can be trusted, or what happens when a clinician disagrees with it.</p>
+          <div class="beat"><b>The dataset carries a real defect on purpose</b>The 95%+ band claims 97% and observes 83% — fourteen points hot across 121 of 247 determinations, which is what drags aggregate decision agreement to 87% against a 90% target. A model that is confidently wrong at the ceiling is the failure mode that actually causes harm, and a demo where every control passes persuades nobody.</div>
+          <p>Override reasons are split into model-attributable and legitimate clinical divergence, because an override rate on its own cannot be interpreted. Agreement by clinician is framed as a signal rather than a score, and nobody gets a rate below twenty scored determinations.</p>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag fixed">Fixed</span>
+            <h3>Three generator bugs found while calibrating</h3>
+            <span class="path">src/app/data/ai-oversight.ts</span>
+          </div>
+          <div class="ba">
+            <div class="before">
+              <div class="lab">Symptom</div>
+              <ul>
+                <li>A confidence band read a flat <b>100%</b> agreement</li>
+                <li>Override reasons only ever landed on two of six</li>
+                <li>The calibration ceiling permitted 100%</li>
+              </ul>
+            </div>
+            <div class="after">
+              <div class="lab">Cause and fix</div>
+              <ul>
+                <li>Confidence and agreement were both permutations of the same two digits of the auth id, so each band drew a clustered sample instead of a scattered one. Both now hash over the full case identity.</li>
+                <li>Same clustered seed, same fix — and attribution now correlates with the over-confident band, which is where model-attributable overrides genuinely concentrate.</li>
+                <li>Capped below 100 deliberately: a band that never disagrees is a sign the measurement is broken, not that the model is perfect.</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag rebuilt">Changed</span>
+            <h3>AI recommendation and override are now audit events</h3>
+            <span class="path">src/app/data/audit-trail.ts</span>
+          </div>
+          <p>A determination's history showed the human who signed it but not the machine input that preceded it. The recommendation, its confidence, the model version and the criteria set are now written to the trail before the determination, and an override is logged separately with before/after and a structured reason. Confidence visibility joined the permission matrix as a per-role control; three Clinical AI Governance requirements joined the register.</p>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag rebuilt">Removed</span>
+            <h3>Appeals → Audit &amp; Compliance</h3>
+            <span class="path">src/app/modules/appeals-dashboard.ts</span>
+          </div>
+          <p>Dropped from the Appeals sub-tab bar along with the static flag rows it was the only consumer of. A tab showing three invented percentages is a liability in an audit conversation, and Appeals has no case pool to build a real one against yet. The reasoning and what it would take are recorded in the file where the tab used to be declared.</p>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>Certified disposition, and a hold that actually holds</h3>
+            <span class="path">src/app/shared/disposition.ts</span>
+          </div>
+          <p>A legal hold was a note saying disposition ought to be suspended. It is now a hard precondition: the disposal action refuses outright and names the hold that stopped it, regardless of the retention date. An eligible segment takes an independent countersignature and issues a certificate carrying the period, event count, retained terminal hash, retention basis, method and both signatories.</p>
+          <div class="beat"><b>Why the terminal hash survives</b>Once a segment is purged the events are gone. Unless something durable states what was destroyed and under whose authority, there is afterwards no evidence the record existed <em>or</em> that it was lawfully destroyed — and both halves matter. Closes REQ-16 and REQ-17.</div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>Delegation Oversight Packet</h3>
+            <span class="path">src/app/data/report-registry.ts</span>
+          </div>
+          <p>Sixteen sections behind a cover page carrying delegated entity, basis, scope, coverage and a content stamp computed over the figures the packet asserts. Volume and turnaround, UM inter-rater reliability, CM file audit, AI governance and calibration, access and segregation of duties, chain integrity, retention — then the open findings and an attestation block.</p>
+          <p>The findings are <em>in</em> the packet on purpose. An oversight packet that shows only strengths is the kind a plan learns to discount. Closes REQ-11.</p>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag new">New</span>
+            <h3>Notifications that take you to the problem</h3>
+            <span class="path">src/app/shared/alerts.ts</span>
+          </div>
+          <p>The rail carried a hardcoded badge of 28 that toasted "isn't part of this demo build". A bell in the top bar now carries the live signal count — eighteen across UM, CM and Audit &amp; Traceability, five critical, red while anything critical is outstanding. It sits beside History and is deliberately distinct from it: History is what happened this session, the bell is what is open now. The fabricated rail badge is gone rather than repointed.</p>
+          <div class="beat"><b>Awareness, not a work queue</b>No assignment, no acknowledge, no resolve. The moment an alert is assigned it becomes work somebody owns and the feed turns into a second inbox. An alert does one thing: it takes you to the surface that owns the problem, where the actions already are. Every row states its destination before you click it.</div>
+        </article>
+
+        <article class="change">
+          <div class="change-head">
+            <span class="tag wiring">Wiring</span>
+            <h3>Routing and role visibility</h3>
+            <span class="path">nav.ts · shell.ts · shell.html · cm-dashboard.ts</span>
+          </div>
+          <p><code>'audit'</code> added to <code>ModuleId</code> and appended to <code>visibleModules()</code> after Reports for every role. The CM dashboard's inline <code>@case('audit')</code> block was replaced with the new component and its dead <code>cmFlags</code> array removed.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">02</div>
+      <div>
+        <h2>Where the trail comes from</h2>
+        <p class="lede">The event log is not a separate fixture sitting beside the dashboards. It is derived from the same two case pools every other tab already reads, which is why a case you drill into on the UM board has a trail that matches it.</p>
+
+        <figure>
+          <div class="figbox">
+            <svg viewBox="0 0 880 300" role="img" aria-label="Two case pools plus an operational event generator feed one merged, timestamp-sorted, hash-chained event log, which all four tabs read.">
+              <defs>
+                <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="svg-head"></path>
+                </marker>
+                <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="svg-head-a"></path>
+                </marker>
+              </defs>
+
+              <text x="14" y="20" class="svg-dim">SOURCES</text>
+              <rect x="14" y="34" width="168" height="52" rx="3" class="svg-box"></rect>
+              <text x="28" y="56" class="svg-t-b">CASE_POOL</text>
+              <text x="28" y="74" class="svg-m">authorizations · UM</text>
+
+              <rect x="14" y="102" width="168" height="52" rx="3" class="svg-box"></rect>
+              <text x="28" y="124" class="svg-t-b">CM_CASE_POOL</text>
+              <text x="28" y="142" class="svg-m">161 member records</text>
+
+              <rect x="14" y="170" width="168" height="66" rx="3" class="svg-box"></rect>
+              <text x="28" y="192" class="svg-t-b">Operational</text>
+              <text x="28" y="210" class="svg-m">sign-ins · exports</text>
+              <text x="28" y="226" class="svg-m">config · account admin</text>
+
+              <line x1="182" y1="60" x2="248" y2="128" class="svg-line" marker-end="url(#ah)"></line>
+              <line x1="182" y1="128" x2="248" y2="132" class="svg-line" marker-end="url(#ah)"></line>
+              <line x1="182" y1="203" x2="248" y2="140" class="svg-line" marker-end="url(#ah)"></line>
+
+              <text x="256" y="20" class="svg-dim">DERIVATION</text>
+              <rect x="256" y="102" width="176" height="66" rx="3" class="svg-box-a"></rect>
+              <text x="270" y="124" class="svg-t-b">Merge + sort</text>
+              <text x="270" y="142" class="svg-m">by timestamp</text>
+              <text x="270" y="158" class="svg-m">deterministic, no RNG</text>
+
+              <line x1="432" y1="135" x2="490" y2="135" class="svg-line-a" marker-end="url(#ah-a)"></line>
+              <text x="440" y="126" class="svg-acc">hash</text>
+
+              <rect x="498" y="102" width="176" height="66" rx="3" class="svg-box-a"></rect>
+              <text x="512" y="124" class="svg-t-b">AUDIT_EVENTS</text>
+              <text x="512" y="142" class="svg-m">3,824 chained records</text>
+              <text x="512" y="158" class="svg-m">prevHash → recordHash</text>
+
+              <text x="700" y="20" class="svg-dim">READ BY</text>
+              <line x1="674" y1="130" x2="712" y2="56" class="svg-line" marker-end="url(#ah)"></line>
+              <line x1="674" y1="133" x2="712" y2="105" class="svg-line" marker-end="url(#ah)"></line>
+              <line x1="674" y1="138" x2="712" y2="157" class="svg-line" marker-end="url(#ah)"></line>
+              <line x1="674" y1="141" x2="712" y2="207" class="svg-line" marker-end="url(#ah)"></line>
+
+              <rect x="716" y="36" width="150" height="38" rx="3" class="svg-box"></rect>
+              <text x="728" y="60" class="svg-t">Audit Trail</text>
+              <rect x="716" y="86" width="150" height="38" rx="3" class="svg-box"></rect>
+              <text x="728" y="110" class="svg-t">User Activity</text>
+              <rect x="716" y="136" width="150" height="38" rx="3" class="svg-box"></rect>
+              <text x="728" y="160" class="svg-t">Governance</text>
+              <rect x="716" y="186" width="150" height="38" rx="3" class="svg-box"></rect>
+              <text x="728" y="210" class="svg-t">Compliance</text>
+
+              <line x1="14" y1="266" x2="866" y2="266" class="svg-line" stroke-dasharray="3 4"></line>
+              <text x="14" y="286" class="svg-dim">SAME POOLS THE UM AND CM DASHBOARDS READ — THE TRAIL AND THE BOARD CANNOT DISAGREE</text>
+            </svg>
+          </div>
+          <figcaption><b>One derived log, four views.</b> Sample membership, actor attribution and timing are deterministic functions of the case ID, so the same case produces the same event chain on every load — a demo can be walked twice and land on the same rows.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">03</div>
+      <div>
+        <h2>What makes it tamper-evident</h2>
+        <p class="lede">Each event hashes over its own content plus the hash of the event before it. Altering a record changes its hash, which changes the next record's input, and so on to the end of the log — so a single edit is visible from anywhere downstream of it.</p>
+
+        <figure>
+          <div class="figbox">
+            <svg viewBox="0 0 880 268" role="img" aria-label="Three chained audit events; editing the middle event invalidates its own hash and every hash after it.">
+              <defs>
+                <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="svg-head-a"></path>
+                </marker>
+                <marker id="ah2-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="svg-head-bad"></path>
+                </marker>
+              </defs>
+
+              <text x="14" y="20" class="svg-dim">CHAIN AS WRITTEN</text>
+
+              <rect x="14" y="34" width="252" height="86" rx="3" class="svg-box"></rect>
+              <text x="28" y="56" class="svg-m">AE-003821</text>
+              <text x="28" y="76" class="svg-t-b">Determination recorded</text>
+              <text x="28" y="94" class="svg-m">prevHash 8f2c…d011</text>
+              <text x="28" y="110" class="svg-m">recordHash 894e8a20</text>
+
+              <line x1="266" y1="96" x2="308" y2="96" class="svg-line-a" marker-end="url(#ah2)"></line>
+
+              <rect x="314" y="34" width="252" height="86" rx="3" class="svg-box-a"></rect>
+              <text x="328" y="56" class="svg-m">AE-003822</text>
+              <text x="328" y="76" class="svg-t-b">Letter transmitted</text>
+              <text x="328" y="94" class="svg-m">prevHash 894e8a20</text>
+              <text x="328" y="110" class="svg-m">recordHash cfc4219c</text>
+
+              <line x1="566" y1="96" x2="608" y2="96" class="svg-line-a" marker-end="url(#ah2)"></line>
+
+              <rect x="614" y="34" width="252" height="86" rx="3" class="svg-box"></rect>
+              <text x="628" y="56" class="svg-m">AE-003823</text>
+              <text x="628" y="76" class="svg-t-b">Case closed</text>
+              <text x="628" y="94" class="svg-m">prevHash cfc4219c</text>
+              <text x="628" y="110" class="svg-m">recordHash 1b7d05aa</text>
+
+              <line x1="14" y1="146" x2="866" y2="146" class="svg-line" stroke-dasharray="3 4"></line>
+              <text x="14" y="172" class="svg-dim">SOMEONE EDITS THE MIDDLE RECORD</text>
+
+              <rect x="314" y="186" width="252" height="62" rx="3" class="svg-box-bad"></rect>
+              <text x="328" y="208" class="svg-m">AE-003822 · after = "Not sent"</text>
+              <text x="328" y="228" class="svg-bad">recordHash ≠ cfc4219c</text>
+              <text x="328" y="243" class="svg-m">prevHash on 003823 no longer matches</text>
+
+              <line x1="440" y1="120" x2="440" y2="182" class="svg-line-bad" stroke-dasharray="4 4" marker-end="url(#ah2-bad)"></line>
+              <path d="M 566 214 L 700 214 L 700 126" class="svg-line-bad" stroke-dasharray="4 4" marker-end="url(#ah2-bad)"></path>
+              <text x="578" y="206" class="svg-bad">breaks every hash after it</text>
+            </svg>
+          </div>
+          <figcaption><b>Verify chain re-walks this in timestamp order</b> and reports the first event whose recomputed hash disagrees, or confirms the whole log. The build uses a lightweight digest so it runs in-browser; production chain-of-custody is server-side SHA-256 and the property is identical.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">04</div>
+      <div>
+        <h2>Why the attribution fix mattered</h2>
+        <p class="lede">SOD-3 asks whether a medical-necessity denial was issued by someone qualified to issue it. It answers that by reading the actor on the determination event — so who that event points at decides whether the control fires. The first build pointed it at the wrong person.</p>
+
+        <figure>
+          <div class="figbox">
+            <svg viewBox="0 0 880 258" role="img" aria-label="Before, the determination event named the nurse and SOD-3 raised 44 conflicts; after, it names the Medical Director who signed and SOD-3 reports no conflicts.">
+              <defs>
+                <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="svg-head"></path>
+                </marker>
+              </defs>
+
+              <text x="14" y="20" class="svg-dim">BEFORE</text>
+              <rect x="14" y="32" width="160" height="52" rx="3" class="svg-box"></rect>
+              <text x="28" y="54" class="svg-t-b">Nurse reviewer</text>
+              <text x="28" y="72" class="svg-m">works the case</text>
+
+              <line x1="174" y1="58" x2="222" y2="58" class="svg-line" marker-end="url(#ah3)"></line>
+              <text x="180" y="48" class="svg-m">records</text>
+
+              <rect x="228" y="32" width="264" height="52" rx="3" class="svg-box"></rect>
+              <text x="242" y="54" class="svg-t-b">Determination recorded · Denied</text>
+              <text x="242" y="72" class="svg-m">actorRole = UM Nurse Reviewer</text>
+
+              <line x1="492" y1="58" x2="540" y2="58" class="svg-line" marker-end="url(#ah3)"></line>
+              <text x="498" y="48" class="svg-m">tests</text>
+
+              <rect x="546" y="32" width="152" height="52" rx="3" class="svg-box"></rect>
+              <text x="560" y="54" class="svg-t-b">SOD-3</text>
+              <text x="560" y="72" class="svg-m">denial by non-clinician</text>
+
+              <line x1="698" y1="58" x2="742" y2="58" class="svg-line" marker-end="url(#ah3)"></line>
+
+              <rect x="748" y="32" width="118" height="52" rx="3" class="svg-box-bad"></rect>
+              <text x="762" y="56" class="svg-bad">44 conflicts</text>
+              <text x="762" y="73" class="svg-m">reads as a bug</text>
+
+              <line x1="14" y1="118" x2="866" y2="118" class="svg-line" stroke-dasharray="3 4"></line>
+
+              <text x="14" y="146" class="svg-dim">AFTER</text>
+              <rect x="14" y="158" width="160" height="52" rx="3" class="svg-box"></rect>
+              <text x="28" y="180" class="svg-t-b">Nurse reviewer</text>
+              <text x="28" y="198" class="svg-m">works the case</text>
+
+              <line x1="174" y1="184" x2="222" y2="184" class="svg-line" marker-end="url(#ah3)"></line>
+              <text x="180" y="174" class="svg-m">routes</text>
+
+              <rect x="228" y="158" width="264" height="52" rx="3" class="svg-box-a"></rect>
+              <text x="242" y="180" class="svg-t-b">Determination recorded · Denied</text>
+              <text x="242" y="198" class="svg-m">actorRole = Medical Director</text>
+
+              <line x1="492" y1="184" x2="540" y2="184" class="svg-line" marker-end="url(#ah3)"></line>
+              <text x="498" y="174" class="svg-m">tests</text>
+
+              <rect x="546" y="158" width="152" height="52" rx="3" class="svg-box"></rect>
+              <text x="560" y="180" class="svg-t-b">SOD-3</text>
+              <text x="560" y="198" class="svg-m">denial by non-clinician</text>
+
+              <line x1="698" y1="184" x2="742" y2="184" class="svg-line" marker-end="url(#ah3)"></line>
+
+              <rect x="748" y="158" width="118" height="52" rx="3" class="svg-box-good"></rect>
+              <text x="762" y="182" class="svg-good">No conflicts</text>
+              <text x="762" y="199" class="svg-m">passing, stated</text>
+
+              <text x="14" y="242" class="svg-dim">SOD-2 STILL RETURNS 2 REAL FINDINGS — CONFIG PUBLISHED WITH NO INDEPENDENT APPROVAL</text>
+            </svg>
+          </div>
+          <figcaption><b>Don't seed fake violations, and don't sand off real ones.</b> The 44 were a modeling error and had to go. The two SOD-2 findings are genuine — configuration changes published with no approval event on their change ticket — and they stay, because a screen where every control passes is the least persuasive version of this tab.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">05</div>
+      <div>
+        <h2>File manifest</h2>
+        <p class="lede">Four new files carry the work. The audit report registry grew by a block of its own; the rest is routing and one shared comparator fix.</p>
+        <div class="manifest">
+          <div class="mrow">
+            <div class="mname">src/app/modules/audit-traceability.ts <i>— new</i></div>
+            <div class="mbar"><span style="width:100%"></span></div>
+            <div class="mnum">648</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/tabs/cm-audit-tab.ts <i>— new</i></div>
+            <div class="mbar"><span style="width:96%"></span></div>
+            <div class="mnum">623</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/data/audit-trail.ts <i>— new</i></div>
+            <div class="mbar"><span style="width:100%"></span></div>
+            <div class="mnum">804</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/data/cm-audit.ts <i>— new</i></div>
+            <div class="mbar"><span style="width:38%"></span></div>
+            <div class="mnum">243</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">docs/Audit-Traceability-Session-Brief.md <i>— new</i></div>
+            <div class="mbar"><span class="doc" style="width:22%"></span></div>
+            <div class="mnum">140</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/modules/cm-dashboard.ts <i>— modified</i></div>
+            <div class="mbar"><span class="wire" style="width:4%"></span></div>
+            <div class="mnum">23</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/shared/nav.ts <i>— modified</i></div>
+            <div class="mbar"><span class="wire" style="width:2%"></span></div>
+            <div class="mnum">12</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/data/report-registry.ts <i>— audit extracts</i></div>
+            <div class="mbar"><span style="width:52%"></span></div>
+            <div class="mnum">340</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/data/ai-oversight.ts <i>— new</i></div>
+            <div class="mbar"><span style="width:40%"></span></div>
+            <div class="mnum">262</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">docs/Model-Office-AI-Validation-Plan.md <i>— new</i></div>
+            <div class="mbar"><span class="doc" style="width:26%"></span></div>
+            <div class="mnum">170</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/shell/shell.ts · shell.html <i>— modified</i></div>
+            <div class="mbar"><span class="wire" style="width:1%"></span></div>
+            <div class="mnum">7</div>
+          </div>
+          <div class="mrow">
+            <div class="mname">src/app/shared/sort.ts <i>— date-sort fix</i></div>
+            <div class="mbar"><span class="wire" style="width:1%"></span></div>
+            <div class="mnum">8</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">06</div>
+      <div>
+        <h2>Verification</h2>
+        <p class="lede">What was actually checked, so you know what wasn't.</p>
+        <div class="checks">
+          <div class="check">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 L6 12.5 L14 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div><b>Production build clean.</b> <span>Bundle-budget warnings only — the initial bundle is over the 500 kB budget, which was already true before this change.</span></div>
+          </div>
+          <div class="check">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 L6 12.5 L14 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div><b>All four new tabs rendered and read in the browser</b>, plus the rebuilt CM tab. Tile figures, bars and tables checked against the underlying data.</div>
+          </div>
+          <div class="check">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 L6 12.5 L14 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div><b>Verify chain returns intact</b> across all 3,824 events; the event detail drawer opens with prevHash and recordHash populated.</div>
+          </div>
+          <div class="check">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 L6 12.5 L14 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div><b>Two calibration passes on the CM window model.</b> <span>Member IDs march in a fixed stride, so a bare modulo lands on a lumpy subset of buckets and the breach rate swung from every-program-failing to every-program-perfect. Mixing the seed before bucketing settled it.</span></div>
+          </div>
+          <div class="check">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 L6 12.5 L14 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div><b>Sorting, paging and the archive checked in the browser.</b> <span>Timestamp column confirmed descending after the comparator fix; the segment filter narrows 46 to 7; Verify archive chain reports 46 sealed segments continuous.</span></div>
+          </div>
+          <div class="check">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 L6 12.5 L14 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <div><b>Commit 72cf678 is on main and command-center.</b> <span>The two later commits are local only — not pushed, and Render has not seen them.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-grid">
+      <div class="sec-mark">07</div>
+      <div>
+        <div class="openbox">
+          <h3>Still open</h3>
+          <p><b>Appeals has no Audit &amp; Compliance tab — the placeholder was removed rather than shown.</b> It was three hardcoded percentages and three static flag rows, the state CM was in before this build. In front of an auditor that is worse than no tab at all, so it is gone from the sub-tab bar and its static rows deleted.</p>
+          <p>Building it for real is a bigger job than the CM rebuild was, because Appeals has no generated case pool — it runs on eight hand-authored appeal records and five reviewers, so there is nothing to sample, aggregate or drill into. The pool comes first: decided appeals across levels and lines of business, with acknowledgment and resolution clocks, reviewer credential and independence, and notice-content elements. The tab then follows the CM pattern.</p>
+          <p>Nothing else in Appeals changed — its eleven other tabs are untouched.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>Companion: <code>docs/Audit-Traceability-Session-Brief.md</code></span>
+    <span>Repo: <code>github.com/christinalawson651/um-supervisor</code></span>
+  </div>
+
+</div>

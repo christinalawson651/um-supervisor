@@ -22,7 +22,7 @@ import { DashboardData } from '../data/dashboard-data';
             <div class="col cases">
               <div class="col-head">
                 <span class="ct">{{ nounTitle() }} <span class="cn">{{ selected().size }}/{{ filtered().length }}</span></span>
-                <input class="search" type="text" placeholder="Search auth or member…" [ngModel]="q()" (ngModelChange)="q.set($event)" />
+                <input class="search" type="text" [placeholder]="'Search ' + noun() + ' or member…'" [ngModel]="q()" (ngModelChange)="q.set($event)" />
               </div>
               <div class="qpills">
                 @for (qn of queues; track qn) {
@@ -34,7 +34,16 @@ import { DashboardData } from '../data/dashboard-data';
                 @for (cs of filtered(); track cs.authId) {
                   <label class="ci" [class.sel]="selected().has(cs.authId)">
                     <input type="checkbox" [checked]="selected().has(cs.authId)" (change)="toggle(cs.authId)" />
-                    <div class="cmain"><b>{{ cs.authId }}</b> · {{ cs.member }}<div class="cmeta">{{ cs.queue }} · {{ cs.priority }} · {{ cs.owner }}</div></div>
+                    <div class="cmain"><b>{{ cs.authId }}</b> · {{ cs.member }}
+                      <div class="cmeta">
+                        @if (isQueued(cs)) {
+                          <span class="st q">In queue</span> {{ cs.queue }}
+                        } @else {
+                          <span class="st a">Assigned</span> {{ cs.owner }}
+                        }
+                        · {{ cs.priority }}
+                      </div>
+                    </div>
                   </label>
                 } @empty { <div class="empty">No {{ nounPlural() }} match.</div> }
               </div>
@@ -71,6 +80,7 @@ import { DashboardData } from '../data/dashboard-data';
                 </div>
               } @else {
                 <div class="ovr">Select a queue:</div>
+                <p class="qnote">Work in a queue has no owner — anyone can pull it. Moving an assigned {{ noun() }} here releases it from its current caseload.</p>
                 <div class="nlist">
                   @for (qn of queueTargets(); track qn.name) {
                     <button class="ni qi" [class.on]="target() === qn.name" (click)="target.set(qn.name)">
@@ -119,12 +129,16 @@ import { DashboardData } from '../data/dashboard-data';
     .ci { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-bottom:1px solid var(--gray-100); cursor:pointer; font-size:12.5px; }
     .ci:last-child { border-bottom:none; } .ci.sel { background:var(--teal-50); }
     .cmain b { color:var(--teal-900); } .cmeta { font-size:11px; color:var(--gray-500); margin-top:2px; }
+    .st { display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:1px 5px; border-radius:3px; margin-right:4px; }
+    .st.q { background:var(--amber-bg); color:var(--amber-fg); }
+    .st.a { background:var(--teal-50); color:var(--teal-700); }
     .empty { padding:20px; text-align:center; color:var(--gray-500); }
 
     .nrec { text-align:left; width:100%; border:2px solid var(--teal-600); background:#fff; border-radius:10px; padding:12px 14px; cursor:pointer; margin-bottom:14px; }
     .nrec.on { background:var(--teal-50); }
     .recbadge { font-size:10.5px; font-weight:700; color:var(--teal-700); background:var(--teal-100); padding:2px 8px; border-radius:999px; }
     .nmeta { font-size:11.5px; color:var(--gray-500); margin:2px 0 8px; }
+    .qnote { font-size:11.5px; color:var(--gray-500); line-height:1.45; margin:-2px 0 10px; }
     .ovr { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); font-weight:700; margin-bottom:8px; }
     .nlist { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
     .ni { text-align:left; width:100%; border:1px solid var(--gray-300); background:#fff; border-radius:10px; padding:10px 12px; cursor:pointer; }
@@ -188,6 +202,9 @@ export class ReassignPanel {
     if (m === 'queue') { this.target.set(''); }
     else { const rec = this.recommended(); this.target.set(rec ? rec.name : ''); }
   }
+
+  /** Queued XOR owned — the panel renders one or the other, never a row claiming both. */
+  isQueued(cs: ReassignCase) { return !cs.owner || cs.owner === 'Unassigned' || cs.owner === 'Unclaimed' || cs.owner === '—'; }
 
   tone(u: number) { return u >= 90 ? 'red' : u < 80 ? 'green' : 'amber'; }
   toggle(id: string) { this.selected.update((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }

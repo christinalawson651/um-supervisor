@@ -496,7 +496,7 @@ export class WorkforceTab {
         if (mode === 'queue') {
           ids.forEach((id) => {
             const cs = cases.find((x) => x.authId === id);
-            if (cs && cs.queue !== target) { this.data.decrementQueue(cs.queue); this.data.incrementQueue(target); }
+            if (cs) this.data.releaseToQueue(cs.queue, cs.owner, target);
           });
           this.ix.toast(`${ids.length} authorization(s) moved to ${target}.`);
           this.data.addHistory('swap', 'Authorizations moved to queue', `${ids.length} authorization(s) → ${target}`, undefined,
@@ -507,7 +507,7 @@ export class WorkforceTab {
         const fromOwners = [...new Set(ids.map((id) => cases.find((x) => x.authId === id)?.owner).filter((o): o is string => !!o && o !== 'Unassigned'))];
         ids.forEach((id) => {
           const cs = cases.find((x) => x.authId === id);
-          this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);
+          this.data.claimToNurse(cs?.queue ?? null, cs?.owner ?? null, target);
         });
         this.ix.toast(`${ids.length} authorization(s) reassigned to ${target}.`);
         this.data.addHistory('swap', 'Authorizations reassigned', `${ids.length} authorization(s) → ${target}`, undefined,
@@ -556,16 +556,33 @@ export class WorkforceTab {
     });
   }
 
+  /** Row-level Reassign — scoped to this nurse's own authorizations, same panel and UX as CM's
+   *  per-manager reassign. It used to be a bare confirm that moved *some* authorization off
+   *  whoever happened to be busiest: no way to see what moved, no way to choose it, and a
+   *  different interaction from the identical button one module over. */
   reassignTo(n: NurseRow) {
-    this.ix.ask({
-      title: `Reassign an authorization to ${n.name}`,
-      body: `Move one authorization from the busiest nurse to ${n.name} (currently ${n.utilization}% utilized)?`,
-      confirmLabel: 'Reassign', tone: 'teal',
-      onConfirm: () => {
-        const busiest = this.data.nurses().reduce((a, b) => (b.utilization > a.utilization ? b : a));
-        this.data.reassignTo(n.name);
-        this.ix.toast(`Authorization reassigned to ${n.name}.`);
-        this.data.addHistory('swap', 'Authorization reassigned', `Reassigned to ${n.name}`, undefined, { fromStaff: busiest.name, toStaff: n.name, team: n.team });
+    const cases: ReassignCase[] = CASE_POOL
+      .filter((c) => c.phase === 'pending' && c.nurse === n.name)
+      .map((c) => ({
+        authId: c.authId, member: c.member, type: c.serviceType, queue: c.status,
+        priority: c.tags.includes('breached') ? 'Breached' : c.tags.includes('atRisk') ? 'At risk' : 'Routine',
+        owner: n.name,
+      }));
+    if (!cases.length) { this.ix.toast(`${n.name} has no active authorizations to reassign.`, 'info'); return; }
+    const nurses = this.data.nurses().filter((x) => x.name !== n.name).map((x) => ({ name: x.name, utilization: x.utilization, active: x.active }));
+    this.rx.open({
+      title: `Reassign an authorization from ${n.name}`, noun: 'authorization', cases, nurses,
+      apply: (ids, target, mode) => {
+        ids.forEach((id) => {
+          const cs = cases.find((x) => x.authId === id);
+          if (mode === 'queue') this.data.releaseToQueue(cs?.queue ?? null, n.name, target);
+          else this.data.claimToNurse(cs?.queue ?? null, n.name, target);
+        });
+        const members = ids.map((id) => cases.find((x) => x.authId === id)?.member).filter((m): m is string => !!m);
+        this.ix.toast(`${ids.length} authorization(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
+        this.data.addHistory('swap', mode === 'queue' ? 'Authorizations moved to queue' : 'Authorizations reassigned',
+          `${ids.length} authorization(s) → ${target}`, undefined,
+          { fromStaff: n.name, toStaff: mode === 'queue' ? undefined : target, team: n.team, members });
       },
     });
   }

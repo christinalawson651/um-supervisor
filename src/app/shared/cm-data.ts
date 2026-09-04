@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod, GoalStatus, CarePlanTemplate, CARE_PLAN_TEMPLATES } from '../data/cm-case-pool';
+import { CM_CASE_POOL, CmCaseRec, CARE_MANAGERS, CM_STAGES, CM_QUEUES, AssignmentMethod, GoalStatus, CarePlanTemplate, CARE_PLAN_TEMPLATES, CM_UNASSIGNED } from '../data/cm-case-pool';
 import { TODAY } from '../data/case-fields';
 import { CaseType, CASE_TYPES, ConsentType, CONSENT_TYPES, AssessmentType, ASSESSMENT_TYPES, consentAtRisk, tatAdherent, ReferralIntakeRec, CM_REFERRAL_INTAKE, INTAKE_COORDINATORS, ReferralSource, ReferralPendReason, ReferralReason, REFERRAL_REASONS, ReferralTatBand, referralTatBandOf, suggestedDisciplineFor } from '../data/cm-intake';
 import { CM_WEEK_SCHEDULES, CM_ADHERENCE, CmWeekSchedule, CmAdherenceDay, AdherenceStatus, CmWeekBlock, CM_ROLLING_4_WEEKS, CM_MONTHLY_WEEKS, CM_UPCOMING_WEEKS, CmPtoBalance, CM_PTO_BALANCES, SchedulePeriod } from '../data/cm-schedule';
@@ -37,7 +37,13 @@ export type QueueBand = 'fresh' | 'day2' | 'over48' | 'breach';
 
 // A fully-utilized care manager's caseload — utilization = active / capacity, same "% of capacity"
 // framing as UM's nurse utilization, just with a CM-appropriate ceiling.
-const CAPACITY_PER_CM = 40;
+// Calibrated against the OWNED caseload, not the whole pool. When ~20% of cases became unclaimed
+// queue work (they always were — the data just used to show an owner on them too), every caseload
+// shrank by that fifth; dropping capacity by the same fifth keeps utilization reading what it read
+// before, so the over/under-utilized spread the Balance and Reassign flows depend on is unchanged.
+export { CM_UNASSIGNED } from '../data/cm-case-pool';
+
+const CAPACITY_PER_CM = 32;
 
 function daysUntil(iso: string): number { return Math.round((new Date(`${iso}T00:00:00`).getTime() - TODAY.getTime()) / 86400000); }
 function daysSince(iso: string): number { return -daysUntil(iso); }
@@ -152,7 +158,12 @@ export class CmData {
    *  breakdown above (that's what's queued *right now*; this is *how the assignment happened*). */
   assignmentBreakdown(team?: string, scope?: CmCaseRec[]): { method: AssignmentMethod; count: number }[] {
     const teamOf = new Map(CARE_MANAGERS.map((cm) => [cm.name, cm.team]));
-    const cs = (scope ?? this.cases()).filter((c) => !team || teamOf.get(c.careManager) === team);
+    // Unclaimed cases are excluded: this counts how a case's CURRENT owner came to own it, and a
+    // case sitting in a queue has no owner yet. Counting them would attribute an assignment that
+    // has not happened, and the three methods would no longer sum to the assigned caseload.
+    const cs = (scope ?? this.cases())
+      .filter((c) => c.careManager !== CM_UNASSIGNED)
+      .filter((c) => !team || teamOf.get(c.careManager) === team);
     const methods: AssignmentMethod[] = ['Queue Draw', 'Direct — Smart', 'Direct — Manual'];
     return methods.map((method) => ({ method, count: cs.filter((c) => c.assignmentMethod === method).length }));
   }
@@ -374,14 +385,26 @@ export class CmData {
     return CM_PROGRAM_ENROLLMENTS.filter((e) => e.memberId === memberId && e.status === 'Active').map((e) => e.program);
   }
 
+  /** Work is EITHER sitting unclaimed in a queue OR owned by a named care manager — never both.
+   *  A queue is the pool you pull from; the moment someone owns it, it is no longer pullable, and
+   *  a case counted in both places is counted twice in every workload number downstream. The two
+   *  functions below are the only writers of `careManager` and `queue`, so the rule holds wherever
+   *  a reassignment is initiated rather than in each caller's own hands. */
   reassignCase(memberId: string, toCm: string) {
-    this.cases.update((list) => list.map((c) => (c.memberId === memberId ? { ...c, careManager: toCm } : c)));
+    this.cases.update((list) => list.map((c) => (
+      c.memberId === memberId ? { ...c, careManager: toCm, queue: null, queueAgeH: 0, queueBreached: false } : c
+    )));
   }
   reassignStage(memberId: string, toStage: string) {
     this.cases.update((list) => list.map((c) => (c.memberId === memberId ? { ...c, stage: toStage } : c)));
   }
+  /** Returning a case to a queue releases whoever held it — it drops out of their caseload and
+   *  becomes pullable again. managerStats() maps over the named CARE_MANAGERS, so an unassigned
+   *  case simply stops counting toward anyone rather than inventing a phantom manager row. */
   reassignQueue(memberId: string, toQueue: string) {
-    this.cases.update((list) => list.map((c) => (c.memberId === memberId ? { ...c, queue: toQueue, queueAgeH: 0, queueBreached: false } : c)));
+    this.cases.update((list) => list.map((c) => (
+      c.memberId === memberId ? { ...c, queue: toQueue, queueAgeH: 0, queueBreached: false, careManager: CM_UNASSIGNED } : c
+    )));
   }
 
   /** Non-mutating preview of N greedy busiest->least-utilized moves — mirrors UM Balance's own

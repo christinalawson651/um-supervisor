@@ -369,14 +369,14 @@ export class CaseExplorer {
         if (mode === 'queue') {
           assignedIds.forEach((aid) => {
             const cs = cases.find((x) => x.authId === aid);
-            if (cs && cs.queue !== target) { this.data.decrementQueue(cs.queue); this.data.incrementQueue(target); }
+            if (cs) this.data.releaseToQueue(cs.queue, cs.owner, target);
           });
           this.ix.toast(`${assignedIds.length} authorization(s) moved to ${target}.`);
           this.data.addHistory('swap', 'Authorizations moved to queue', `${assignedIds.length} authorization(s) → ${target}`);
         } else {
           assignedIds.forEach((aid) => {
             const cs = cases.find((x) => x.authId === aid);
-            this.data.moveOneCase(cs && cs.owner !== 'Unassigned' ? cs.owner : null, target);
+            this.data.claimToNurse(cs?.queue ?? null, cs?.owner ?? null, target);
           });
           this.ix.toast(`${assignedIds.length} authorization(s) reassigned to ${target}.`);
           this.data.addHistory('swap', 'Authorizations reassigned', `${assignedIds.length} authorization(s) → ${target}`);
@@ -656,11 +656,11 @@ export class CaseExplorer {
       nurses, preselectAll: true,
       apply: (_ids, target, mode) => {
         if (mode === 'queue') {
-          if (rec.status !== target) { this.data.decrementQueue(rec.status); this.data.incrementQueue(target); }
+          this.data.releaseToQueue(rec.status, rec.nurse !== '—' ? rec.nurse : null, target);
           this.ix.toast(`${rec.authId} moved to ${target}.`);
           this.data.addHistory('swap', 'Authorization moved to queue', `${rec.authId} → ${target}`);
         } else {
-          this.data.moveOneCase(rec.nurse !== '—' ? rec.nurse : null, target);
+          this.data.claimToNurse(rec.status, rec.nurse !== '—' ? rec.nurse : null, target);
           this.ix.toast(`${rec.authId} reassigned to ${target}.`);
           this.data.addHistory('swap', 'Authorization reassigned', `${rec.authId} → ${target}`);
         }

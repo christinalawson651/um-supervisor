@@ -419,6 +419,42 @@ export class DashboardData {
     );
   }
 
+  /** Give one authorization back from a nurse without handing it to another — used when work is
+   *  released to a queue, where nobody owns it any more. */
+  releaseOwner(name: string) {
+    this.nurses.update((rows) => rows.map((n) => (n.name === name ? this.withActive(n, Math.max(0, n.active - 1)) : n)));
+  }
+
+  /** ------------------------------------------------------------------------------------------
+   *  Queued XOR owned. An authorization is either sitting unclaimed in a queue for any nurse to
+   *  pull, or it belongs to one nurse — never both. queueStats() already counts only unclaimed
+   *  work (`nurse === '—'`), so leaving a queue count untouched when someone claims the case makes
+   *  the queue advertise work that is no longer pullable; leaving a nurse's active count untouched
+   *  when the case goes back to a queue keeps it on a caseload nobody is actually working. Both
+   *  moves go through the two functions below so the rule holds for every caller rather than being
+   *  re-derived, and forgotten, at each call site.
+   *  ---------------------------------------------------------------------------------------- */
+
+  /** Someone takes ownership: it leaves whatever queue it was pullable from, or leaves its
+   *  previous owner's caseload. `fromOwner` is null/'Unassigned' when it was queued. */
+  claimToNurse(fromQueue: string | null, fromOwner: string | null, toNurse: string) {
+    const wasQueued = !fromOwner || fromOwner === 'Unassigned';
+    if (wasQueued && fromQueue) this.decrementQueue(fromQueue);
+    this.moveOneCase(wasQueued ? null : fromOwner, toNurse);
+  }
+
+  /** It goes back into a queue: whoever held it gives it up, and it becomes pullable again. */
+  releaseToQueue(fromQueue: string | null, fromOwner: string | null, toQueue: string) {
+    const wasQueued = !fromOwner || fromOwner === 'Unassigned';
+    if (wasQueued) {
+      if (fromQueue === toQueue) return;           // already pullable there — nothing moves
+      if (fromQueue) this.decrementQueue(fromQueue);
+    } else {
+      this.releaseOwner(fromOwner!);
+    }
+    this.incrementQueue(toQueue);
+  }
+
   /** Add one case to a named queue — pairs with decrementQueue() for a "move to queue" action. */
   incrementQueue(name: string) {
     this.queues.update((qs) =>
