@@ -1686,9 +1686,17 @@ const govSection = governanceSection;
     .tlm { font-size:11px; margin-top:2px; }
     .empty.pick { padding:70px 24px; color:var(--gray-500); font-weight:500; text-align:center; }
 
-    .pcap { display:flex; align-items:center; gap:8px; border:0; background:none; padding:0; margin:0;
+    .pcap { display:flex; align-items:center; gap:9px; border:0; background:none; padding:0; margin:0;
             font:inherit; cursor:pointer; text-align:left; }
     .pcap .pt { margin:0; }
+    /* This caret is a control, not decoration — at gray-400 and 11px it read as a stray glyph and
+       people did not find it. Given its own chip so it looks like something you press. */
+    .pcap .tcar {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:20px; height:20px; border-radius:5px; font-size:13px; line-height:1;
+      background:var(--gray-100); color:var(--gray-500);
+    }
+    .pcap:hover .tcar { background:var(--teal-600); color:#fff; }
     .pcap:hover .pt { color:var(--teal-700); }
     .pcap:focus-visible { outline:2px solid var(--teal-600); outline-offset:3px; border-radius:4px; }
     .pcount { font-size:11px; font-weight:700; color:var(--gray-500); background:var(--gray-100);
