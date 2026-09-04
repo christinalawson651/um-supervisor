@@ -9,6 +9,7 @@ import {
   POLICY_RULES, resolvePolicy, stateOf, marketOf, STATES_BY_LOB,
   AUDIT_RANGES, AuditRange, auditSpan, userActivityRollup, UserActivityRow,
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
+  activityBuckets, weekdayBuckets, ActivityBucket, ActivityGrain, ACTIVITY_GRAINS,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest, RetentionPolicy,
   archiveSummary, verifyArchiveChain,
   memberAuditRollup, MemberAuditRow, memberTimeline, TimelineThread, membersForUser, UserMemberRow, memberName,
@@ -640,6 +641,7 @@ const govSection = governanceSection;
             <thead><tr>
               <th class="srt" (click)="sortAct('name')">Account{{ caretAct('name') }}</th>
               <th class="srt" (click)="sortAct('role')">Role{{ caretAct('role') }}</th>
+              <th>Access Scope</th>
               <th class="srt num" (click)="sortAct('events')">Events{{ caretAct('events') }}</th>
               <th class="srt num" (click)="sortAct('phi')">PHI{{ caretAct('phi') }}</th>
               <th class="num">Members</th>
@@ -653,9 +655,13 @@ const govSection = governanceSection;
             </tr></thead>
             <tbody>
               @for (a of activity(); track a.userId) {
-                <tr class="clk" (click)="drillUser(a)">
+                <tr class="clk" [class.sel]="selectedUser() === a.userId" (click)="selectUser(a.userId)">
                   <td class="strong">{{ a.name }}<div class="sub mono">{{ a.userId }}</div></td>
                   <td>{{ a.role }}</td>
+                  <td class="scopecell">
+                    <span class="scope" [attr.data-wide]="isWideScope(a.userId) ? '1' : null">{{ scopeOf(a.userId).recordScope }}</span>
+                    <div class="sub">{{ scopeLine(a.userId) }}</div>
+                  </td>
                   <td class="num">{{ a.events | number }}</td>
                   <td class="num">{{ a.phi | number }}</td>
                   <td class="num"><button class="lnk" (click)="drillUserMembers(a); $event.stopPropagation()">{{ membersTouched(a) | number }}</button></td>
@@ -667,10 +673,89 @@ const govSection = governanceSection;
                   <td class="mono">{{ a.lastActivity || '—' }}</td>
                   <td>@for (f of a.signals; track f) { <span class="chip amber">{{ f }}</span> } @if (!a.signals.length) { <span class="sub">—</span> }</td>
                 </tr>
-              } @empty { <tr><td colspan="12" class="empty">No accounts match this filter.</td></tr> }
+              } @empty { <tr><td colspan="13" class="empty">No accounts match this filter.</td></tr> }
             </tbody>
           </table>
         </div>
+
+        @if (selectedUserRow(); as u) {
+          <div class="panel mt-6">
+            <div class="panel-pad mhead">
+              <div>
+                <button class="lnk back" (click)="selectedUser.set('')">‹ Clear selection</button>
+                <h3 class="pt">{{ u.name }}</h3>
+                <div class="sub">{{ u.role }} · {{ u.department }} · <span class="mono">{{ u.userId }}</span></div>
+              </div>
+              <div class="hactions">
+                <button class="btn outline sm" (click)="openActor(u.name)">Account detail</button>
+                <button class="btn outline sm" (click)="drillUser(u)">All events</button>
+              </div>
+            </div>
+
+            <div class="panel-pad acctscope">
+              <span class="albl">Access scope</span>
+              <span class="scope" [attr.data-wide]="isWideScope(u.userId) ? '1' : null">{{ scopeOf(u.userId).recordScope }}</span>
+              <span class="skv"><span class="sub">Lines of business</span> {{ scopeList(scopeOf(u.userId).lobScope) }}</span>
+              <span class="skv"><span class="sub">Populations</span> {{ scopeList(scopeOf(u.userId).populationScope) }}</span>
+              <span class="skv"><span class="sub">States</span> {{ scopeList(scopeOf(u.userId).licensedStates) }}</span>
+            </div>
+
+            <div class="panel-pad narrbar">
+              <span class="albl">Activity</span>
+              @for (g of grains; track g) {
+                <button class="qp" [class.on]="grain() === g" (click)="grain.set(g)">{{ g }}</button>
+              }
+              <span class="spacer"></span>
+              <span class="sub">{{ userEvents().length | number }} events · {{ rangeLabel() }} · click a bar to open it</span>
+            </div>
+
+            <div class="chartwrap">
+              @if (buckets().length) {
+                <div class="bars" [attr.data-grain]="grain()">
+                  @for (b of buckets(); track b.key) {
+                    <button class="bar" [class.zero]="!b.total"
+                      [attr.title]="b.label + ' — ' + b.total + ' events, ' + b.phi + ' PHI, ' + b.offHours + ' off-hours'"
+                      (click)="drillBucket(u.name, b)">
+                      <span class="col">
+                        <span class="fill" [style.height.%]="pctOfPeak(b.total)"></span>
+                        <span class="fill off" [style.height.%]="pctOfPeak(b.offHours)"></span>
+                      </span>
+                      <span class="bn">{{ b.total || '' }}</span>
+                      <span class="bl">{{ b.label }}</span>
+                    </button>
+                  }
+                </div>
+                <div class="legend">
+                  <span><i class="sw teal"></i> events</span>
+                  <span><i class="sw amber"></i> of which off-hours</span>
+                  <span class="sub">peak {{ peak() | number }} · busiest {{ busiest()?.label }}</span>
+                </div>
+              } @else { <div class="empty">No activity in range.</div> }
+            </div>
+
+            <div class="panel-pad tbl-head"><h3 class="pt sm">Day of week</h3>
+              <span class="section-note sm">Hour-of-day hides this: a Saturday spike and a 22:00 spike are different findings.</span></div>
+            <table class="z-table">
+              <thead><tr><th>Day</th><th class="num">Events</th><th class="num">PHI</th><th class="num">Off-Hours</th><th class="num">Exports</th><th class="num">Denied / Failed</th><th class="agree-col">Share</th></tr></thead>
+              <tbody>
+                @for (d of weekdays(); track d.key) {
+                  <tr class="clk" (click)="drillBucket(u.name, d)">
+                    <td class="strong">{{ d.label }}</td>
+                    <td class="num">{{ d.total | number }}</td>
+                    <td class="num">{{ d.phi | number }}</td>
+                    <td class="num"><b [class.warn]="d.offHours > 0">{{ d.offHours }}</b></td>
+                    <td class="num">{{ d.exports }}</td>
+                    <td class="num"><b [class.warn]="d.denied > 0">{{ d.denied }}</b></td>
+                    <td class="agree-col">
+                      <span class="mbar"><span class="teal" [style.width.%]="pctOfWeekPeak(d.total)"></span></span>
+                      <span class="mpct">{{ d.total }}</span>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
       }
 
       <!-- ========================== MEMBER TIMELINE ========================== -->
@@ -1318,6 +1403,35 @@ const govSection = governanceSection;
     .lnk:hover { color:var(--teal-900); }
 
     /* ---- Member Timeline ---- */
+    .scopecell { max-width:260px; }
+    .scope { display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:3px;
+             background:var(--gray-100); color:var(--gray-500); white-space:nowrap; }
+    .scope[data-wide] { background:var(--amber-bg); color:var(--amber-fg); }
+    .acctscope { display:flex; align-items:center; flex-wrap:wrap; gap:8px 18px; border-bottom:1px solid var(--border); background:var(--gray-50, #f9fafb); }
+    .skv { font-size:12px; } .skv .sub { margin-right:5px; }
+    .hactions { display:flex; gap:8px; }
+
+    .chartwrap { padding:18px 20px 8px; overflow-x:auto; }
+    .bars { display:flex; align-items:flex-end; gap:3px; min-height:190px; }
+    .bars[data-grain="Hour of day"] .bl { font-size:9px; }
+    .bar { flex:1 1 0; min-width:16px; display:flex; flex-direction:column; align-items:center; gap:3px;
+           border:0; background:none; padding:0; font:inherit; cursor:pointer; }
+    .bar .col { position:relative; width:100%; height:150px; display:flex; align-items:flex-end; justify-content:center; }
+    .bar .fill { position:absolute; bottom:0; width:100%; background:var(--teal-600); border-radius:3px 3px 0 0; min-height:2px; }
+    .bar .fill.off { background:var(--amber); }
+    .bar:hover .fill { background:var(--teal-700); }
+    .bar.zero { cursor:default; }
+    .bar.zero .fill { background:var(--gray-200); }
+    .bn { font-size:10px; font-weight:700; color:var(--gray-500); font-variant-numeric:tabular-nums; }
+    .bl { font-size:10px; color:var(--gray-500); white-space:nowrap; transform:rotate(-45deg); transform-origin:top right;
+          height:34px; align-self:flex-end; }
+    .bars[data-grain="Hour of day"] .bl { transform:none; align-self:center; height:auto; }
+    .legend { display:flex; gap:16px; align-items:center; padding:10px 0 4px; font-size:11.5px; color:var(--gray-500); }
+    .sw { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+    .sw.teal { background:var(--teal-600); } .sw.amber { background:var(--amber); }
+    .pt.sm { font-size:14px; }
+    tr.sel > td { background:var(--teal-50); }
+
     .narrbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--border); background:var(--gray-50, #f9fafb); }
     .narrbar .spacer { flex:1; min-width:12px; }
     .qp.sm { font-size:10.5px; padding:2px 8px; }
@@ -2078,6 +2192,52 @@ export class AuditTraceability {
       ],
     });
   }
+  // ---- Account forensics -------------------------------------------------------------------------
+  readonly selectedUser = signal('');
+  readonly grain = signal<ActivityGrain>('Daily');
+  readonly grains = ACTIVITY_GRAINS;
+  selectUser(id: string) { this.selectedUser.set(this.selectedUser() === id ? '' : id); }
+  readonly selectedUserRow = computed(() => this.activity().find((a) => a.userId === this.selectedUser()) ?? null);
+  readonly userEvents = computed(() => {
+    const id = this.selectedUser();
+    return id ? this.scopedEvents().filter((e) => e.actorId === id) : [];
+  });
+  readonly buckets = computed(() => activityBuckets(this.userEvents(), this.grain()));
+  readonly weekdays = computed(() => weekdayBuckets(this.userEvents()));
+  readonly peak = computed(() => Math.max(1, ...this.buckets().map((b) => b.total)));
+  readonly busiest = computed(() => [...this.buckets()].sort((a, b) => b.total - a.total)[0] ?? null);
+  pctOfPeak(n: number) { return Math.round((n / this.peak()) * 100); }
+  pctOfWeekPeak(n: number) { return Math.round((n / Math.max(1, ...this.weekdays().map((d) => d.total))) * 100); }
+  /** A bar you cannot open is a bar that ends the investigation where it should have started it. */
+  drillBucket(name: string, b: ActivityBucket) {
+    if (!b.total) { this.ix.toast(`No activity for ${name} in ${b.label}.`, 'info'); return; }
+    this.drillEvents(`${name} — ${b.label}`, b.events, `activity-${slug(name)}-${slug(b.key)}`);
+  }
+
+  // ---- Access scope --------------------------------------------------------------------------
+  scopeOf(userId: string) {
+    return SYSTEM_USERS.find((u) => u.userId === userId)
+      ?? { recordScope: '—', lobScope: [] as string[], populationScope: [] as string[], licensedStates: [] as string[] };
+  }
+  scopeList(v: string[]) { return v.length ? v.join(', ') : 'All'; }
+  /** One line summarising what an account can see, for the inventory table. */
+  scopeLine(userId: string) {
+    const u = this.scopeOf(userId);
+    const parts = [
+      `LOB: ${this.scopeList(u.lobScope)}`,
+      `Pop: ${this.scopeList(u.populationScope)}`,
+      ...(u.licensedStates.length ? [`States: ${u.licensedStates.join(', ')}`] : []),
+    ];
+    return parts.join(' · ');
+  }
+  /** Unrestricted record access is not automatically a finding — a Medical Director needs it and a
+   *  compliance analyst is read-only by design — but it IS the thing an entitlement review should
+   *  stop on, so it is marked rather than left to be spotted. */
+  isWideScope(userId: string) {
+    const u = this.scopeOf(userId);
+    return u.recordScope === 'All members' || u.recordScope === 'All members — audit read-only';
+  }
+
   // ---- Actors -----------------------------------------------------------------------------------
   /** One place to land on whoever acted, from anywhere they are named. AI Oversight knows a
    *  clinician by display name; the audit trail knows them by account id. Resolving the two here
@@ -2097,6 +2257,10 @@ export class AuditTraceability {
       badge: { text: u.status, tone: u.status === 'Active' ? 'green' : 'amber' },
       fields: [
         { label: 'Access Role', value: u.role },
+        { label: 'Record Scope', value: u.recordScope, tone: this.isWideScope(u.userId) ? 'amber' : undefined },
+        { label: 'Lines of Business', value: this.scopeList(u.lobScope) },
+        { label: 'Populations', value: this.scopeList(u.populationScope) },
+        { label: 'Licensed States', value: this.scopeList(u.licensedStates) },
         { label: 'MFA', value: u.mfaEnrolled ? 'Enrolled' : 'Password only', tone: u.mfaEnrolled ? undefined : 'amber' },
         { label: 'Last Entitlement Review', value: `${u.lastAccessReview} (${attestationAgeDays(u)} days ago)`,
           tone: attestationAgeDays(u) > ATTESTATION_CYCLE_DAYS ? 'amber' : undefined },

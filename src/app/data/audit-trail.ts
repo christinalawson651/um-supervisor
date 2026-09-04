@@ -23,6 +23,19 @@ export type AccessRole =
   | 'UM Nurse Reviewer' | 'Medical Director' | 'UM Supervisor' | 'Care Manager' | 'CM Supervisor'
   | 'Appeals Reviewer' | 'Intake Coordinator' | 'Compliance Analyst' | 'System Administrator' | 'Interface Service Account';
 
+/** How wide an account's record access runs. Ordered loosely from narrowest to widest so a
+ *  reviewer scanning the column can see the outliers without reading every row. */
+export type RecordScope =
+  | 'Assigned caseload'
+  | 'Team caseload'
+  | 'Programme caseload'
+  | 'Appeal scope'
+  | 'Demographic & eligibility only'
+  | 'All members — audit read-only'
+  | 'All members'
+  | 'Transport only — no UI access'
+  | 'Masked — no PHI';
+
 export interface SystemUser {
   userId: string;
   name: string;
@@ -30,6 +43,14 @@ export interface SystemUser {
   department: string;
   status: 'Active' | 'Disabled' | 'Locked';
   licensedStates: string[];      // empty for non-clinical roles
+  // ---- what this account can SEE, as distinct from what it can DO -----------------------------
+  // The permission matrix answers "may they deny an authorization". These answer "whose
+  // authorizations". An entitlement review that covers the verbs and not the scope has reviewed
+  // half the control: a nurse who may only approve within criteria, but can see every member in
+  // every market, is a minimum-necessary finding the verb column will never show.
+  lobScope: string[];            // empty = every line of business
+  populationScope: string[];     // empty = every population / programme
+  recordScope: RecordScope;      // whose records, at all
   mfaEnrolled: boolean;
   lastAccessReview: string;       // ISO date — when this account's entitlements were last attested
   lastLogin: string;              // ISO date
@@ -48,7 +69,9 @@ function userIdOf(name: string, i: number): string {
 function buildUsers(): SystemUser[] {
   const out: SystemUser[] = [];
   let i = 0;
-  const push = (name: string, role: AccessRole, department: string, states: string[]) => {
+  const push = (name: string, role: AccessRole, department: string, states: string[],
+                lobScope: string[] = [], populationScope: string[] = [],
+                recordScope: RecordScope = 'Assigned caseload') => {
     const n = i;
     out.push({
       userId: userIdOf(name, n), name, role, department, status: 'Active', licensedStates: states,
@@ -58,19 +81,28 @@ function buildUsers(): SystemUser[] {
       // Entitlement attestation runs on a quarterly cycle; a few accounts have drifted past it.
       lastAccessReview: isoDate(addDays(TODAY, -(30 + (n * 23) % 150))),
       lastLogin: isoDate(capToday(addDays(TODAY, -(n % 6)))),
+      lobScope, populationScope, recordScope,
     });
     i++;
   };
-  NURSES.forEach((n) => push(n, 'UM Nurse Reviewer', 'Utilization Management', ['TX', 'FL']));
-  MD_REVIEWERS.forEach((n) => push(n, 'Medical Director', 'Utilization Management', ['TX', 'FL', 'GA']));
-  CARE_MANAGERS.forEach((cm) => push(cm.name, 'Care Manager', 'Care Management', ['TX']));
-  push('Christina Lawson', 'UM Supervisor', 'Utilization Management', []);
-  push('Renee Alvarez', 'CM Supervisor', 'Care Management', []);
-  push('Daniel Okafor', 'Appeals Reviewer', 'Appeals & Grievances', ['TX']);
-  push('Tanya Brooks', 'Intake Coordinator', 'Intake', []);
-  push('Priya Shah, RN (QI)', 'Compliance Analyst', 'Quality & Compliance', []);
-  push('svc_trucare_hl7', 'Interface Service Account', 'IT Integration', []);
-  push('Alan Reyes', 'System Administrator', 'IT Operations', []);
+  // Scope is assigned by role, then narrowed where a real deployment would narrow it. The two
+  // deliberately wide accounts (Compliance Analyst, Interface Service Account) are wide for
+  // defensible reasons and say so — a governance review should be able to see WHY, not just that.
+  NURSES.forEach((n, k) => push(n, 'UM Nurse Reviewer', 'Utilization Management', ['TX', 'FL'],
+    k % 3 === 0 ? ['Medicaid'] : k % 3 === 1 ? ['Medicare Advantage', 'Commercial PPO'] : [],
+    k % 2 === 0 ? ['Acute & Surgical'] : ['Acute & Surgical', 'Musculoskeletal'], 'Assigned caseload'));
+  MD_REVIEWERS.forEach((n) => push(n, 'Medical Director', 'Utilization Management', ['TX', 'FL', 'GA'],
+    [], [], 'All members'));
+  CARE_MANAGERS.forEach((cm, k) => push(cm.name, 'Care Manager', 'Care Management', ['TX'],
+    k % 2 === 0 ? ['Medicaid'] : ['Medicaid', 'Medicare Advantage'],
+    [cm.discipline], 'Assigned caseload'));
+  push('Christina Lawson', 'UM Supervisor', 'Utilization Management', [], [], [], 'Team caseload');
+  push('Renee Alvarez', 'CM Supervisor', 'Care Management', [], [], [], 'Team caseload');
+  push('Daniel Okafor', 'Appeals Reviewer', 'Appeals & Grievances', ['TX'], [], [], 'Appeal scope');
+  push('Tanya Brooks', 'Intake Coordinator', 'Intake', [], [], [], 'Demographic & eligibility only');
+  push('Priya Shah, RN (QI)', 'Compliance Analyst', 'Quality & Compliance', [], [], [], 'All members — audit read-only');
+  push('svc_trucare_hl7', 'Interface Service Account', 'IT Integration', [], [], [], 'Transport only — no UI access');
+  push('Alan Reyes', 'System Administrator', 'IT Operations', [], [], [], 'Masked — no PHI');
   return out;
 }
 export const SYSTEM_USERS: SystemUser[] = buildUsers();
@@ -1006,6 +1038,96 @@ export function membersForUser(userId: string, events: AuditEvent[]): UserMember
     });
   });
   return rows.sort((a, b) => b.lastTouch.localeCompare(a.lastTouch));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Activity over time, for forensics.
+//
+// The four grains answer different questions and are not interchangeable. Hour-of-day is a
+// PROFILE — every event in range folded onto a 24-hour clock — because "does this account work at
+// three in the morning" is a shape question, not a timeline one, and one bucket per hour of a
+// twelve-month range would be eight thousand bars nobody can read. Daily, weekly and monthly are
+// calendar buckets, for spotting the day something changed.
+//
+// Every bucket keeps its own events so a spike can be opened rather than merely noticed. A chart
+// you cannot click is a chart that ends the investigation where it should have started it.
+// ---------------------------------------------------------------------------------------------
+export type ActivityGrain = 'Hour of day' | 'Daily' | 'Weekly' | 'Monthly';
+export const ACTIVITY_GRAINS: ActivityGrain[] = ['Hour of day', 'Daily', 'Weekly', 'Monthly'];
+
+export interface ActivityBucket {
+  key: string;
+  label: string;
+  total: number;
+  phi: number;
+  exports: number;
+  denied: number;
+  offHours: number;
+  events: AuditEvent[];
+}
+
+function isoWeekKey(d: Date): string {
+  // ISO-8601 week: Thursday of the same week determines the year, which is why this is not just
+  // "day of year over seven" — a January date can legitimately belong to the previous ISO year.
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((t.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function activityBuckets(events: AuditEvent[], grain: ActivityGrain): ActivityBucket[] {
+  const map = new Map<string, ActivityBucket>();
+  const put = (key: string, label: string, e: AuditEvent) => {
+    let b = map.get(key);
+    if (!b) { b = { key, label, total: 0, phi: 0, exports: 0, denied: 0, offHours: 0, events: [] }; map.set(key, b); }
+    b.total++;
+    if (e.phi) b.phi++;
+    if (e.category === 'Data Export') b.exports++;
+    if (e.outcome !== 'Success') b.denied++;
+    if (isOffHours(e.timestamp)) b.offHours++;
+    b.events.push(e);
+  };
+
+  if (grain === 'Hour of day') {
+    // Seed all 24 so an empty hour reads as a real zero rather than a gap in the axis — the
+    // absence of activity at 04:00 is itself the finding.
+    for (let h = 0; h < 24; h++) {
+      map.set(String(h).padStart(2, '0'),
+        { key: String(h).padStart(2, '0'), label: `${String(h).padStart(2, '0')}:00`, total: 0, phi: 0, exports: 0, denied: 0, offHours: 0, events: [] });
+    }
+    for (const e of events) put(e.timestamp.slice(11, 13), `${e.timestamp.slice(11, 13)}:00`, e);
+    return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+  }
+
+  for (const e of events) {
+    const d = new Date(e.timestamp);
+    if (grain === 'Daily') put(e.timestamp.slice(0, 10), e.timestamp.slice(0, 10), e);
+    else if (grain === 'Weekly') { const k = isoWeekKey(d); put(k, k.replace('-W', ' wk '), e); }
+    else put(e.timestamp.slice(0, 7), `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, e);
+  }
+  return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Day-of-week shape, which hour-of-day hides: a Saturday spike and a 22:00 spike are different
+ *  findings and an investigator asks for both. */
+export function weekdayBuckets(events: AuditEvent[]): ActivityBucket[] {
+  const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const out: ActivityBucket[] = names.map((label, k) =>
+    ({ key: String(k), label, total: 0, phi: 0, exports: 0, denied: 0, offHours: 0, events: [] }));
+  for (const e of events) {
+    const b = out[new Date(e.timestamp).getDay()];
+    b.total++;
+    if (e.phi) b.phi++;
+    if (e.category === 'Data Export') b.exports++;
+    if (e.outcome !== 'Success') b.denied++;
+    if (isOffHours(e.timestamp)) b.offHours++;
+    b.events.push(e);
+  }
+  return out;
 }
 
 export function userActivityRollup(events: AuditEvent[], users: SystemUser[] = SYSTEM_USERS): UserActivityRow[] {
