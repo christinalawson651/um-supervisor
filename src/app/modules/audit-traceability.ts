@@ -50,10 +50,11 @@ const ENTITY_TYPES: AuditEntityType[] = ['Authorization', 'CM Case', 'Member', '
 const OUTCOMES: AuditOutcome[] = ['Success', 'Denied', 'Failed'];
 const PAGE_SIZE = 50;
 
-const EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Role', 'Category', 'Action', 'Entity Type', 'Entity ID', 'Members', 'Screen', 'Control', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
+const EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Role', 'Category', 'Action', 'Entity Type', 'Entity ID', 'Member', 'Member ID', 'Screen', 'Control', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
 function eventRow(e: AuditEvent): (string | number)[] {
   return [e.eventId, e.timestamp.replace('T', ' '), e.actor, e.actorRole, e.category, e.action, e.entityType, e.entityId,
-    e.memberId ?? (e.memberCount ? `${e.memberCount} members` : '—'), e.screen ?? '—', e.control ?? '—', e.field ?? '—', e.before ?? '—', e.after ?? '—', e.channel, e.sourceIp, e.sessionId,
+    e.memberId ? memberName(e.memberId) : (e.memberCount ? `${e.memberCount} members — extract` : 'Not member-specific'),
+    e.memberId ?? '—', e.screen ?? '—', e.control ?? '—', e.field ?? '—', e.before ?? '—', e.after ?? '—', e.channel, e.sourceIp, e.sessionId,
     e.correlationId, e.reasonCode ?? '—', e.phi ? 'Yes' : 'No', e.outcome, e.recordHash];
 }
 
@@ -196,7 +197,14 @@ const govSection = governanceSection;
                   <td class="strong">{{ r.ev.actor }}<div class="sub">{{ r.ev.actorRole }}</div></td>
                   <td>{{ r.ev.action }}<div class="sub">{{ r.ev.category }}</div></td>
                   <td class="mono">{{ r.ev.entityId }}<div class="sub">{{ r.ev.entityType }}@if (r.ev.phi) { · <span class="phi">PHI</span> }
-                    @if (r.ev.memberCount) { · <b>{{ r.ev.memberCount | number }} members</b> }</div></td>
+                    @if (r.ev.memberCount) { · <b>{{ r.ev.memberCount | number }} members</b> }</div>
+                    @if (r.ev.memberId) {
+                      <div class="memln">
+                        @if (hasMemberName(r.ev.memberId)) {
+                          <button class="lnk" (click)="openMemberFromId(r.ev.memberId!); $event.stopPropagation()">{{ memberNameOf(r.ev.memberId) }}</button>
+                        } @else { <span class="sub mono">{{ r.ev.memberId }}</span> }
+                      </div>
+                    }</td>
                   <td>@if (r.ev.field) {
                       @if (r.ev.changeAction) { <span class="chg" [attr.data-a]="r.ev.changeAction">{{ r.ev.changeAction }}</span> }
                       <span class="sub">{{ r.ev.field }}:</span> <span class="was">{{ r.ev.before ?? '—' }}</span> → <b>{{ r.ev.after }}</b>
@@ -921,7 +929,7 @@ const govSection = governanceSection;
                                   @if (e.screen) { <span class="scr">{{ e.screen }} · <span class="ctl">{{ e.control }}</span></span> }
                                 </span>
                               }
-                              <span class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }</span>
+                              <span class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }@if (e.memberCount) { · {{ e.memberCount | number }} members in extract }</span>
                             </span>
                             <span class="tlgo mono">{{ e.eventId }} ›</span>
                           </button>
@@ -1622,6 +1630,7 @@ const govSection = governanceSection;
     .tlm { font-size:11px; margin-top:2px; }
     .empty.pick { padding:70px 24px; color:var(--gray-500); font-weight:500; text-align:center; }
 
+    .memln { margin-top:2px; font-size:11.5px; }
     .scr { display:block; font-size:10.5px; color:var(--gray-500); margin-top:2px; }
     .scr .ctl { font-weight:700; letter-spacing:.03em; text-transform:uppercase; font-size:9.5px; }
     .chg { display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
@@ -2247,12 +2256,24 @@ export class AuditTraceability {
       columns: EVENT_COLUMNS, rows: rows.map(eventRow), exportName: `audit-trail-${slugName}${TODAY_ISO}`,
     });
   }
+  /** The trail STORES the member id, which is correct — an id is stable and a name is not, and the
+   *  record has to still mean the same thing in ten years when someone has married or been merged
+   *  from a duplicate. But an id alone is unreadable to the person doing the review, so the name is
+   *  resolved for display and the id kept beside it. Where no name resolves, the id stands rather
+   *  than a blank: an unresolvable member is a real thing to notice, not something to hide.
+   *
+   *  Note for deployment: name display should follow the viewer's own record scope — an account
+   *  marked "Masked — no PHI" has no business reading these. That gating is not modelled here. */
+  memberNameOf(id: string | null | undefined): string { return id ? memberName(id) : ''; }
+  hasMemberName(id: string | null | undefined): boolean { return !!id && memberName(id) !== id; }
+  openMemberFromId(id: string) { this.sel.set('member'); this.mq.set(''); this.selectMember(id); }
+
   /** A blank member column reads as missing data. These three are different facts: one member,
    *  many members (an extract is a disclosure of everyone in it), or an event that is genuinely not
    *  about a member at all — a sign-in, a rule change, an account grant. Only the first two are
    *  about anyone. */
   memberLabel(e: AuditEvent): string {
-    if (e.memberId) return e.memberId;
+    if (e.memberId) return this.hasMemberName(e.memberId) ? `${memberName(e.memberId)} · ${e.memberId}` : e.memberId;
     if (e.memberCount) return `${e.memberCount.toLocaleString()} members — extract`;
     return 'Not member-specific';
   }
