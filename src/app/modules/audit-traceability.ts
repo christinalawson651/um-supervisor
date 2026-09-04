@@ -696,23 +696,32 @@ const govSection = governanceSection;
                       <span class="tn">{{ t.events.length }} events · {{ t.actors.length }} accounts</span>
                     </button>
                     @if (openThreads().has(t.correlationId)) {
+                      <div class="tacts">
+                        <button class="lnk" (click)="drillThread(t)">Open this record's full trail</button>
+                        <button class="lnk" (click)="drillGovernanceRecord(t.entityId, t.correlationId)">Governance record</button>
+                      </div>
+                    }
+                    @if (openThreads().has(t.correlationId)) {
                       <ol class="tl">
                         @for (e of t.events; track e.eventId) {
                           <li class="tli" [attr.data-cat]="e.category">
-                            <div class="tlt mono">{{ e.timestamp.replace('T', ' ') }}</div>
-                            <div class="tlb">
-                              <div class="tla">{{ e.action }}
-                                @if (e.phi) { <span class="phi">PHI</span> }
-                                @if (e.outcome !== 'Success') { <span class="chip red">{{ e.outcome }}</span> }
-                              </div>
-                              @if (e.field) {
-                                <div class="tlf">
-                                  @if (e.changeAction) { <span class="chg" [attr.data-a]="e.changeAction">{{ e.changeAction }}</span> }
-                                  <span class="sub">{{ e.field }}:</span> <span class="was">{{ e.before ?? '—' }}</span> → <b>{{ e.after }}</b>
-                                </div>
-                              }
-                              <div class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }</div>
-                            </div>
+                            <button class="tlin" (click)="openEvent(e)" [attr.aria-label]="'Open full record for ' + e.action">
+                              <span class="tlt mono">{{ e.timestamp.replace('T', ' ') }}</span>
+                              <span class="tlb">
+                                <span class="tla">{{ e.action }}
+                                  @if (e.phi) { <span class="phi">PHI</span> }
+                                  @if (e.outcome !== 'Success') { <span class="chip red">{{ e.outcome }}</span> }
+                                </span>
+                                @if (e.field) {
+                                  <span class="tlf">
+                                    @if (e.changeAction) { <span class="chg" [attr.data-a]="e.changeAction">{{ e.changeAction }}</span> }
+                                    <span class="sub">{{ e.field }}:</span> <span class="was">{{ e.before ?? '—' }}</span> → <b>{{ e.after }}</b>
+                                  </span>
+                                }
+                                <span class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }</span>
+                              </span>
+                              <span class="tlgo mono">{{ e.eventId }} ›</span>
+                            </button>
                           </li>
                         }
                       </ol>
@@ -1195,7 +1204,16 @@ const govSection = governanceSection;
 
     /* The timeline itself: one rail, events hung off it in order. */
     .tl { list-style:none; margin:0; padding:2px 16px 14px 30px; border-left:2px solid var(--gray-100); margin-left:24px; }
-    .tli { display:grid; grid-template-columns:132px 1fr; gap:12px; padding:7px 0; position:relative; }
+    .tli { position:relative; }
+    .tlin { display:grid; grid-template-columns:132px 1fr auto; gap:12px; align-items:start; width:100%;
+            text-align:left; border:0; background:none; padding:7px 8px 7px 0; margin:0; font:inherit;
+            cursor:pointer; border-radius:6px; }
+    .tlin:hover { background:var(--gray-50, #f9fafb); }
+    .tlin:focus-visible { outline:2px solid var(--teal-600); outline-offset:-2px; }
+    .tlb { display:block; min-width:0; }
+    .tlgo { font-size:10.5px; color:var(--gray-400); white-space:nowrap; padding-top:3px; opacity:0; transition:opacity .12s; }
+    .tlin:hover .tlgo, .tlin:focus-visible .tlgo { opacity:1; }
+    .tacts { display:flex; gap:16px; padding:0 16px 10px 54px; }
     .tli::before { content:''; position:absolute; left:-37px; top:13px; width:9px; height:9px; border-radius:999px;
                    background:var(--gray-300); border:2px solid #fff; }
     .tli[data-cat="Clinical Decision"]::before { background:var(--teal-600); }
@@ -1204,6 +1222,7 @@ const govSection = governanceSection;
     .tli[data-cat="Security"]::before { background:var(--red, #c0392b); }
     .tlt { font-size:11px; color:var(--gray-500); padding-top:2px; white-space:nowrap; }
     .tla { font-size:13px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .tlf, .tlm { display:block; }
     .tlf { font-size:12px; margin-top:3px; }
     .tlm { font-size:11px; margin-top:2px; }
     .empty.pick { padding:70px 24px; color:var(--gray-500); font-weight:500; text-align:center; }
@@ -1755,6 +1774,7 @@ export class AuditTraceability {
         { label: 'Governance Section', value: govSection(e) },
         { label: 'Member', value: e.memberId ?? '—' },
         { label: 'Line of Business', value: e.lob ?? '—' },
+        { label: 'Change Action', value: e.changeAction ?? '—' },
         { label: 'Field Changed', value: e.field ?? '—' },
         { label: 'Before', value: e.before ?? '—' },
         { label: 'After', value: e.after ?? '—' },
@@ -1836,6 +1856,11 @@ export class AuditTraceability {
     this.mq.set('');
     this.selectMember(memberId);
     this.memberActor.set(actorId);
+  }
+  /** One record's complete trail, flat and exportable — the thread expanded in place is for
+   *  reading, this is for handing over. */
+  drillThread(t: TimelineThread) {
+    this.drillEvents(`${t.entityType} ${t.entityId} — full trail`, t.events, `record-${slug(t.entityId)}`);
   }
   drillMember(m: MemberAuditRow) {
     this.drillEvents(`Member record — ${m.member}`, this.scopedEvents().filter((e) => e.memberId === m.memberId), `member-${slug(m.memberId)}`);
