@@ -1556,7 +1556,6 @@ const govSection = governanceSection;
     .archnote .lnk { color:var(--amber-fg); margin-left:6px; }
     .chartwrap { padding:18px 20px 8px; overflow-x:auto; }
     .bars { display:flex; align-items:flex-end; gap:3px; min-height:190px; }
-    .bars[data-grain="Hour of day"] .bl { font-size:9px; }
     .bar { flex:1 1 0; min-width:16px; display:flex; flex-direction:column; align-items:center; gap:3px;
            border:0; background:none; padding:0; font:inherit; cursor:pointer; }
     .bar .col { position:relative; width:100%; height:150px; display:flex; align-items:flex-end; justify-content:center; }
@@ -1568,7 +1567,7 @@ const govSection = governanceSection;
     .bn { font-size:10px; font-weight:700; color:var(--gray-500); font-variant-numeric:tabular-nums; }
     .bl { font-size:10px; color:var(--gray-500); white-space:nowrap; transform:rotate(-45deg); transform-origin:top right;
           height:34px; align-self:flex-end; }
-    .bars[data-grain="Hour of day"] .bl { transform:none; align-self:center; height:auto; }
+    .bars[data-grain="Hour of day"] .bl { font-size:9px; transform:none; align-self:center; height:auto; }
     .legend { display:flex; gap:16px; align-items:center; padding:10px 0 4px; font-size:11.5px; color:var(--gray-500); }
     .sw { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
     .sw.teal { background:var(--teal-600); } .sw.amber { background:var(--amber); }
@@ -1734,7 +1733,6 @@ const govSection = governanceSection;
     .clk { cursor: pointer; }
     .ctl { max-width: 380px; line-height: 1.45; }
     .next { margin-top: 4px; font-size: 11.5px; color: var(--teal-700); }
-    .lnk { color: var(--teal-700); font-weight: 600; cursor: pointer; text-decoration: underline; }
     .empty { text-align: center; color: var(--gray-500); padding: 26px; }
 
     .matrix-wrap { overflow-x: auto; }
