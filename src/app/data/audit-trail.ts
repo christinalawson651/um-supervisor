@@ -48,6 +48,13 @@ export interface SystemUser {
   // authorizations". An entitlement review that covers the verbs and not the scope has reviewed
   // half the control: a nurse who may only approve within criteria, but can see every member in
   // every market, is a minimum-necessary finding the verb column will never show.
+  // ---- workforce record attributes, for relationship screening --------------------------------
+  // Held so an access can be compared against the member's own details. In a real deployment these
+  // come from HR, not from the clinical system, and that separation is the point: the comparison is
+  // only trustworthy if neither side can edit the other.
+  homeZip: string;
+  homeStreet: string;
+  homePhone: string;
   lobScope: string[];            // empty = every line of business
   populationScope: string[];     // empty = every population / programme
   recordScope: RecordScope;      // whose records, at all
@@ -60,6 +67,43 @@ function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }
 function capToday(d: Date): Date { return d.getTime() > TODAY.getTime() ? TODAY : d; }
 function pctOf(n: number, d: number): number { return d ? Math.round((n / d) * 100) : 0; }
+
+// ---------------------------------------------------------------------------------------------
+// Relationship screening — "did this account look at someone they know".
+//
+// A staff member opening the record of a relative, a neighbour or themselves is the classic
+// snooping case, and it is invisible to every other control on this tab: the access is inside
+// their role, inside their caseload scope, and often inside working hours. The only thing that
+// makes it visible is comparing WHO ACCESSED against WHO WAS ACCESSED.
+//
+// The pools below are deliberately small enough that comparisons actually collide at a believable
+// rate, and both sides are derived the same way so a match is a real match rather than a planted
+// one. Flag strength matters more than flag count: thousands of unrelated people share a postal
+// code, almost nobody shares a landline.
+// ---------------------------------------------------------------------------------------------
+const ZIPS = ['75201', '75202', '75204', '75206', '75214', '75219', '75225', '75230',
+  '33101', '33125', '33133', '33143', '30303', '30305', '30309', '30318',
+  '77002', '77006', '77019', '77027', '85004', '85012', '85016', '85251'];
+const STREETS = ['Maple Ave', 'Cedar Ln', 'Oak St', 'Birch Rd', 'Elm Ct', 'Willow Way', 'Aspen Dr',
+  'Juniper Pl', 'Magnolia St', 'Sycamore Blvd', 'Poplar Ave', 'Hawthorn Rd'];
+function phoneFrom(seed: string): string {
+  const h = digest(seed + 'tel');
+  return `${214 + (parseInt(h.slice(0, 2), 16) % 3)}-555-${String(parseInt(h.slice(2, 6), 16) % 10000).padStart(4, '0')}`;
+}
+/** Surname as the record holds it — members are "Last, First", staff are "First Last[, RN]". */
+function surnameOf(name: string): string {
+  if (name.includes(',')) return name.split(',')[0].trim().toLowerCase();
+  const parts = name.replace(/,.*$/, '').trim().split(' ');
+  return (parts[parts.length - 1] || '').toLowerCase();
+}
+/** A member's own contact details, derived from their stable id so they never move. */
+export function memberContact(memberId: string): { zip: string; street: string; phone: string } {
+  return {
+    zip: ZIPS[parseInt(digest(memberId + 'zip').slice(0, 4), 16) % ZIPS.length],
+    street: STREETS[parseInt(digest(memberId + 'st').slice(0, 4), 16) % STREETS.length],
+    phone: phoneFrom(memberId),
+  };
+}
 
 function userIdOf(name: string, i: number): string {
   const initials = name.replace(/,.*$/, '').split(' ').map((p) => p[0]).join('').toLowerCase();
@@ -81,6 +125,9 @@ function buildUsers(): SystemUser[] {
       // Entitlement attestation runs on a quarterly cycle; a few accounts have drifted past it.
       lastAccessReview: isoDate(addDays(TODAY, -(30 + (n * 23) % 150))),
       lastLogin: isoDate(capToday(addDays(TODAY, -(n % 6)))),
+      homeZip: ZIPS[parseInt(digest(name + 'zip').slice(0, 4), 16) % ZIPS.length],
+      homeStreet: STREETS[parseInt(digest(name + 'st').slice(0, 4), 16) % STREETS.length],
+      homePhone: phoneFrom(name),
       lobScope, populationScope, recordScope,
     });
     i++;
@@ -1162,6 +1209,101 @@ export function weekdayBuckets(events: AuditEvent[]): ActivityBucket[] {
     b.events.push(e);
   }
   return out;
+}
+
+export type CommonalityFlag =
+  | 'Same name as the account'
+  | 'Shared telephone number'
+  | 'Same street and postal code'
+  | 'Same surname'
+  | 'Same postal code';
+
+/** Ordered strongest first. A shared landline or a matching address is close to conclusive that the
+ *  two are connected; a shared postal code is weak on its own and is reported as such, because a
+ *  queue full of weak flags gets ignored and takes the strong ones down with it. */
+export const COMMONALITY_STRENGTH: Record<CommonalityFlag, 'High' | 'Medium' | 'Low'> = {
+  'Same name as the account': 'High',
+  'Shared telephone number': 'High',
+  'Same street and postal code': 'High',
+  'Same surname': 'Medium',
+  'Same postal code': 'Low',
+};
+
+export interface CommonalityHit {
+  actorId: string; actor: string; actorRole: AccessRole;
+  memberId: string; member: string;
+  flags: CommonalityFlag[];
+  strength: 'High' | 'Medium' | 'Low';
+  events: number; phiEvents: number; breakGlass: number;
+  firstTouch: string; lastTouch: string;
+}
+
+/** Every account/member pair where the account touched the member's PHI and the two share
+ *  identifying details. This is a REVIEW TRIGGER, never a finding: a nurse may share a surname or a
+ *  postal code with a member they have never met, and the legitimate explanation is the common one.
+ *  What it does is make the question askable at all. */
+export function commonalityHits(events: AuditEvent[], users: SystemUser[] = SYSTEM_USERS): CommonalityHit[] {
+  const byUser = new Map(users.map((u) => [u.userId, u]));
+  const pairs = new Map<string, { u: SystemUser; memberId: string; evs: AuditEvent[] }>();
+  for (const e of events) {
+    if (!e.memberId || !e.phi) continue;                 // no member, or no PHI exposed
+    const u = byUser.get(e.actorId);
+    if (!u || u.role === 'Interface Service Account') continue;   // an interface knows nobody
+    const key = `${e.actorId}|${e.memberId}`;
+    const cur = pairs.get(key) ?? { u, memberId: e.memberId, evs: [] };
+    cur.evs.push(e); pairs.set(key, cur);
+  }
+
+  const out: CommonalityHit[] = [];
+  pairs.forEach(({ u, memberId, evs }) => {
+    const member = memberName(memberId);
+    const c = memberContact(memberId);
+    const flags: CommonalityFlag[] = [];
+    if (surnameOf(member) === surnameOf(u.name) && surnameOf(member)) {
+      // Same surname AND same address is the household case; the surname alone is weaker.
+      flags.push(c.street === u.homeStreet && c.zip === u.homeZip ? 'Same name as the account' : 'Same surname');
+    }
+    if (c.phone === u.homePhone) flags.push('Shared telephone number');
+    if (c.street === u.homeStreet && c.zip === u.homeZip) {
+      if (!flags.includes('Same name as the account')) flags.push('Same street and postal code');
+    } else if (c.zip === u.homeZip) flags.push('Same postal code');
+    if (!flags.length) return;
+
+    const sorted = [...evs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const strength = flags.some((f) => COMMONALITY_STRENGTH[f] === 'High') ? 'High'
+      : flags.some((f) => COMMONALITY_STRENGTH[f] === 'Medium') ? 'Medium' : 'Low';
+    out.push({
+      actorId: u.userId, actor: u.name, actorRole: u.role,
+      memberId, member, flags, strength,
+      events: sorted.length,
+      phiEvents: sorted.filter((e) => e.phi).length,
+      breakGlass: sorted.filter((e) => e.action.startsWith('Break-the-glass')).length,
+      firstTouch: sorted[0].timestamp.replace('T', ' '),
+      lastTouch: sorted[sorted.length - 1].timestamp.replace('T', ' '),
+    });
+  });
+  const rank = { High: 0, Medium: 1, Low: 2 };
+  return out.sort((a, b) => rank[a.strength] - rank[b.strength] || b.breakGlass - a.breakGlass || b.phiEvents - a.phiEvents);
+}
+
+/** Who opened a record under an emergency justification, and on whom. The member alone does not
+ *  answer the question the control exists to ask. */
+export interface BreakGlassAccess {
+  eventId: string; timestamp: string;
+  actor: string; actorId: string; actorRole: AccessRole;
+  memberId: string; member: string;
+  reasonCode: string; sourceIp: string; channel: AuditChannel;
+}
+export function breakGlassAccesses(events: AuditEvent[]): BreakGlassAccess[] {
+  return events
+    .filter((e) => e.action.startsWith('Break-the-glass') && e.memberId)
+    .map((e) => ({
+      eventId: e.eventId, timestamp: e.timestamp.replace('T', ' '),
+      actor: e.actor, actorId: e.actorId, actorRole: e.actorRole,
+      memberId: e.memberId!, member: memberName(e.memberId!),
+      reasonCode: e.reasonCode ?? '—', sourceIp: e.sourceIp, channel: e.channel,
+    }))
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
 export function userActivityRollup(events: AuditEvent[], users: SystemUser[] = SYSTEM_USERS): UserActivityRow[] {

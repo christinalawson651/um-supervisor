@@ -10,6 +10,7 @@ import {
   AUDIT_RANGES, AuditRange, auditSpan, userActivityRollup, UserActivityRow,
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   activityBuckets, weekdayBuckets, ActivityBucket, ActivityGrain, ACTIVITY_GRAINS,
+  commonalityHits, CommonalityHit, CommonalityFlag, COMMONALITY_STRENGTH, breakGlassAccesses,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest, RetentionPolicy,
   slaLabel, slaHoursFor, StorageTier,
   archiveSummary, verifyArchiveChain,
@@ -629,7 +630,7 @@ const govSection = governanceSection;
             <div class="tile-val">{{ deniedAccess().length }}</div><div class="tile-lab">Out-of-Scope Access Denied</div>
             <div class="tile-sub">role-based access control working</div>
           </div>
-          <div class="tile" (click)="drillEvents('Break-the-Glass Access', breakGlass(), 'btg')">
+          <div class="tile" (click)="drillBreakGlass()">
             <div class="tile-ic" [class.hot]="breakGlass().length > 0"></div>
             <div class="tile-val">{{ breakGlass().length }}</div><div class="tile-lab">Break-the-Glass Grants</div>
             <div class="tile-sub">each requires review</div>
@@ -638,6 +639,38 @@ const govSection = governanceSection;
             <div class="tile-val">{{ exportEventsList().length }}</div><div class="tile-lab">Data Exports</div>
             <div class="tile-sub">{{ exportedRows() | number }} rows extracted</div>
           </div>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">Relationship Screening</h3>
+            <span class="section-note sm">Accounts that opened the PHI of a member sharing their surname, address, postal code or telephone number. A staff member reading a relative's or a neighbour's record is inside their role, inside their caseload and often inside working hours — no other control on this tab can see it. Every row is a question to ask, never a finding: the innocent explanation is the common one.</span></div>
+          <div class="panel-pad narrbar">
+            <span class="albl">Strength</span>
+            @for (st of strengths; track st) {
+              <button class="qp" [class.on]="commStrength() === st" (click)="commStrength.set(commStrength() === st ? '' : st)">{{ st }}<span class="qn">{{ commCount(st) }}</span></button>
+            }
+            <span class="spacer"></span>
+            <span class="sub">{{ commRows().length | number }} of {{ commAll().length | number }} pair(s) · {{ commBtg() }} involved break-the-glass</span>
+          </div>
+          <table class="z-table">
+            <thead><tr>
+              <th>Account</th><th>Member</th><th>What they share</th><th>Strength</th>
+              <th class="num">PHI Events</th><th class="num">Break-the-Glass</th><th>Last Touch</th>
+            </tr></thead>
+            <tbody>
+              @for (c of commRows(); track c.actorId + c.memberId) {
+                <tr>
+                  <td class="strong"><button class="lnk" (click)="openActor(c.actor)">{{ c.actor }}</button><div class="sub">{{ c.actorRole }}</div></td>
+                  <td><button class="lnk" (click)="openMemberFromId(c.memberId)">{{ c.member }}</button><div class="sub mono">{{ c.memberId }}</div></td>
+                  <td>@for (f of c.flags; track f) { <span class="chip" [class.amber]="strengthOf(f) !== 'Low'">{{ f }}</span> }</td>
+                  <td><span class="chip" [class.amber]="c.strength === 'Medium'" [class.red]="c.strength === 'High'">{{ c.strength }}</span></td>
+                  <td class="num">{{ c.phiEvents | number }}</td>
+                  <td class="num"><b [class.hot]="c.breakGlass > 0">{{ c.breakGlass }}</b></td>
+                  <td class="mono">{{ c.lastTouch }}</td>
+                </tr>
+              } @empty { <tr><td colspan="7" class="empty">No account shares identifying details with a member whose PHI they opened in this range.</td></tr> }
+            </tbody>
+          </table>
         </div>
 
         @if (selectedUserRow(); as u) {
@@ -811,7 +844,7 @@ const govSection = governanceSection;
             <div class="tile-val">{{ multiUserMembers().length | number }}</div><div class="tile-lab">Touched by 3+ Accounts</div>
             <div class="tile-sub">handoffs worth reading end to end</div>
           </div>
-          <div class="tile" (click)="drillMemberSet('Accessed Under Break-the-Glass', btgMemberRows(), 'btg-members')">
+          <div class="tile" (click)="drillBreakGlass()">
             <div class="tile-ic" [class.hot]="btgMemberRows().length > 0"></div>
             <div class="tile-val">{{ btgMemberRows().length | number }}</div><div class="tile-lab">Members Accessed Under Break-the-Glass</div>
             <div class="tile-sub">each opens in context</div>
@@ -851,8 +884,8 @@ const govSection = governanceSection;
                 <div class="ms-entry">
                   <div class="ms-col">
                     <div class="ms-lab">Accessed under break-the-glass</div>
-                    @for (m of btgMemberRows().slice(0, 6); track m.memberId) {
-                      <button class="ms-link" (click)="selectMember(m.memberId)">{{ m.member }} <span class="sub">{{ m.events }} events</span></button>
+                    @for (b of btgList().slice(0, 6); track b.eventId) {
+                      <button class="ms-link" (click)="selectMember(b.memberId)">{{ b.member }} <span class="sub">by {{ b.actor }}</span></button>
                     } @empty { <div class="sub">None in range.</div> }
                   </div>
                   <div class="ms-col">
@@ -2501,6 +2534,37 @@ export class AuditTraceability {
     this.drillEvents(`${name} — ${b.label}`, b.events, `activity-${slug(name)}-${slug(b.key)}`);
   }
 
+  // ---- Relationship screening --------------------------------------------------------------------
+  readonly strengths = ['High', 'Medium', 'Low'];
+  readonly commStrength = signal<string>('');
+  readonly commAll = computed(() => commonalityHits(this.scopedEvents()));
+  readonly commRows = computed(() => {
+    const st = this.commStrength();
+    return st ? this.commAll().filter((c) => c.strength === st) : this.commAll();
+  });
+  commCount(st: string) { return this.commAll().filter((c) => c.strength === st).length; }
+  readonly commBtg = computed(() => this.commAll().filter((c) => c.breakGlass > 0).length);
+  strengthOf(f: CommonalityFlag) { return COMMONALITY_STRENGTH[f]; }
+
+  // ---- Break-the-glass ------------------------------------------------------------------------
+  readonly btgList = computed(() => breakGlassAccesses(this.scopedEvents()));
+  /** Who opened it, on whom, when, and under what justification — in one view. The member alone
+   *  does not answer the question the control exists to ask, and neither does the count. */
+  drillBreakGlass() {
+    const rows = this.btgList();
+    this.ix.openExplorer({
+      title: 'Break-the-Glass Access',
+      context: `${rows.length} emergency access grant(s) · ${new Set(rows.map((r) => r.actorId)).size} account(s) · ${new Set(rows.map((r) => r.memberId)).size} member(s) · each requires review`,
+      columns: ['Timestamp', 'Account', 'Role', 'Member', 'Member ID', 'Justification', 'Channel', 'Source IP', 'Event ID'],
+      rows: rows.map((r) => [r.timestamp, r.actor, r.actorRole, r.member, r.memberId, r.reasonCode, r.channel, r.sourceIp, r.eventId]),
+      exportName: `audit-break-the-glass${TODAY_ISO}`,
+      rowLinks: [
+        { column: 1, run: (row) => this.openActor(String(row[1])) },
+        { column: 3, run: (row) => { this.ix.closeExplorer(); this.openMemberFromId(String(row[4])); } },
+      ],
+    });
+  }
+
   // ---- Access scope --------------------------------------------------------------------------
   scopeOf(userId: string) {
     return SYSTEM_USERS.find((u) => u.userId === userId)
@@ -2555,6 +2619,8 @@ export class AuditTraceability {
         { label: 'Audit Events in Range', value: evs.length.toLocaleString() },
         { label: 'PHI Events', value: evs.filter((e) => e.phi).length.toLocaleString() },
         { label: 'Members Touched', value: members.size.toLocaleString() },
+        { label: 'Relationship Flags', value: this.commAll().filter((c) => c.actorId === u.userId).length.toLocaleString(),
+          tone: this.commAll().some((c) => c.actorId === u.userId && c.strength === 'High') ? 'amber' : undefined },
         { label: 'Determinations Reviewed', value: scored.length.toLocaleString() },
         { label: 'Overrode the Model', value: `${overrides.length} of ${scored.length}` },
         { label: 'Edited the Rationale', value: scored.length ? `${edited.length} of ${scored.length}` : '—' },
