@@ -386,7 +386,17 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
     reasonCode: pol.basis,
   }));
 
-  if (c.tags.includes('auto')) {
+  // Whether this determination was automated is decided by the SAME record AI Oversight reads,
+  // not by a pool tag. They used to disagree: AI Oversight would name Dr. Nguyen as the reviewer
+  // while the trail showed nobody but intake and a service account had touched the case. Two
+  // sources of truth about who acted is worse than one imperfect one — an auditor who finds them
+  // disagreeing stops believing both.
+  const aiRec = AI_BY_AUTH.get(c.authId);
+  const wasAutomated = aiRec ? aiRec.autoCleared : c.tags.includes('auto');
+  // The clinician the AI record names is the clinician the trail must show acting.
+  const reviewerUser = aiRec && aiRec.reviewer !== '—' ? USER_BY_NAME.get(aiRec.reviewer) ?? nurse : nurse;
+
+  if (wasAutomated) {
     // Auto-approvals still have to be traceable to the rule version that fired — this is the
     // single most-asked question about any automated determination.
     out.push(base({
@@ -396,8 +406,8 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
       sourceIp: '172.19.4.11', field: 'Decision', before: 'Pending', after: 'Approved',
       reasonCode: `RULE-AUTOAPPROVE-v${3 + (i % 2)}.1`,
     }));
-  } else if (nurse) {
-    const nb = (over: Partial<Draft>): Draft => base({ actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, i), ...over });
+  } else if (reviewerUser) {
+    const nb = (over: Partial<Draft>): Draft => base({ actor: reviewerUser.name, actorId: reviewerUser.userId, actorRole: reviewerUser.role, sourceIp: ipFor(reviewerUser, i), ...over });
     out.push(nb({ timestamp: stamp(submitted, 1, 540 + (i % 240)), category: 'Access', action: 'Case opened for review' }));
     out.push(nb({
       timestamp: stamp(submitted, 1, 560 + (i % 240)), category: 'Clinical Decision',
@@ -407,7 +417,7 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
     // What the model recommended, at what confidence, from which model version — logged as its own
     // event so a determination can be traced back to the machine input that preceded it, not just
     // to the human who signed it.
-    const ai = AI_BY_AUTH.get(c.authId);
+    const ai = aiRec;
     if (ai) {
       out.push(base({
         timestamp: stamp(submitted, 1, 566 + (i % 240)), category: 'Clinical Decision',
@@ -435,7 +445,7 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
     }
     if (c.tags.includes('mdReview') || c.tags.includes('p2p')) {
       const md = USER_BY_NAME.get(MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length]);
-      out.push(nb({ timestamp: stamp(submitted, 2, 620 + (i % 180)), category: 'Case Management', action: 'Case routed to Medical Director', field: 'Assigned To', before: c.nurse, after: md?.name ?? 'Medical Director' }));
+      out.push(nb({ timestamp: stamp(submitted, 2, 620 + (i % 180)), category: 'Case Management', action: 'Case routed to Medical Director', field: 'Assigned To', before: reviewerUser.name, after: md?.name ?? 'Medical Director' }));
       if (md) {
         out.push(base({
           timestamp: stamp(submitted, 3, 630 + (i % 180)), actor: md.name, actorId: md.userId, actorRole: md.role,
@@ -466,8 +476,8 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
       }
       const adverse = c.decision === 'Denied' || c.decision === 'Partial';
       const signer = adverse
-        ? USER_BY_NAME.get(MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length]) ?? nurse
-        : nurse;
+        ? USER_BY_NAME.get(MD_REVIEWERS[Number(c.authId.slice(-2)) % MD_REVIEWERS.length]) ?? reviewerUser
+        : reviewerUser;
       out.push(nb({
         timestamp: stamp(submitted, 3 + (i % 4), 640 + (i % 160)), category: 'Clinical Decision',
         action: 'Determination recorded', field: 'Decision', before: 'Pending', after: c.decision,

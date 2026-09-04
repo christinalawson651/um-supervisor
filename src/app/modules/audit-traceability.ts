@@ -48,11 +48,11 @@ const ENTITY_TYPES: AuditEntityType[] = ['Authorization', 'CM Case', 'Member', '
 const OUTCOMES: AuditOutcome[] = ['Success', 'Denied', 'Failed'];
 const PAGE_SIZE = 50;
 
-const EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Role', 'Category', 'Action', 'Entity Type', 'Entity ID', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
+const EVENT_COLUMNS = ['Event ID', 'Timestamp', 'Actor', 'Role', 'Category', 'Action', 'Entity Type', 'Entity ID', 'Screen', 'Control', 'Field', 'Before', 'After', 'Channel', 'Source IP', 'Session', 'Correlation ID', 'Reason Code', 'PHI', 'Outcome', 'Record Hash'];
 function eventRow(e: AuditEvent): (string | number)[] {
   return [e.eventId, e.timestamp.replace('T', ' '), e.actor, e.actorRole, e.category, e.action, e.entityType, e.entityId,
-    e.field ?? '—', e.before ?? '—', e.after ?? '—', e.channel, e.sourceIp, e.sessionId, e.correlationId, e.reasonCode ?? '—',
-    e.phi ? 'Yes' : 'No', e.outcome, e.recordHash];
+    e.screen ?? '—', e.control ?? '—', e.field ?? '—', e.before ?? '—', e.after ?? '—', e.channel, e.sourceIp, e.sessionId,
+    e.correlationId, e.reasonCode ?? '—', e.phi ? 'Yes' : 'No', e.outcome, e.recordHash];
 }
 
 /** Sort keys for the inline trail table — a flattened view of AuditEvent so compareRows() has
@@ -338,13 +338,17 @@ const govSection = governanceSection;
                 <tr class="clk" (click)="openNarrative(r)">
                   <td class="strong mono">{{ r.authId }}</td>
                   <td>{{ r.member }}<div class="sub">{{ r.lob }}</div></td>
-                  <td><button class="lnk" (click)="openActor(r.reviewer); $event.stopPropagation()">{{ r.reviewer }}</button></td>
+                  <td>@if (r.reviewer !== '—') {
+                        <button class="lnk" (click)="openActor(r.reviewer); $event.stopPropagation()">{{ r.reviewer }}</button>
+                      } @else { <span class="sub">{{ reviewerLabel(r) }}</span> }
+                      <div class="sub">signed {{ signerFor(r.authId) }}</div></td>
                   <td>{{ r.recommendation }}<div class="sub">final: {{ r.finalDecision }}</div></td>
                   <td class="num">@if (r.narrativeEdited) { <b>{{ r.narrativeChangePct }}%</b> } @else { <span class="sub">verbatim</span> }</td>
                   <td>@for (k of r.editKinds; track k) { <span class="chip">{{ k }}</span> }
                       @if (!r.editKinds.length) { <span class="sub">accepted as generated</span> }</td>
                   <td>{{ r.outcome }}
                     @if (r.overriddenBy) { <div class="sub">by <button class="lnk" (click)="openActor(r.overriddenBy!); $event.stopPropagation()">{{ r.overriddenBy }}</button></div> }
+                    <div class="sub"><button class="lnk" (click)="drillGovernanceRecord(r.authId, 'COR-' + r.authId); $event.stopPropagation()">Who did what ›</button></div>
                   </td>
                 </tr>
               } @empty { <tr><td colspan="7" class="empty">Nothing matches this filter.</td></tr> }
@@ -1225,10 +1229,22 @@ const govSection = governanceSection;
           <div class="ncol">
             <div class="nlab">What was submitted</div>
             <p class="ntext">{{ r.submittedNarrative }}</p>
+            <div class="nchain">
+              <div class="nlab">Who touched this determination</div>
+              @for (a of actorChain(r.authId); track a.actor) {
+                <button class="chain" (click)="openActor(a.actor)">
+                  <span class="cw"><b>{{ a.actor }}</b><span class="sub">{{ a.role }}</span></span>
+                  <span class="ca sub">{{ a.actions }}</span>
+                  <span class="cn">{{ a.n }}</span>
+                </button>
+              }
+              <button class="lnk" (click)="drillGovernanceRecord(r.authId, 'COR-' + r.authId)">Full event chain ›</button>
+            </div>
             <div class="nmeta">
               <div><span class="sub">Recommendation</span> <b>{{ r.recommendation }}</b></div>
               <div><span class="sub">Final determination</span> <b>{{ r.finalDecision }}</b></div>
               <div><span class="sub">Outcome</span> <b>{{ r.outcome }}</b></div>
+              <div><span class="sub">Signed by</span> <button class="lnk" (click)="openActor(signerFor(r.authId))">{{ signerFor(r.authId) }}</button></div>
               @if (r.overrideReason) { <div><span class="sub">Override reason</span> <b>{{ r.overrideReason }}</b></div> }
               @if (r.overriddenBy) { <div><span class="sub">Overridden by</span> <button class="lnk" (click)="openActor(r.overriddenBy!)">{{ r.overriddenBy }}</button></div> }
             </div>
@@ -1324,6 +1340,14 @@ const govSection = governanceSection;
     .ntext ins { background:#e6f4ec; color:#1e6b45; text-decoration:none; border-radius:2px; padding:0 1px; }
     .nverbatim { font-size:13px; line-height:1.6; color:var(--gray-500); margin:0; font-style:italic; }
     .nkinds { display:flex; flex-wrap:wrap; gap:5px; margin-top:14px; }
+    .nchain { margin-top:18px; padding-top:14px; border-top:1px solid var(--border); display:flex; flex-direction:column; align-items:stretch; gap:5px; }
+    .chain { display:grid; grid-template-columns:1fr auto; gap:2px 10px; width:100%; text-align:left; border:1px solid var(--border);
+             border-radius:8px; background:#fff; padding:8px 10px; font:inherit; cursor:pointer; }
+    .chain:hover { border-color:var(--teal-600); }
+    .cw { display:flex; flex-direction:column; }
+    .cw b { font-size:12.5px; } .cw .sub { font-size:10.5px; }
+    .ca { grid-column:1 / -1; font-size:11px; line-height:1.4; }
+    .cn { font-size:11px; font-weight:700; color:var(--gray-500); align-self:start; }
     .nmeta { margin-top:16px; padding-top:14px; border-top:1px solid var(--border); display:grid; gap:6px; font-size:12.5px; }
     .nmeta .sub { display:inline-block; min-width:130px; }
 
@@ -1693,18 +1717,72 @@ export class AuditTraceability {
 
   /** Run-ledger column set, in Symphony's order and its words: member, policy, outcome, agents,
    *  models used, then the audit-specific columns and the run's cost. */
-  private readonly AI_COLUMNS = ['Auth', 'Member', 'Policy', 'LOB', 'Outcome', 'Pend Reason', 'Agents', 'Models Used', 'Panel',
-    'Recommendation', 'Confidence', 'Band', 'Final Determination', 'Agreed', 'Grounded', 'Converged', 'Flags',
-    'Override Reason', 'Overridden By', 'Reviewer', 'Rationale Edited', 'Words Changed', 'Edit Kinds',
-    'Tokens', 'Cost', 'Latency', 'Workflow', 'Bundle', 'Model', 'Criteria Set', 'Scored', 'Decided'];
+  /** Reviewer and Overridden By sit third and fourth, not twentieth. Who acted is the first thing
+   *  asked of a determination, and a column twenty places right is a column nobody scrolls to. */
+  private readonly AI_COLUMNS = ['Auth', 'Member', 'Reviewer', 'Overridden By', 'Signed By', 'Worked By', 'Outcome',
+    'Recommendation', 'Final Determination', 'Agreed', 'Override Reason', 'Confidence', 'Band',
+    'Rationale Edited', 'Words Changed', 'Edit Kinds', 'Policy', 'LOB', 'Pend Reason', 'Agents', 'Models Used',
+    'Panel', 'Grounded', 'Converged', 'Flags', 'Tokens', 'Cost', 'Latency', 'Workflow', 'Bundle', 'Model',
+    'Criteria Set', 'Scored', 'Decided'];
   private aiRow(r: AiDecisionRecord): (string | number)[] {
-    return [r.authId, r.member, r.procedure, r.lob, r.outcome, r.pendReason ?? '—', `${r.agentsCompleted}/${r.agentsTotal}`,
-      r.modelsUsed, r.panel ? 'panel' : '—', r.recommendation, r.confidence.toFixed(2), r.band, r.finalDecision,
-      r.agreed ? 'Yes' : 'No', `${r.groundedMet}/${r.groundedTotal}`, r.panel ? (r.converged ? 'Yes' : 'SPLIT') : '—',
-      r.flags.join('; ') || '—', r.overrideReason ?? '—', r.overriddenBy ?? '—', r.reviewer,
+    return [r.authId, r.member, this.reviewerLabel(r), r.overriddenBy ?? '—', this.signerFor(r.authId), this.workedBy(r.authId), r.outcome,
+      r.recommendation, r.finalDecision, r.agreed ? 'Yes' : 'No', r.overrideReason ?? '—', r.confidence.toFixed(2), r.band,
       r.narrativeEdited ? 'Yes' : 'No', r.narrativeEdited ? `${r.narrativeChangePct}%` : '—', r.editKinds.join('; ') || '—',
-      r.tokens, `$${r.cost.toFixed(2)}`, `${r.latencySec}s`, r.workflowVersion, r.bundle, r.model,
+      r.procedure, r.lob, r.pendReason ?? '—', `${r.agentsCompleted}/${r.agentsTotal}`, r.modelsUsed,
+      r.panel ? 'panel' : '—', `${r.groundedMet}/${r.groundedTotal}`, r.panel ? (r.converged ? 'Yes' : 'SPLIT') : '—',
+      r.flags.join('; ') || '—', r.tokens, `$${r.cost.toFixed(2)}`, `${r.latencySec}s`, r.workflowVersion, r.bundle, r.model,
       r.criteriaSet, r.scoredDate, r.decidedDate];
+  }
+
+  /** Who actually signed the determination, read off the trail rather than off the AI record. The
+   *  reviewer who worked a case and the clinician who signed an adverse determination are often
+   *  different people — a nurse can approve within criteria but cannot deny — and that difference
+   *  is the whole point of the segregation-of-duties rule two tabs over. An auto-approved
+   *  determination is signed by the rule, which is a real answer and not a blank: the AI record
+   *  called it '—' only because it was looking for the human event name. */
+  signerFor(authId: string): string {
+    const e = AUDIT_EVENTS.find((x) => x.entityId === authId &&
+      (x.action === 'Determination recorded' || x.action === 'Auto-approval rule applied'));
+    return e ? e.actor : '—';
+  }
+
+  /** The people who actually handled this authorization, from the trail — intake, reviewer,
+   *  medical director, whoever edited a field. Service accounts are excluded: an interface is not
+   *  a person, and listing it here would answer "who touched this" with "the software did".
+   *  This is populated on nearly every determination, including the ones with no clinical reviewer
+   *  yet, which is exactly where the AI record's Reviewer column has nothing to say. */
+  workedBy(authId: string): string {
+    const names = new Set<string>();
+    for (const e of AUDIT_EVENTS) {
+      if (e.entityId !== authId) continue;
+      if (e.actorRole === 'Interface Service Account') continue;
+      names.add(e.actor);
+    }
+    return names.size ? [...names].join(', ') : '—';
+  }
+
+  /** Why a determination has no clinical reviewer, rather than a bare em-dash. The two reasons are
+   *  different facts: nobody needed to look at it, versus nobody has looked at it yet. */
+  reviewerLabel(r: AiDecisionRecord): string {
+    if (r.reviewer !== '—') return r.reviewer;
+    return r.autoCleared ? 'Auto-cleared — no human review' : 'Unassigned — awaiting review';
+  }
+
+  /** Every account that touched one determination, in order, with what each of them did. This is
+   *  the answer to "who did this one" — a determination is a chain of events by different people
+   *  and service accounts, not a single act by the reviewer named on the record. */
+  actorChain(authId: string): { actor: string; role: string; actions: string; first: string; n: number }[] {
+    const evs = AUDIT_EVENTS.filter((e) => e.entityId === authId).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const byActor = new Map<string, { actor: string; role: string; acts: string[]; first: string; n: number }>();
+    for (const e of evs) {
+      const cur = byActor.get(e.actorId) ?? { actor: e.actor, role: e.actorRole, acts: [], first: e.timestamp.replace('T', ' '), n: 0 };
+      cur.n++;
+      if (!cur.acts.includes(e.action)) cur.acts.push(e.action);
+      byActor.set(e.actorId, cur);
+    }
+    return [...byActor.values()]
+      .sort((a, b) => a.first.localeCompare(b.first))
+      .map((a) => ({ actor: a.actor, role: a.role, actions: a.acts.join(' · '), first: a.first, n: a.n }));
   }
   /** Column 0 is 'Auth' rather than 'Auth ID' on purpose — these are compliance records, so the
    *  Explorer treats them as informational and offers no Reassign/Balance/Escalate, the same
@@ -1714,6 +1792,17 @@ export class AuditTraceability {
       title, context: `${rows.length.toLocaleString()} determination(s) · run ledger · ${this.rangeLabel()}`,
       columns: this.AI_COLUMNS, rows: rows.map((r) => this.aiRow(r)),
       exportName: `ai-oversight-${slugName}${TODAY_ISO}`, memberColumn: 1,
+      // Every actor column is a link, and so is the authorization. "Who did this one" is a
+      // per-event question: the AI record names the reviewer and whoever overrode the model, the
+      // trail names everyone else, and column 0 opens the whole chain.
+      rowLinks: [
+        { column: 0, run: (row) => { this.ix.closeExplorer(); this.drillGovernanceRecord(String(row[0]), `COR-${row[0]}`); } },
+        // Column 2 carries a reason string when there is no clinical reviewer; only a real name links.
+        { column: 2, run: (row) => this.openActor(String(row[2])), enabled: (row) => !String(row[2]).includes(' — ') },
+        { column: 3, run: (row) => this.openActor(String(row[3])) },
+        { column: 4, run: (row) => this.openActor(String(row[4])) },
+        { column: 5, run: (row) => { this.ix.closeExplorer(); this.drillGovernanceRecord(String(row[0]), `COR-${row[0]}`); } },
+      ],
     });
   }
   drillBand(c: CalibrationRow) {
@@ -2153,7 +2242,7 @@ export class AuditTraceability {
       columns: ['Member', 'Member ID', 'LOB', 'Modules', 'Records', 'Events', 'Accounts', 'PHI Events', 'First Activity', 'Last Activity'],
       rows: rows.map((m) => [m.member, m.memberId, m.lob, m.modules, m.records, m.events, m.users, m.phi, m.firstActivity, m.lastActivity]),
       exportName: `audit-members-${slugName}${TODAY_ISO}`,
-      rowLink: { column: 0, run: (row) => { this.ix.closeExplorer(); this.sel.set('member'); this.selectMember(String(row[1])); } },
+      rowLinks: [{ column: 0, run: (row) => { this.ix.closeExplorer(); this.sel.set('member'); this.selectMember(String(row[1])); } }],
     });
   }
   /** One record's complete trail, flat and exportable — the thread expanded in place is for
@@ -2193,7 +2282,7 @@ export class AuditTraceability {
       columns: ['Member', 'Member ID', 'LOB', 'Records', 'Events', 'PHI Events', 'First Touch', 'Last Touch', 'What They Did'],
       rows: rows.map((m: UserMemberRow) => [m.member, m.memberId, m.lob, m.records, m.events, m.phi, m.firstTouch, m.lastTouch, m.actions]),
       exportName: `audit-members-of-${slug(userId)}${TODAY_ISO}`,
-      rowLink: { column: 0, run: (row) => { this.ix.closeExplorer(); this.openMemberFromUser(String(row[1]), userId); } },
+      rowLinks: [{ column: 0, run: (row) => { this.ix.closeExplorer(); this.openMemberFromUser(String(row[1]), userId); } }],
     });
   }
 

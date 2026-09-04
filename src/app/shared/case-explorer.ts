@@ -112,8 +112,8 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                       <td class="selth"><input type="checkbox" [checked]="selected().has(rowId(row))" [disabled]="!isRowReassignable(row)" (change)="toggleSel(rowId(row))" /></td>
                     }
                     @for (vc of visibleCols(); track vc.i) {
-                      @if (e.rowLink && vc.i === e.rowLink.column) {
-                        <td><a class="mlink" (click)="e.rowLink!.run(row)">{{ row[vc.i] }}</a></td>
+                      @if (linkFor(e, vc.i); as lk) {
+                        <td>@if (linkActive(lk, row, row[vc.i])) { <a class="mlink" (click)="lk.run(row)">{{ row[vc.i] }}</a> } @else { <span class="sub">{{ row[vc.i] }}</span> }</td>
                       } @else if (vc.i === 0 && isReferralList()) {
                         <td><a class="mlink" (click)="openReferralDetail(row, e)">{{ row[vc.i] }}</a></td>
                       } @else if (vc.i === e.memberColumn) {
@@ -259,6 +259,15 @@ export class CaseExplorer {
   });
 
   rowId(row: (string | number)[]) { return String(row[0]); }
+
+  /** Which columns act as links on this list. An em-dash cell is never linked — offering a click
+   *  that opens nothing is worse than a plain cell. */
+  linkFor(e: { rowLinks?: { column: number; run: (row: (string | number)[]) => void; enabled?: (row: (string | number)[]) => boolean }[] }, i: number) {
+    return e.rowLinks?.find((l) => l.column === i) ?? null;
+  }
+  linkActive(lk: { enabled?: (row: (string | number)[]) => boolean }, row: (string | number)[], v: string | number) {
+    return v !== '—' && (!lk.enabled || lk.enabled(row));
+  }
 
   /** The clinical guideline behind a procedure — shown as a hover tooltip on the Procedure cell
    *  (every explorer using the standard columns has one, not just Clinical Decision Insights'). */

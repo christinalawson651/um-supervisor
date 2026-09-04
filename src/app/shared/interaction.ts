@@ -52,7 +52,10 @@ export interface ExplorerData {
   /** Override for lists that are a navigation surface rather than a clinical case list: makes one
    *  column a link that runs this, instead of opening the member's clinical drawer. The audit
    *  pivots use it to hand off from one view to the other. */
-  rowLink?: { column: number; label?: string; run: (row: (string | number)[]) => void };
+  rowLinks?: { column: number; run: (row: (string | number)[]) => void;
+                /** Optional: suppress the link on rows where the cell is a stated reason rather than
+                 *  a thing to open. A link that opens nothing is worse than plain text. */
+                enabled?: (row: (string | number)[]) => boolean }[];
 }
 
 @Injectable({ providedIn: 'root' })
