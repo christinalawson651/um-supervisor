@@ -11,6 +11,7 @@ import {
   evaluateSod, SodResult, SodConflictRow, attestationAgeDays, ATTESTATION_CYCLE_DAYS,
   RETENTION_POLICIES, ARCHIVE_SEGMENTS, ArchiveSegment, RESTORE_REQUESTS, RestoreRequest, RetentionPolicy,
   archiveSummary, verifyArchiveChain,
+  memberAuditRollup, MemberAuditRow, memberTimeline, TimelineThread, membersForUser, UserMemberRow, memberName,
 } from '../data/audit-trail';
 import { Interaction } from '../shared/interaction';
 import { Nav } from '../shared/nav';
@@ -32,6 +33,9 @@ const TAB_DEFS: TabDef[] = [
   { key: 'trail', label: 'Audit Trail' },
   { key: 'ai', label: 'AI Oversight' },
   { key: 'activity', label: 'User Activity Monitoring' },
+  // Sits next to User Activity deliberately: the two are the same evidence pivoted opposite ways,
+  // and an auditor moves between them constantly.
+  { key: 'member', label: 'Member Timeline' },
   { key: 'governance', label: 'Governance & Access Controls' },
   { key: 'retention', label: 'Retention & Archive' },
   { key: 'compliance', label: 'Compliance Requirements & Gaps' },
@@ -580,6 +584,7 @@ const govSection = governanceSection;
               <th class="srt" (click)="sortAct('role')">Role{{ caretAct('role') }}</th>
               <th class="srt num" (click)="sortAct('events')">Events{{ caretAct('events') }}</th>
               <th class="srt num" (click)="sortAct('phi')">PHI{{ caretAct('phi') }}</th>
+              <th class="num">Members</th>
               <th class="srt num" (click)="sortAct('offHours')">Off-Hours{{ caretAct('offHours') }}</th>
               <th class="srt num" (click)="sortAct('failedLogins')">Failed{{ caretAct('failedLogins') }}</th>
               <th class="srt num" (click)="sortAct('deniedAccess')">Denied{{ caretAct('deniedAccess') }}</th>
@@ -595,6 +600,7 @@ const govSection = governanceSection;
                   <td>{{ a.role }}</td>
                   <td class="num">{{ a.events | number }}</td>
                   <td class="num">{{ a.phi | number }}</td>
+                  <td class="num"><button class="lnk" (click)="drillUserMembers(a); $event.stopPropagation()">{{ membersTouched(a) | number }}</button></td>
                   <td class="num"><b [class.warn]="a.offHours > 0">{{ a.offHours }}</b></td>
                   <td class="num"><b [class.warn]="a.failedLogins > 0">{{ a.failedLogins }}</b></td>
                   <td class="num">{{ a.deniedAccess }}</td>
@@ -603,9 +609,121 @@ const govSection = governanceSection;
                   <td class="mono">{{ a.lastActivity || '—' }}</td>
                   <td>@for (f of a.signals; track f) { <span class="chip amber">{{ f }}</span> } @if (!a.signals.length) { <span class="sub">—</span> }</td>
                 </tr>
-              } @empty { <tr><td colspan="11" class="empty">No accounts match this filter.</td></tr> }
+              } @empty { <tr><td colspan="12" class="empty">No accounts match this filter.</td></tr> }
             </tbody>
           </table>
+        </div>
+      }
+
+      <!-- ========================== MEMBER TIMELINE ========================== -->
+      @case ('member') {
+        <div class="tab-head">
+          <div><h2>Member Timeline</h2>
+            <span class="section-note">Everything done on one member, by everyone who touched them — threaded by the authorization or case it belonged to. The mirror of User Activity: same events, pivoted on the member instead of the account.</span></div>
+          <button class="btn outline sm" (click)="exportMembers()">Export</button>
+        </div>
+
+        <div class="tile-row">
+          <div class="tile">
+            <div class="tile-val">{{ memberRows().length | number }}</div><div class="tile-lab">Members Touched</div>
+            <div class="tile-sub">in {{ rangeLabel().toLowerCase() }}</div>
+          </div>
+          <div class="tile">
+            <div class="tile-val">{{ memberEventCount() | number }}</div><div class="tile-lab">Member-Linked Events</div>
+            <div class="tile-sub">of {{ scopedEvents().length | number }} total</div>
+          </div>
+          <div class="tile">
+            <div class="tile-val">{{ multiUserMembers().length | number }}</div><div class="tile-lab">Touched by 3+ Accounts</div>
+            <div class="tile-sub">handoffs worth reading end to end</div>
+          </div>
+          <div class="tile" (click)="drillEvents('Break-the-Glass Access', breakGlass(), 'btg-members')">
+            <div class="tile-ic" [class.hot]="btgMembers().length > 0"></div>
+            <div class="tile-val">{{ btgMembers().length | number }}</div><div class="tile-lab">Members Accessed Under Break-the-Glass</div>
+            <div class="tile-sub">each opens in context</div>
+          </div>
+        </div>
+
+        <div class="split-2 mt-6">
+          <!-- LEFT: pick a member -->
+          <div class="panel">
+            <div class="panel-pad filters">
+              <h3 class="pt">Members</h3>
+              <input class="search sm" type="text" placeholder="Search member or ID…" [ngModel]="mq()" (ngModelChange)="mq.set($event)" />
+              <span class="count">{{ memberRows().length | number }}</span>
+            </div>
+            <div class="mlist">
+              @for (m of memberRows(); track m.memberId) {
+                <button class="mrow" [class.on]="selectedMember() === m.memberId" (click)="selectMember(m.memberId)">
+                  <div class="mmain">
+                    <b>{{ m.member }}</b>
+                    <div class="sub mono">{{ m.memberId }} · {{ m.lob }}</div>
+                  </div>
+                  <div class="mstats">
+                    <span class="mchip">{{ m.events }} events</span>
+                    <span class="mchip">{{ m.users }} {{ m.users === 1 ? 'account' : 'accounts' }}</span>
+                    <span class="mchip">{{ m.modules }}</span>
+                  </div>
+                </button>
+              } @empty { <div class="empty">No members match "{{ mq() }}".</div> }
+            </div>
+          </div>
+
+          <!-- RIGHT: that member's whole history -->
+          <div class="panel">
+            @if (selectedMemberRow(); as m) {
+              <div class="panel-pad mhead">
+                <div>
+                  <h3 class="pt">{{ m.member }}</h3>
+                  <div class="sub mono">{{ m.memberId }} · {{ m.lob }} · {{ m.records }} record(s) · {{ m.users }} account(s) · {{ m.phi }} PHI event(s)</div>
+                </div>
+                <button class="btn outline sm" (click)="drillMember(m)">Open in explorer</button>
+              </div>
+              <div class="panel-pad actorbar">
+                <span class="albl">Filter by account</span>
+                <button class="qp" [class.on]="!memberActor()" (click)="memberActor.set('')">All accounts</button>
+                @for (a of memberActors(); track a.actorId) {
+                  <button class="qp" [class.on]="memberActor() === a.actorId" (click)="memberActor.set(a.actorId)">{{ a.actor }}<span class="qn">{{ a.n }}</span></button>
+                }
+              </div>
+              <div class="threads">
+                @for (t of memberThreads(); track t.correlationId) {
+                  <div class="thread">
+                    <button class="thead" (click)="toggleThread(t.correlationId)">
+                      <span class="tcar" [class.open]="openThreads().has(t.correlationId)">▸</span>
+                      <span class="tid mono">{{ t.entityId }}</span>
+                      <span class="ttype">{{ t.entityType }}</span>
+                      <span class="tspan sub">{{ t.opened }} → {{ t.closed }}</span>
+                      <span class="tn">{{ t.events.length }} events · {{ t.actors.length }} accounts</span>
+                    </button>
+                    @if (openThreads().has(t.correlationId)) {
+                      <ol class="tl">
+                        @for (e of t.events; track e.eventId) {
+                          <li class="tli" [attr.data-cat]="e.category">
+                            <div class="tlt mono">{{ e.timestamp.replace('T', ' ') }}</div>
+                            <div class="tlb">
+                              <div class="tla">{{ e.action }}
+                                @if (e.phi) { <span class="phi">PHI</span> }
+                                @if (e.outcome !== 'Success') { <span class="chip red">{{ e.outcome }}</span> }
+                              </div>
+                              @if (e.field) {
+                                <div class="tlf">
+                                  @if (e.changeAction) { <span class="chg" [attr.data-a]="e.changeAction">{{ e.changeAction }}</span> }
+                                  <span class="sub">{{ e.field }}:</span> <span class="was">{{ e.before ?? '—' }}</span> → <b>{{ e.after }}</b>
+                                </div>
+                              }
+                              <div class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }</div>
+                            </div>
+                          </li>
+                        }
+                      </ol>
+                    }
+                  </div>
+                } @empty { <div class="empty">No activity for this account on this member.</div> }
+              </div>
+            } @else {
+              <div class="empty pick">Select a member to see everything done on them, by everyone.</div>
+            }
+          </div>
         </div>
       }
 
@@ -1035,6 +1153,61 @@ const govSection = governanceSection;
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
     .sub { font-size: 11px; color: var(--gray-500); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .lnk { border:0; background:none; padding:0; font:inherit; font-weight:700; color:var(--teal-700);
+           cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+    .lnk:hover { color:var(--teal-900); }
+
+    /* ---- Member Timeline ---- */
+    .split-2 { display:grid; grid-template-columns: minmax(300px, 380px) 1fr; gap:16px; align-items:start; }
+    @media (max-width: 1100px) { .split-2 { grid-template-columns: 1fr; } }
+    .mlist { max-height:620px; overflow-y:auto; border-top:1px solid var(--border); }
+    .mrow { display:flex; flex-direction:column; gap:5px; width:100%; text-align:left; border:0;
+            border-bottom:1px solid var(--gray-100); background:#fff; padding:11px 16px; cursor:pointer; font:inherit; }
+    .mrow:hover { background:var(--gray-50, #f9fafb); }
+    .mrow.on { background:var(--teal-50); box-shadow:inset 3px 0 0 var(--teal-600); }
+    .mrow:focus-visible { outline:2px solid var(--teal-600); outline-offset:-2px; }
+    .mmain b { font-size:13.5px; color:var(--ink); }
+    .mstats { display:flex; flex-wrap:wrap; gap:5px; }
+    .mchip { font-size:10.5px; font-weight:600; color:var(--gray-500); background:var(--gray-100); border-radius:999px; padding:1px 7px; }
+    .mrow.on .mchip { background:#fff; color:var(--teal-700); }
+
+    .mhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); }
+    .actorbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--border); background:var(--gray-50, #f9fafb); }
+    .albl { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--gray-500); margin-right:4px; }
+    .qp { border:1px solid var(--border); background:#fff; border-radius:999px; padding:3px 10px; font:inherit;
+          font-size:11.5px; font-weight:600; color:var(--gray-500); cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+    .qp:hover { border-color:var(--teal-600); color:var(--teal-700); }
+    .qp.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; }
+    .qn { font-size:10px; font-weight:700; background:var(--gray-100); color:var(--gray-500); border-radius:999px; padding:0 5px; }
+    .qp.on .qn { background:rgba(255,255,255,.24); color:#fff; }
+
+    .threads { max-height:620px; overflow-y:auto; }
+    .thread { border-bottom:1px solid var(--gray-100); }
+    .thead { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:0; background:#fff;
+             padding:11px 16px; cursor:pointer; font:inherit; }
+    .thead:hover { background:var(--gray-50, #f9fafb); }
+    .tcar { color:var(--gray-400); transition:transform .15s; display:inline-block; }
+    .tcar.open { transform:rotate(90deg); }
+    .tid { font-size:12.5px; font-weight:700; color:var(--teal-900); }
+    .ttype { font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-500); background:var(--gray-100); border-radius:3px; padding:1px 6px; }
+    .tspan { font-size:11px; }
+    .tn { margin-left:auto; font-size:11px; color:var(--gray-500); font-weight:600; white-space:nowrap; }
+
+    /* The timeline itself: one rail, events hung off it in order. */
+    .tl { list-style:none; margin:0; padding:2px 16px 14px 30px; border-left:2px solid var(--gray-100); margin-left:24px; }
+    .tli { display:grid; grid-template-columns:132px 1fr; gap:12px; padding:7px 0; position:relative; }
+    .tli::before { content:''; position:absolute; left:-37px; top:13px; width:9px; height:9px; border-radius:999px;
+                   background:var(--gray-300); border:2px solid #fff; }
+    .tli[data-cat="Clinical Decision"]::before { background:var(--teal-600); }
+    .tli[data-cat="Access"]::before { background:var(--amber); }
+    .tli[data-cat="Correspondence"]::before { background:var(--teal-400, #5eb1b5); }
+    .tli[data-cat="Security"]::before { background:var(--red, #c0392b); }
+    .tlt { font-size:11px; color:var(--gray-500); padding-top:2px; white-space:nowrap; }
+    .tla { font-size:13px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .tlf { font-size:12px; margin-top:3px; }
+    .tlm { font-size:11px; margin-top:2px; }
+    .empty.pick { padding:70px 24px; color:var(--gray-500); font-weight:500; text-align:center; }
+
     .chg { display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
            padding:1px 6px; border-radius:3px; margin-right:6px; background:var(--gray-100); color:var(--gray-500); vertical-align:1px; }
     .chg[data-a="Deleted"] { background:var(--red-bg); color:var(--red-fg); }
@@ -1601,6 +1774,101 @@ export class AuditTraceability {
       }],
     });
   }
+  // ---- Member Timeline -------------------------------------------------------------------------
+  // Same scopedEvents() the Audit Trail reads. Pivoting must never introduce a second source of
+  // truth: if this tab and that tab ever disagreed, both become unusable as evidence.
+  readonly mq = signal('');
+  readonly selectedMember = signal('');
+  readonly memberActor = signal('');
+  readonly openThreads = signal<Set<string>>(new Set());
+
+  private readonly allMemberRows = computed(() => memberAuditRollup(this.scopedEvents()));
+  readonly memberRows = computed(() => {
+    const q = this.mq().trim().toLowerCase();
+    const rows = this.allMemberRows();
+    return q ? rows.filter((m) => m.member.toLowerCase().includes(q) || m.memberId.toLowerCase().includes(q)) : rows;
+  });
+  readonly memberEventCount = computed(() => this.scopedEvents().filter((e) => e.memberId).length);
+  readonly multiUserMembers = computed(() => this.allMemberRows().filter((m) => m.users >= 3));
+  readonly multiRecordMembers = computed(() => this.allMemberRows().filter((m) => m.records >= 2));
+  /** Members whose record was opened under an emergency justification — the highest-value starting
+   *  point on this tab, because every one of them needs a human to read the whole timeline. */
+  readonly btgMembers = computed(() => {
+    const ids = new Set<string>();
+    for (const e of this.scopedEvents()) if (e.action.startsWith('Break-the-glass') && e.memberId) ids.add(e.memberId);
+    return [...ids];
+  });
+  readonly selectedMemberRow = computed(() => this.allMemberRows().find((m) => m.memberId === this.selectedMember()) ?? null);
+
+  /** Every account that touched the selected member, with how many events each — the "by user"
+   *  cut of a member's own record, which is how a handoff dispute actually gets settled. */
+  readonly memberActors = computed(() => {
+    const id = this.selectedMember();
+    if (!id) return [] as { actorId: string; actor: string; n: number }[];
+    const counts = new Map<string, { actorId: string; actor: string; n: number }>();
+    for (const e of this.scopedEvents()) {
+      if (e.memberId !== id) continue;
+      const cur = counts.get(e.actorId) ?? { actorId: e.actorId, actor: e.actor, n: 0 };
+      cur.n++; counts.set(e.actorId, cur);
+    }
+    return [...counts.values()].sort((a, b) => b.n - a.n);
+  });
+  readonly memberThreads = computed<TimelineThread[]>(() => {
+    const id = this.selectedMember();
+    return id ? memberTimeline(id, this.scopedEvents(), this.memberActor() || undefined) : [];
+  });
+
+  selectMember(id: string) {
+    this.selectedMember.set(id);
+    this.memberActor.set('');
+    // Open the most recent thread by default — landing on an all-collapsed list makes the reader
+    // do a click before seeing anything, every single time.
+    const first = memberTimeline(id, this.scopedEvents())[0];
+    this.openThreads.set(new Set(first ? [first.correlationId] : []));
+  }
+  toggleThread(id: string) {
+    this.openThreads.update((set) => { const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  /** Cross-pivot jump: from one account's row straight to one member's full record, with that
+   *  account pre-selected so you see their part first and can clear it to see everyone else's. */
+  openMemberFromUser(memberId: string, actorId: string) {
+    this.sel.set('member');
+    this.mq.set('');
+    this.selectMember(memberId);
+    this.memberActor.set(actorId);
+  }
+  drillMember(m: MemberAuditRow) {
+    this.drillEvents(`Member record — ${m.member}`, this.scopedEvents().filter((e) => e.memberId === m.memberId), `member-${slug(m.memberId)}`);
+  }
+  exportMembers() {
+    this.exporter.open({
+      title: 'Members Touched', name: `audit-members${TODAY_ISO}`,
+      columns: ['Member', 'Member ID', 'LOB', 'Modules', 'Events', 'Accounts', 'Records', 'PHI Events', 'First Activity', 'Last Activity'],
+      rows: this.memberRows().map((m) => [m.member, m.memberId, m.lob, m.modules, m.events, m.users, m.records, m.phi, m.firstActivity, m.lastActivity]),
+    });
+  }
+
+  /** "Which members did this account touch" — the by-user-across-members half of the pair. Each
+   *  row jumps into that member's full timeline, so the two pivots are one click apart. */
+  /** Distinct members one account touched. Cheap enough to compute per row at this scale, and
+   *  reading it off the same scoped events keeps it consistent with the drill it opens. */
+  membersTouched(a: UserActivityRow): number {
+    const ids = new Set<string>();
+    for (const e of this.scopedEvents()) if (e.actorId === a.userId && e.memberId) ids.add(e.memberId);
+    return ids.size;
+  }
+  drillUserMembers(a: UserActivityRow) {
+    const rows = membersForUser(a.userId, this.scopedEvents());
+    this.ix.openExplorer({
+      title: `Members touched — ${a.name}`,
+      context: `${rows.length} member(s) · ${a.events} event(s) by ${a.name} (${a.role}) in ${this.rangeLabel().toLowerCase()}`,
+      columns: ['Member', 'Member ID', 'LOB', 'Records', 'Events', 'PHI Events', 'First Touch', 'Last Touch', 'What They Did'],
+      rows: rows.map((m: UserMemberRow) => [m.member, m.memberId, m.lob, m.records, m.events, m.phi, m.firstTouch, m.lastTouch, m.actions]),
+      exportName: `audit-members-of-${slug(a.userId)}${TODAY_ISO}`,
+      memberColumn: 0,
+    });
+  }
+
   drillUser(a: UserActivityRow) {
     this.drillEvents(`Activity — ${a.name}`, this.scopedEvents().filter((e) => e.actorId === a.userId), `user-${slug(a.userId)}`);
   }

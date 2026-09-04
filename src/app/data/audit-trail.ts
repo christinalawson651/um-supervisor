@@ -464,11 +464,17 @@ function operationalEvents(): Draft[] {
       // explicit break-the-glass justification, which is exactly what has to be reviewable.
       if (n % 29 === 0 && (u.role === 'UM Nurse Reviewer' || u.role === 'Care Manager')) {
         const btg = n % 58 === 0;
+        // Point at a REAL member from the pool, not a synthetic id. An emergency access is only
+        // reviewable if you can open the record it touched and see it in context with everyone
+        // else who was in there — a member id with no member behind it is a dead end on the one
+        // event class where the reviewer most needs to keep pulling.
+        const subject = CASE_POOL[parseInt(digest(u.userId + d).slice(0, 4), 16) % CASE_POOL.length];
+        const subjectId = `M${digest(subject.member).slice(0, 8).toUpperCase()}`;
         out.push({
           timestamp: stamp(day, 0, login + 60), actor: u.name, actorId: u.userId, actorRole: u.role,
           category: 'Security', action: btg ? 'Break-the-glass access granted' : 'Access to unassigned member record denied',
-          entityType: 'Member', entityId: `M${digest(u.userId + d).slice(0, 8).toUpperCase()}`,
-          memberId: `M${digest(u.userId + d).slice(0, 8).toUpperCase()}`, lob: null,
+          entityType: 'Member', entityId: subjectId,
+          memberId: subjectId, lob: lobOf(subject.authId),
           field: null, before: null, after: null,
           channel: 'Web UI', sourceIp: ipFor(u, n), sessionId: `S-${digest(u.userId + d).slice(0, 8)}`,
           correlationId: `SEC-${u.userId}-${d}`, reasonCode: btg ? 'BTG-EMERGENT-CARE' : 'RBAC-OUT-OF-SCOPE',
@@ -760,6 +766,142 @@ export interface UserActivityRow {
   signals: string[];
 }
 /** Per-account activity review — the HIPAA §164.308(a)(1)(ii)(D) evidence, in one place. */
+// ---------------------------------------------------------------------------------------------
+// The two pivots an auditor actually works in: one user across many members, and one member
+// across many users. Both are group-bys over the SAME event store the Audit Trail tab reads —
+// no second source of truth, so a number here can never disagree with a number there.
+// ---------------------------------------------------------------------------------------------
+
+/** memberId -> display name. Audit events carry only the id (they are the system of record, and a
+ *  name is presentation), so the label is resolved from the case pools the events were generated
+ *  from. UM hashes the member name into an id; CM already has one. */
+export const MEMBER_NAMES: Map<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const c of CASE_POOL) m.set(`M${digest(c.member).slice(0, 8).toUpperCase()}`, c.member);
+  for (const c of CM_CASE_POOL) m.set(c.memberId, c.member);
+  return m;
+})();
+export function memberName(memberId: string): string { return MEMBER_NAMES.get(memberId) ?? memberId; }
+
+export interface MemberAuditRow {
+  memberId: string;
+  member: string;
+  lob: string;
+  events: number;
+  users: number;          // distinct people and service accounts that touched this member
+  records: number;        // distinct authorizations / cases / appeals
+  phi: number;
+  modules: string;
+  firstActivity: string;
+  lastActivity: string;
+}
+
+/** One row per member touched in range — the entry point for "show me everything on this member,
+ *  whoever did it". */
+export function memberAuditRollup(events: AuditEvent[]): MemberAuditRow[] {
+  const groups = new Map<string, AuditEvent[]>();
+  for (const e of events) {
+    if (!e.memberId) continue;                 // configuration and account admin touch no member
+    const g = groups.get(e.memberId) ?? [];
+    g.push(e); groups.set(e.memberId, g);
+  }
+  const rows: MemberAuditRow[] = [];
+  groups.forEach((evs, memberId) => {
+    const sorted = [...evs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const mods = new Set<string>();
+    for (const e of sorted) {
+      if (e.entityType === 'Authorization') mods.add('UM');
+      else if (e.entityType === 'CM Case') mods.add('CM');
+      else if (e.entityType === 'Appeal') mods.add('Appeals');
+    }
+    rows.push({
+      memberId, member: memberName(memberId),
+      lob: sorted.find((e) => e.lob)?.lob ?? '—',
+      events: sorted.length,
+      users: new Set(sorted.map((e) => e.actorId)).size,
+      records: new Set(sorted.map((e) => e.entityId)).size,
+      phi: sorted.filter((e) => e.phi).length,
+      modules: [...mods].join(' · ') || '—',
+      firstActivity: sorted[0].timestamp.replace('T', ' '),
+      lastActivity: sorted[sorted.length - 1].timestamp.replace('T', ' '),
+    });
+  });
+  return rows.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
+}
+
+export interface TimelineThread {
+  correlationId: string;
+  entityType: AuditEntityType;
+  entityId: string;
+  opened: string;
+  closed: string;
+  actors: string[];
+  events: AuditEvent[];
+}
+
+/** One member's complete history, threaded by case rather than served as a flat list. A member with
+ *  three authorizations and a care-management case is four threads, because that is how the work
+ *  actually happened — a flat chronology interleaves them and reads as noise. */
+export function memberTimeline(memberId: string, events: AuditEvent[], actorId?: string): TimelineThread[] {
+  const mine = events
+    .filter((e) => e.memberId === memberId && (!actorId || e.actorId === actorId))
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const threads = new Map<string, AuditEvent[]>();
+  for (const e of mine) {
+    const g = threads.get(e.correlationId) ?? [];
+    g.push(e); threads.set(e.correlationId, g);
+  }
+  return [...threads.entries()].map(([correlationId, evs]) => ({
+    correlationId,
+    entityType: evs[0].entityType,
+    entityId: evs[0].entityId,
+    opened: evs[0].timestamp.replace('T', ' '),
+    closed: evs[evs.length - 1].timestamp.replace('T', ' '),
+    actors: [...new Set(evs.map((e) => e.actor))],
+    events: evs,
+  })).sort((a, b) => b.closed.localeCompare(a.closed));
+}
+
+export interface UserMemberRow {
+  memberId: string;
+  member: string;
+  lob: string;
+  events: number;
+  phi: number;
+  records: number;
+  firstTouch: string;
+  lastTouch: string;
+  actions: string;
+}
+
+/** The other direction: every member one user touched, and what they did to each. This is the view
+ *  a supervisor opens when an access review flags someone, and the one a member asks for by name
+ *  under an accounting-of-disclosures request. */
+export function membersForUser(userId: string, events: AuditEvent[]): UserMemberRow[] {
+  const mine = events.filter((e) => e.actorId === userId && e.memberId);
+  const groups = new Map<string, AuditEvent[]>();
+  for (const e of mine) {
+    const g = groups.get(e.memberId!) ?? [];
+    g.push(e); groups.set(e.memberId!, g);
+  }
+  const rows: UserMemberRow[] = [];
+  groups.forEach((evs, memberId) => {
+    const sorted = [...evs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const actions = [...new Set(sorted.map((e) => e.action))];
+    rows.push({
+      memberId, member: memberName(memberId),
+      lob: sorted.find((e) => e.lob)?.lob ?? '—',
+      events: sorted.length,
+      phi: sorted.filter((e) => e.phi).length,
+      records: new Set(sorted.map((e) => e.entityId)).size,
+      firstTouch: sorted[0].timestamp.replace('T', ' '),
+      lastTouch: sorted[sorted.length - 1].timestamp.replace('T', ' '),
+      actions: actions.slice(0, 3).join(', ') + (actions.length > 3 ? ` +${actions.length - 3} more` : ''),
+    });
+  });
+  return rows.sort((a, b) => b.lastTouch.localeCompare(a.lastTouch));
+}
+
 export function userActivityRollup(events: AuditEvent[], users: SystemUser[] = SYSTEM_USERS): UserActivityRow[] {
   return users.map((u) => {
     const mine = events.filter((e) => e.actorId === u.userId);
