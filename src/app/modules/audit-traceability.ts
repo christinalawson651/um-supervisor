@@ -630,56 +630,8 @@ const govSection = governanceSection;
           </div>
         </div>
 
-        <div class="panel mt-6">
-          <div class="panel-pad filters">
-            <h3 class="pt">Activity by Account</h3>
-            <input class="search sm" type="text" placeholder="Search account or role…" [ngModel]="aq()" (ngModelChange)="aq.set($event)" />
-            <label class="chk"><input type="checkbox" [checked]="flaggedOnly()" (change)="flaggedOnly.set($any($event.target).checked)" /> Flagged only</label>
-            <span class="count">{{ activity().length }} account(s)</span>
-          </div>
-          <table class="z-table">
-            <thead><tr>
-              <th class="srt" (click)="sortAct('name')">Account{{ caretAct('name') }}</th>
-              <th class="srt" (click)="sortAct('role')">Role{{ caretAct('role') }}</th>
-              <th>Access Scope</th>
-              <th class="srt num" (click)="sortAct('events')">Events{{ caretAct('events') }}</th>
-              <th class="srt num" (click)="sortAct('phi')">PHI{{ caretAct('phi') }}</th>
-              <th class="num">Members</th>
-              <th class="srt num" (click)="sortAct('offHours')">Off-Hours{{ caretAct('offHours') }}</th>
-              <th class="srt num" (click)="sortAct('failedLogins')">Failed{{ caretAct('failedLogins') }}</th>
-              <th class="srt num" (click)="sortAct('deniedAccess')">Denied{{ caretAct('deniedAccess') }}</th>
-              <th class="srt num" (click)="sortAct('breakGlass')">BTG{{ caretAct('breakGlass') }}</th>
-              <th class="srt num" (click)="sortAct('exports')">Exports{{ caretAct('exports') }}</th>
-              <th class="srt" (click)="sortAct('lastActivity')">Last Activity{{ caretAct('lastActivity') }}</th>
-              <th>Signals</th>
-            </tr></thead>
-            <tbody>
-              @for (a of activity(); track a.userId) {
-                <tr class="clk" [class.sel]="selectedUser() === a.userId" (click)="selectUser(a.userId)">
-                  <td class="strong">{{ a.name }}<div class="sub mono">{{ a.userId }}</div></td>
-                  <td>{{ a.role }}</td>
-                  <td class="scopecell">
-                    <span class="scope" [attr.data-wide]="isWideScope(a.userId) ? '1' : null">{{ scopeOf(a.userId).recordScope }}</span>
-                    <div class="sub">{{ scopeLine(a.userId) }}</div>
-                  </td>
-                  <td class="num">{{ a.events | number }}</td>
-                  <td class="num">{{ a.phi | number }}</td>
-                  <td class="num"><button class="lnk" (click)="drillUserMembers(a); $event.stopPropagation()">{{ membersTouched(a) | number }}</button></td>
-                  <td class="num"><b [class.warn]="a.offHours > 0">{{ a.offHours }}</b></td>
-                  <td class="num"><b [class.warn]="a.failedLogins > 0">{{ a.failedLogins }}</b></td>
-                  <td class="num">{{ a.deniedAccess }}</td>
-                  <td class="num"><b [class.hot]="a.breakGlass > 0">{{ a.breakGlass }}</b></td>
-                  <td class="num">{{ a.exports }}</td>
-                  <td class="mono">{{ a.lastActivity || '—' }}</td>
-                  <td>@for (f of a.signals; track f) { <span class="chip amber">{{ f }}</span> } @if (!a.signals.length) { <span class="sub">—</span> }</td>
-                </tr>
-              } @empty { <tr><td colspan="13" class="empty">No accounts match this filter.</td></tr> }
-            </tbody>
-          </table>
-        </div>
-
         @if (selectedUserRow(); as u) {
-          <div class="panel mt-6">
+          <div class="panel mt-6 acct-panel">
             <div class="panel-pad mhead">
               <div>
                 <button class="lnk back" (click)="selectedUser.set('')">‹ Clear selection</button>
@@ -756,6 +708,55 @@ const govSection = governanceSection;
             </table>
           </div>
         }
+
+        <div class="panel mt-6">
+          <div class="panel-pad filters">
+            <h3 class="pt">Activity by Account</h3>
+            <span class="section-note sm">Select an account to see its access scope and activity over time.</span>
+            <input class="search sm" type="text" placeholder="Search account or role…" [ngModel]="aq()" (ngModelChange)="aq.set($event)" />
+            <label class="chk"><input type="checkbox" [checked]="flaggedOnly()" (change)="flaggedOnly.set($any($event.target).checked)" /> Flagged only</label>
+            <span class="count">{{ activity().length }} account(s)</span>
+          </div>
+          <table class="z-table">
+            <thead><tr>
+              <th class="srt" (click)="sortAct('name')">Account{{ caretAct('name') }}</th>
+              <th class="srt" (click)="sortAct('role')">Role{{ caretAct('role') }}</th>
+              <th>Access Scope</th>
+              <th class="srt num" (click)="sortAct('events')">Events{{ caretAct('events') }}</th>
+              <th class="srt num" (click)="sortAct('phi')">PHI{{ caretAct('phi') }}</th>
+              <th class="num">Members</th>
+              <th class="srt num" (click)="sortAct('offHours')">Off-Hours{{ caretAct('offHours') }}</th>
+              <th class="srt num" (click)="sortAct('failedLogins')">Failed{{ caretAct('failedLogins') }}</th>
+              <th class="srt num" (click)="sortAct('deniedAccess')">Denied{{ caretAct('deniedAccess') }}</th>
+              <th class="srt num" (click)="sortAct('breakGlass')">BTG{{ caretAct('breakGlass') }}</th>
+              <th class="srt num" (click)="sortAct('exports')">Exports{{ caretAct('exports') }}</th>
+              <th class="srt" (click)="sortAct('lastActivity')">Last Activity{{ caretAct('lastActivity') }}</th>
+              <th>Signals</th>
+            </tr></thead>
+            <tbody>
+              @for (a of activity(); track a.userId) {
+                <tr class="clk" [class.sel]="selectedUser() === a.userId" (click)="selectUser(a.userId)">
+                  <td class="strong">{{ a.name }}<div class="sub mono">{{ a.userId }}</div></td>
+                  <td>{{ a.role }}</td>
+                  <td class="scopecell">
+                    <span class="scope" [attr.data-wide]="isWideScope(a.userId) ? '1' : null">{{ scopeOf(a.userId).recordScope }}</span>
+                    <div class="sub">{{ scopeLine(a.userId) }}</div>
+                  </td>
+                  <td class="num">{{ a.events | number }}</td>
+                  <td class="num">{{ a.phi | number }}</td>
+                  <td class="num"><button class="lnk" (click)="drillUserMembers(a); $event.stopPropagation()">{{ membersTouched(a) | number }}</button></td>
+                  <td class="num"><b [class.warn]="a.offHours > 0">{{ a.offHours }}</b></td>
+                  <td class="num"><b [class.warn]="a.failedLogins > 0">{{ a.failedLogins }}</b></td>
+                  <td class="num">{{ a.deniedAccess }}</td>
+                  <td class="num"><b [class.hot]="a.breakGlass > 0">{{ a.breakGlass }}</b></td>
+                  <td class="num">{{ a.exports }}</td>
+                  <td class="mono">{{ a.lastActivity || '—' }}</td>
+                  <td>@for (f of a.signals; track f) { <span class="chip amber">{{ f }}</span> } @if (!a.signals.length) { <span class="sub">—</span> }</td>
+                </tr>
+              } @empty { <tr><td colspan="13" class="empty">No accounts match this filter.</td></tr> }
+            </tbody>
+          </table>
+        </div>
       }
 
       <!-- ========================== MEMBER TIMELINE ========================== -->
@@ -910,6 +911,7 @@ const govSection = governanceSection;
             </div>
           </div>
         }
+
       }
 
       <!-- ==================== GOVERNANCE & ACCESS CONTROLS ==================== -->
@@ -2196,7 +2198,16 @@ export class AuditTraceability {
   readonly selectedUser = signal('');
   readonly grain = signal<ActivityGrain>('Daily');
   readonly grains = ACTIVITY_GRAINS;
-  selectUser(id: string) { this.selectedUser.set(this.selectedUser() === id ? '' : id); }
+  selectUser(id: string) {
+    const next = this.selectedUser() === id ? '' : id;
+    this.selectedUser.set(next);
+    // Rendering above the table is the structural fix; this covers the case where the tile row
+    // alone still pushes the panel under the fold on a short viewport.
+    // Two frames, not a microtask: this app is zoneless, so the signal write schedules a render
+    // that has not happened yet when microtasks drain — the panel does not exist to scroll to.
+    if (next) requestAnimationFrame(() => requestAnimationFrame(() =>
+      document.querySelector('.acct-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  }
   readonly selectedUserRow = computed(() => this.activity().find((a) => a.userId === this.selectedUser()) ?? null);
   readonly userEvents = computed(() => {
     const id = this.selectedUser();
