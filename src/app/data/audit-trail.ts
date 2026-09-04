@@ -1079,8 +1079,18 @@ function isoWeekKey(d: Date): string {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function activityBuckets(events: AuditEvent[], grain: ActivityGrain): ActivityBucket[] {
+/** `from`/`to` seed empty buckets across the window so a quiet Tuesday renders as a zero-height
+ *  bar rather than vanishing. Without it the axis is not linear — three bars labelled June, August,
+ *  October read as consecutive, and a reader draws a trend line through a gap that was never there.
+ *  Seeding is clamped to the online store and to 400 buckets: an archived decade is not thousands
+ *  of zeroes, it is a restore request, and the panel says so separately. */
+export function activityBuckets(
+  events: AuditEvent[], grain: ActivityGrain, from?: string, to?: string,
+): ActivityBucket[] {
   const map = new Map<string, ActivityBucket>();
+  const seed = (key: string, label: string) => {
+    if (!map.has(key)) map.set(key, { key, label, total: 0, phi: 0, exports: 0, denied: 0, offHours: 0, events: [] });
+  };
   const put = (key: string, label: string, e: AuditEvent) => {
     let b = map.get(key);
     if (!b) { b = { key, label, total: 0, phi: 0, exports: 0, denied: 0, offHours: 0, events: [] }; map.set(key, b); }
@@ -1103,6 +1113,22 @@ export function activityBuckets(events: AuditEvent[], grain: ActivityGrain): Act
     return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
   }
 
+  if (from && to) {
+    const span = auditSpan();
+    const start = new Date(`${(from < span.from ? span.from : from)}T00:00:00`);
+    const end = new Date(`${(to > span.to ? span.to : to)}T00:00:00`);
+    let guard = 0;
+    for (const d = new Date(start); d <= end && guard < 400; guard++) {
+      const iso = d.toISOString().slice(0, 10);
+      if (grain === 'Daily') {
+        seed(iso, iso); d.setDate(d.getDate() + 1);
+      } else if (grain === 'Weekly') {
+        const k = isoWeekKey(d); seed(k, k.replace('-W', ' wk ')); d.setDate(d.getDate() + 7);
+      } else {
+        seed(iso.slice(0, 7), `${MONTHS[d.getMonth()]} ${d.getFullYear()}`); d.setMonth(d.getMonth() + 1);
+      }
+    }
+  }
   for (const e of events) {
     const d = new Date(e.timestamp);
     if (grain === 'Daily') put(e.timestamp.slice(0, 10), e.timestamp.slice(0, 10), e);

@@ -653,13 +653,34 @@ const govSection = governanceSection;
             </div>
 
             <div class="panel-pad narrbar">
-              <span class="albl">Activity</span>
+              <span class="albl">Window</span>
+              @for (w of windowPresets; track w.id) {
+                <button class="qp" [class.on]="windowPreset() === w.id" (click)="setWindowPreset(w.id)">{{ w.label }}</button>
+              }
+              <label class="dt"><span class="sub">From</span>
+                <input type="date" [value]="winFrom()" [max]="winTo()" (change)="setFrom($any($event.target).value)" /></label>
+              <label class="dt"><span class="sub">To</span>
+                <input type="date" [value]="winTo()" [min]="winFrom()" (change)="setTo($any($event.target).value)" /></label>
+            </div>
+
+            <div class="panel-pad narrbar">
+              <span class="albl">Grain</span>
+              <button class="qp" [class.on]="!grainOverride()" (click)="grainOverride.set(null)">Auto<span class="qn">{{ autoGrain() }}</span></button>
               @for (g of grains; track g) {
-                <button class="qp" [class.on]="grain() === g" (click)="grain.set(g)">{{ g }}</button>
+                <button class="qp" [class.on]="grainOverride() === g" (click)="grainOverride.set(g)">{{ g }}</button>
               }
               <span class="spacer"></span>
-              <span class="sub">{{ userEvents().length | number }} events · {{ rangeLabel() }} · click a bar to open it</span>
+              <span class="sub">{{ userEvents().length | number }} events over {{ spanDays() | number }} days · click a bar to open it</span>
             </div>
+
+            @if (archiveGap(); as gap) {
+              <div class="panel-pad archnote">
+                <b>{{ gap }}</b> of this window predates the online store, which holds
+                {{ onlineFrom() }} → {{ onlineTo() }}. Older events are sealed in
+                {{ segmentsCovering().length }} archive segment(s) and are not queryable until restored.
+                <button class="lnk" (click)="goArchive()">Open Retention &amp; Archive ›</button>
+              </div>
+            }
 
             <div class="chartwrap">
               @if (buckets().length) {
@@ -673,7 +694,7 @@ const govSection = governanceSection;
                         <span class="fill off" [style.height.%]="pctOfPeak(b.offHours)"></span>
                       </span>
                       <span class="bn">{{ b.total || '' }}</span>
-                      <span class="bl">{{ b.label }}</span>
+                      <span class="bl">{{ showLabel($index) ? b.label : '' }}</span>
                     </button>
                   }
                 </div>
@@ -1413,6 +1434,12 @@ const govSection = governanceSection;
     .skv { font-size:12px; } .skv .sub { margin-right:5px; }
     .hactions { display:flex; gap:8px; }
 
+    .dt { display:inline-flex; align-items:center; gap:6px; font-size:12px; }
+    .dt input { border:1px solid var(--gray-300); border-radius:7px; padding:3px 8px; font:inherit; font-size:12px; outline:none; }
+    .dt input:focus { border-color:var(--teal-600); }
+    .archnote { font-size:12.5px; color:var(--amber-fg); background:var(--amber-bg); border-bottom:1px solid var(--border); line-height:1.5; }
+    .archnote b { font-weight:700; }
+    .archnote .lnk { color:var(--amber-fg); margin-left:6px; }
     .chartwrap { padding:18px 20px 8px; overflow-x:auto; }
     .bars { display:flex; align-items:flex-end; gap:3px; min-height:190px; }
     .bars[data-grain="Hour of day"] .bl { font-size:9px; }
@@ -2196,11 +2223,81 @@ export class AuditTraceability {
   }
   // ---- Account forensics -------------------------------------------------------------------------
   readonly selectedUser = signal('');
-  readonly grain = signal<ActivityGrain>('Daily');
   readonly grains = ACTIVITY_GRAINS;
+
+  // ---- the window ------------------------------------------------------------------------------
+  // Panel-local and absolute, not a trailing count of days from today. An investigation is usually
+  // "the fortnight around the complaint", which was eighteen months ago — a Today/7d/30d control
+  // cannot express that at all.
+  readonly windowPresets = [
+    { id: '30d', label: '30 days' }, { id: '90d', label: '90 days' },
+    { id: '12m', label: '12 months' }, { id: 'all', label: 'All retained' },
+  ];
+  readonly windowPreset = signal<string>('90d');
+  readonly winFrom = signal<string>('');
+  readonly winTo = signal<string>(TODAY_ISO);
+
+  private shiftDays(days: number): string {
+    const d = new Date(`${TODAY_ISO}T00:00:00`);
+    d.setDate(d.getDate() - days);
+    return d.toISOString().slice(0, 10);
+  }
+  setWindowPreset(id: string) {
+    this.windowPreset.set(id);
+    this.winTo.set(TODAY_ISO);
+    this.winFrom.set(id === '30d' ? this.shiftDays(30) : id === '90d' ? this.shiftDays(90)
+      : id === '12m' ? this.shiftDays(365) : archiveSummary().oldestRetained);
+  }
+  /** Typing a date drops the preset — the chips describe trailing windows and a custom range is
+   *  not one of them, so leaving one lit would be a lie about what is on screen. */
+  setFrom(v: string) { if (v) { this.winFrom.set(v); this.windowPreset.set(''); } }
+  setTo(v: string) { if (v) { this.winTo.set(v); this.windowPreset.set(''); } }
+
+  readonly spanDays = computed(() => {
+    const a = new Date(`${this.winFrom() || this.shiftDays(90)}T00:00:00`).getTime();
+    const b = new Date(`${this.winTo()}T00:00:00`).getTime();
+    return Math.max(1, Math.round((b - a) / 86400000));
+  });
+
+  /** Grain follows the span unless someone overrides it. Two years at a daily grain is 730 bars;
+   *  a fortnight at a monthly grain is one. Neither is a chart. */
+  readonly grainOverride = signal<ActivityGrain | null>(null);
+  readonly autoGrain = computed<ActivityGrain>(() => {
+    const d = this.spanDays();
+    return d <= 45 ? 'Daily' : d <= 200 ? 'Weekly' : 'Monthly';
+  });
+  readonly grain = computed<ActivityGrain>(() => this.grainOverride() ?? this.autoGrain());
+
+  /** At most fourteen labels on the axis. Every bar keeps its tooltip and its click, so nothing is
+   *  lost — a label under every one of sixty bars is noise standing where information should be. */
+  showLabel(i: number) {
+    const n = this.buckets().length;
+    if (n <= 14) return true;
+    const step = Math.ceil(n / 14);
+    return i % step === 0;
+  }
+
+  // ---- what is actually queryable ---------------------------------------------------------------
+  readonly onlineFrom = computed(() => archiveSummary().onlineFrom);
+  readonly onlineTo = computed(() => archiveSummary().onlineTo);
+  /** Asking for a window older than the online store is a normal thing to do and a normal thing to
+   *  be told about. Silently returning an empty chart would read as "this account did nothing",
+   *  which is the single most misleading answer an audit tool can give. */
+  readonly archiveGap = computed(() => {
+    const from = this.winFrom();
+    if (!from || from >= this.onlineFrom()) return '';
+    const days = Math.round((new Date(`${this.onlineFrom()}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000);
+    return `${days.toLocaleString()} day${days === 1 ? '' : 's'}`;
+  });
+  readonly segmentsCovering = computed(() => {
+    const from = this.winFrom(), to = this.winTo();
+    return ARCHIVE_SEGMENTS.filter((sg) => sg.periodTo >= from && sg.periodFrom <= to);
+  });
+  goArchive() { this.sel.set('retention'); }
   selectUser(id: string) {
     const next = this.selectedUser() === id ? '' : id;
     this.selectedUser.set(next);
+    if (next && !this.winFrom()) this.setWindowPreset('90d');
     // Rendering above the table is the structural fix; this covers the case where the tile row
     // alone still pushes the panel under the fold on a short viewport.
     // Two frames, not a microtask: this app is zoneless, so the signal write schedules a render
@@ -2209,11 +2306,23 @@ export class AuditTraceability {
       document.querySelector('.acct-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
   }
   readonly selectedUserRow = computed(() => this.activity().find((a) => a.userId === this.selectedUser()) ?? null);
+  /** Reads the whole online store rather than scopedEvents(): the panel carries its own window, and
+   *  intersecting it with the module's trailing range would silently return nothing whenever the
+   *  two disagree. The module's LOB lens still applies — narrowing to a line of business is a
+   *  question about the work, and it stays true here. */
   readonly userEvents = computed(() => {
     const id = this.selectedUser();
-    return id ? this.scopedEvents().filter((e) => e.actorId === id) : [];
+    if (!id) return [];
+    const from = this.winFrom() || this.shiftDays(90), to = this.winTo(), lob = this.lob();
+    return AUDIT_EVENTS.filter((e) => {
+      if (e.actorId !== id) return false;
+      const d = eventDate(e.timestamp);
+      if (d < from || d > to) return false;
+      if (lob !== 'all' && e.lob !== null && e.lob !== lob) return false;
+      return true;
+    });
   });
-  readonly buckets = computed(() => activityBuckets(this.userEvents(), this.grain()));
+  readonly buckets = computed(() => activityBuckets(this.userEvents(), this.grain(), this.winFrom() || undefined, this.winTo()));
   readonly weekdays = computed(() => weekdayBuckets(this.userEvents()));
   readonly peak = computed(() => Math.max(1, ...this.buckets().map((b) => b.total)));
   readonly busiest = computed(() => [...this.buckets()].sort((a, b) => b.total - a.total)[0] ?? null);
