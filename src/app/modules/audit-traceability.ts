@@ -325,20 +325,23 @@ const govSection = governanceSection;
           <table class="z-table">
             <thead><tr>
               <th>Authorization</th><th>Member</th><th>Reviewer</th><th>Recommendation</th>
-              <th class="num">Words Changed</th><th>What Changed</th>
+              <th class="num">Words Changed</th><th>What Changed</th><th>Outcome</th>
             </tr></thead>
             <tbody>
               @for (r of narrativeRows(); track r.authId) {
                 <tr class="clk" (click)="openNarrative(r)">
                   <td class="strong mono">{{ r.authId }}</td>
                   <td>{{ r.member }}<div class="sub">{{ r.lob }}</div></td>
-                  <td>{{ r.reviewer }}</td>
+                  <td><button class="lnk" (click)="openActor(r.reviewer); $event.stopPropagation()">{{ r.reviewer }}</button></td>
                   <td>{{ r.recommendation }}<div class="sub">final: {{ r.finalDecision }}</div></td>
                   <td class="num">@if (r.narrativeEdited) { <b>{{ r.narrativeChangePct }}%</b> } @else { <span class="sub">verbatim</span> }</td>
                   <td>@for (k of r.editKinds; track k) { <span class="chip">{{ k }}</span> }
                       @if (!r.editKinds.length) { <span class="sub">accepted as generated</span> }</td>
+                  <td>{{ r.outcome }}
+                    @if (r.overriddenBy) { <div class="sub">by <button class="lnk" (click)="openActor(r.overriddenBy!); $event.stopPropagation()">{{ r.overriddenBy }}</button></div> }
+                  </td>
                 </tr>
-              } @empty { <tr><td colspan="6" class="empty">Nothing matches this filter.</td></tr> }
+              } @empty { <tr><td colspan="7" class="empty">Nothing matches this filter.</td></tr> }
             </tbody>
           </table>
           @if (narrativeOverflow() > 0) {
@@ -522,11 +525,12 @@ const govSection = governanceSection;
               <th class="srt num" (click)="sortRev('agreed')">Agreed{{ caretRev('agreed') }}</th>
               <th class="srt num" (click)="sortRev('overrides')">Overrides{{ caretRev('overrides') }}</th>
               <th class="srt agree-col" (click)="sortRev('pct')">Agreement{{ caretRev('pct') }}</th>
+              <th>Account</th>
             </tr></thead>
             <tbody>
               @for (r of byReviewer(); track r.reviewer) {
                 <tr class="clk" (click)="drillReviewer(r.reviewer)">
-                  <td class="strong">{{ r.reviewer }}</td>
+                  <td class="strong"><button class="lnk" (click)="openActor(r.reviewer); $event.stopPropagation()">{{ r.reviewer }}</button></td>
                   <td class="num">{{ r.scored }}</td>
                   <td class="num">{{ r.adequate ? r.agreed : '—' }}</td>
                   <td class="num"><b [class.warn]="r.overrides > 0">{{ r.overrides }}</b></td>
@@ -538,8 +542,9 @@ const govSection = governanceSection;
                       <span class="sub">n={{ r.scored }} — below the {{ targets.minReviewerSample }}-determination floor, no rate reported</span>
                     }
                   </td>
+                  <td><button class="lnk" (click)="openActor(r.reviewer); $event.stopPropagation()">Who they are ›</button></td>
                 </tr>
-              } @empty { <tr><td colspan="5" class="empty">No clinician-reviewed determinations in range.</td></tr> }
+              } @empty { <tr><td colspan="6" class="empty">No clinician-reviewed determinations in range.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -1183,7 +1188,7 @@ const govSection = governanceSection;
         <header class="nhead">
           <div>
             <h3>{{ r.authId }} · {{ r.member }}</h3>
-            <p class="sub">{{ r.reviewer }} · model {{ r.model }} · {{ r.criteriaSet }} · confidence {{ r.confidence.toFixed(2) }}</p>
+            <p class="sub"><button class="lnk" (click)="openActor(r.reviewer)">{{ r.reviewer }}</button> · model {{ r.model }} · {{ r.criteriaSet }} · confidence {{ r.confidence.toFixed(2) }}</p>
           </div>
           <button class="x" (click)="closeNarrative()" aria-label="Close">×</button>
         </header>
@@ -1218,6 +1223,7 @@ const govSection = governanceSection;
               <div><span class="sub">Final determination</span> <b>{{ r.finalDecision }}</b></div>
               <div><span class="sub">Outcome</span> <b>{{ r.outcome }}</b></div>
               @if (r.overrideReason) { <div><span class="sub">Override reason</span> <b>{{ r.overrideReason }}</b></div> }
+              @if (r.overriddenBy) { <div><span class="sub">Overridden by</span> <button class="lnk" (click)="openActor(r.overriddenBy!)">{{ r.overriddenBy }}</button></div> }
             </div>
           </div>
         </div>
@@ -1672,13 +1678,14 @@ export class AuditTraceability {
    *  models used, then the audit-specific columns and the run's cost. */
   private readonly AI_COLUMNS = ['Auth', 'Member', 'Policy', 'LOB', 'Outcome', 'Pend Reason', 'Agents', 'Models Used', 'Panel',
     'Recommendation', 'Confidence', 'Band', 'Final Determination', 'Agreed', 'Grounded', 'Converged', 'Flags',
-    'Override Reason', 'Overridden By', 'Reviewer', 'Tokens', 'Cost', 'Latency', 'Workflow', 'Bundle', 'Model',
-    'Criteria Set', 'Scored', 'Decided'];
+    'Override Reason', 'Overridden By', 'Reviewer', 'Rationale Edited', 'Words Changed', 'Edit Kinds',
+    'Tokens', 'Cost', 'Latency', 'Workflow', 'Bundle', 'Model', 'Criteria Set', 'Scored', 'Decided'];
   private aiRow(r: AiDecisionRecord): (string | number)[] {
     return [r.authId, r.member, r.procedure, r.lob, r.outcome, r.pendReason ?? '—', `${r.agentsCompleted}/${r.agentsTotal}`,
       r.modelsUsed, r.panel ? 'panel' : '—', r.recommendation, r.confidence.toFixed(2), r.band, r.finalDecision,
       r.agreed ? 'Yes' : 'No', `${r.groundedMet}/${r.groundedTotal}`, r.panel ? (r.converged ? 'Yes' : 'SPLIT') : '—',
       r.flags.join('; ') || '—', r.overrideReason ?? '—', r.overriddenBy ?? '—', r.reviewer,
+      r.narrativeEdited ? 'Yes' : 'No', r.narrativeEdited ? `${r.narrativeChangePct}%` : '—', r.editKinds.join('; ') || '—',
       r.tokens, `$${r.cost.toFixed(2)}`, `${r.latencySec}s`, r.workflowVersion, r.bundle, r.model,
       r.criteriaSet, r.scoredDate, r.decidedDate];
   }
@@ -1963,6 +1970,48 @@ export class AuditTraceability {
       ],
     });
   }
+  // ---- Actors -----------------------------------------------------------------------------------
+  /** One place to land on whoever acted, from anywhere they are named. AI Oversight knows a
+   *  clinician by display name; the audit trail knows them by account id. Resolving the two here
+   *  means every surface that shows a person can hand off to the evidence about that person,
+   *  rather than each table inventing its own half of the pivot. */
+  openActor(name: string) {
+    const u = SYSTEM_USERS.find((x) => x.name === name);
+    if (!u) { this.ix.toast(`No system account matches "${name}".`, 'info'); return; }
+    const evs = this.scopedEvents().filter((e) => e.actorId === u.userId);
+    const members = new Set(evs.filter((e) => e.memberId).map((e) => e.memberId));
+    const scored = this.aiRows().filter((r) => r.reviewer === name);
+    const overrides = scored.filter((r) => r.outcome === 'Overridden');
+    const edited = scored.filter((r) => r.narrativeEdited);
+    this.ix.openDrawer({
+      title: name,
+      subtitle: `${u.role} · ${u.department} · ${u.userId}`,
+      badge: { text: u.status, tone: u.status === 'Active' ? 'green' : 'amber' },
+      fields: [
+        { label: 'Access Role', value: u.role },
+        { label: 'MFA', value: u.mfaEnrolled ? 'Enrolled' : 'Password only', tone: u.mfaEnrolled ? undefined : 'amber' },
+        { label: 'Last Entitlement Review', value: `${u.lastAccessReview} (${attestationAgeDays(u)} days ago)`,
+          tone: attestationAgeDays(u) > ATTESTATION_CYCLE_DAYS ? 'amber' : undefined },
+        { label: 'Last Sign-in', value: u.lastLogin },
+        { label: 'Audit Events in Range', value: evs.length.toLocaleString() },
+        { label: 'PHI Events', value: evs.filter((e) => e.phi).length.toLocaleString() },
+        { label: 'Members Touched', value: members.size.toLocaleString() },
+        { label: 'Determinations Reviewed', value: scored.length.toLocaleString() },
+        { label: 'Overrode the Model', value: `${overrides.length} of ${scored.length}` },
+        { label: 'Edited the Rationale', value: scored.length ? `${edited.length} of ${scored.length}` : '—' },
+      ],
+      note: `Everything above is scoped to ${this.rangeLabel().toLowerCase()}. Agreement and override rates are a signal to look at, never a score to manage someone by — a reviewer below the group may be catching what the model misses.`,
+      actions: [
+        ...(scored.length ? [{ label: 'Determinations they reviewed', tone: 'teal' as const,
+          run: () => { this.ix.closeDrawer(); this.drillReviewer(name); } }] : []),
+        { label: 'Full audit activity', tone: 'teal' as const,
+          run: () => { this.ix.closeDrawer(); this.drillAccountTrail({ userId: u.userId, name }); } },
+        ...(members.size ? [{ label: 'Every member they touched', tone: 'teal' as const,
+          run: () => { this.ix.closeDrawer(); this.drillUserMembersById(u.userId, name, u.role); } }] : []),
+      ],
+    });
+  }
+
   // ---- What the model said vs what went out ----------------------------------------------------
   readonly editKinds = EDIT_KINDS;
   readonly narrFilter = signal<'edited' | 'verbatim'>('edited');
