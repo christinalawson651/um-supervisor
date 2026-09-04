@@ -635,6 +635,11 @@ const govSection = governanceSection;
             <div class="tile-val">{{ breakGlass().length }}</div><div class="tile-lab">Break-the-Glass Grants</div>
             <div class="tile-sub">each requires review</div>
           </div>
+          <div class="tile" (click)="drillCommonality()">
+            <div class="tile-ic" [class.hot]="commCount('High') > 0"></div>
+            <div class="tile-val">{{ commAll().length | number }}</div><div class="tile-lab">Relationship Flags</div>
+            <div class="tile-sub">{{ commCount('High') }} high · account shares details with a member they opened</div>
+          </div>
           <div class="tile" (click)="drillEvents('Data Exports', exportEventsList(), 'exports')">
             <div class="tile-val">{{ exportEventsList().length }}</div><div class="tile-lab">Data Exports</div>
             <div class="tile-sub">{{ exportedRows() | number }} rows extracted</div>
@@ -2545,6 +2550,23 @@ export class AuditTraceability {
   commCount(st: string) { return this.commAll().filter((c) => c.strength === st).length; }
   readonly commBtg = computed(() => this.commAll().filter((c) => c.breakGlass > 0).length);
   strengthOf(f: CommonalityFlag) { return COMMONALITY_STRENGTH[f]; }
+  /** Same rows as the panel below, in the explorer every other tile opens — so the count is
+   *  reachable from above the fold and the list is exportable like everything else here. */
+  drillCommonality() {
+    const rows = this.commRows();
+    this.ix.openExplorer({
+      title: 'Relationship Screening',
+      context: `${rows.length} account/member pair(s) sharing identifying details · ${this.commCount('High')} high strength · a question to ask, never a finding`,
+      columns: ['Account', 'Role', 'Member', 'Member ID', 'What They Share', 'Strength', 'Events', 'PHI Events', 'Break-the-Glass', 'First Touch', 'Last Touch'],
+      rows: rows.map((c) => [c.actor, c.actorRole, c.member, c.memberId, c.flags.join('; '), c.strength,
+        c.events, c.phiEvents, c.breakGlass, c.firstTouch, c.lastTouch]),
+      exportName: `audit-relationship-screening${TODAY_ISO}`,
+      rowLinks: [
+        { column: 0, run: (row) => this.openActor(String(row[0])) },
+        { column: 2, run: (row) => { this.ix.closeExplorer(); this.openMemberFromId(String(row[3])); } },
+      ],
+    });
+  }
 
   // ---- Break-the-glass ------------------------------------------------------------------------
   readonly btgList = computed(() => breakGlassAccesses(this.scopedEvents()));
