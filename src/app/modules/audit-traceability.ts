@@ -2222,9 +2222,18 @@ export class AuditTraceability {
     const order: Record<string, number> = { 'Decision lineage': 0, 'Human actions': 1, 'Execution': 2 };
     const evs = AUDIT_EVENTS.filter((x) => x.correlationId === correlationId)
       .sort((a, b) => order[governanceSection(a)] - order[governanceSection(b)] || a.timestamp.localeCompare(b.timestamp));
+    // Multiple actors on one record is the POINT of a governance record, not a bug — intake
+    // receives it, the interface extracts and scores it, a clinician reviews and signs it. But the
+    // rows are grouped by governance section rather than by time, so timestamps run backwards
+    // between sections and the actor column jumps about, which reads as several records piled
+    // together. Say what is in view so it cannot be misread.
+    const actors = [...new Set(evs.map((e) => e.actor))];
+    const times = evs.map((e) => e.timestamp).sort();
     this.ix.openExplorer({
       title: `Governance Record — ${entityId}`,
-      context: `${evs.length} event(s) · every agent step, every human action, every executed action`,
+      context: `One record · ${evs.length} event(s) · ${actors.length} account(s): ${actors.join(', ')}`
+        + (times.length ? ` · ${times[0].replace('T', ' ')} → ${times[times.length - 1].replace('T', ' ')}` : '')
+        + ` · grouped by governance section, not chronologically — decision lineage first, then human actions, then what was executed`,
       columns: ['Section', ...EVENT_COLUMNS],
       rows: evs.map((e) => [governanceSection(e), ...eventRow(e)]),
       exportName: `governance-record-${slug(entityId)}${TODAY_ISO}`,
