@@ -124,8 +124,22 @@ function pendingDaysAgo(i: number): number {
 function decidedDaysAgo(j: number): number {
   return j % 90;
 }
+// How many distinct members the pool represents. Deliberately smaller than the case count so most
+// members carry one or two authorizations and a few carry three — which is what a member's audit
+// timeline needs to be worth opening. The previous pairing walked LAST and FIRST at the same rate,
+// so both repeated every 30 and the whole pool collapsed to THIRTY members, each holding ~17
+// authorizations across four lines of business. That is not a member; that is a name collision.
+const MEMBER_POOL = 280;
 function member(i: number): string {
-  return `${LAST[i % LAST.length]}, ${FIRST[(i * 7 + 3) % FIRST.length]}`;
+  // 97 is coprime with MEMBER_POOL (= 2^3 · 5 · 7), so this is a bijection over each lap: a
+  // member's second authorization lands ~280 cases later, in a different queue and phase, instead
+  // of sitting adjacent to their first.
+  const k = (i * 97) % MEMBER_POOL;
+  const l = k % LAST.length;
+  // Offsetting the first name by the surname index spreads the pairs across the whole 30 x 30
+  // space rather than exhausting the first ten given names; still injective for k < 900.
+  const f = (Math.floor(k / LAST.length) + l * 3) % FIRST.length;
+  return `${LAST[l]}, ${FIRST[f]}`;
 }
 function vary(base: number, i: number, spread: number): number {
   const d = ((i % 5) - 2) * spread; // -2..+2 * spread

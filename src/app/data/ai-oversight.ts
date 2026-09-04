@@ -151,6 +151,16 @@ export interface AiDecisionRecord {
   groundedTotal: number;
   grounded: boolean;
   flags: InvestigationFlag[];
+  // ---- the language, not just the outcome ----------------------------------------------------
+  // "What did the model tell the clinician, what did the clinician change, and what actually went
+  // out" is the question an AI-governance auditor asks that a recommendation/confidence/override
+  // triple cannot answer. A structured override reason says a change happened; only the two texts
+  // say what the change WAS.
+  aiNarrative: string;             // what the model presented to the reviewer
+  submittedNarrative: string;      // what was recorded on the determination
+  narrativeEdited: boolean;
+  narrativeChangePct: number;      // share of words that differ, 0-100
+  editKinds: EditKind[];
   tokens: number;
   cost: number;
   latencySec: number;
@@ -187,6 +197,111 @@ function overrideReasonFor(c: CaseRec, band: ConfidenceBand): OverrideReason {
   const h = spread100(`${c.authId}|${c.member}|reason`);
   if (band === '0.90–1.00' && h % 3 < 2) return MODEL_ATTRIBUTABLE[h % MODEL_ATTRIBUTABLE.length];
   return OVERRIDE_REASONS[h % OVERRIDE_REASONS.length];
+}
+
+/** The kinds of change clinicians actually make to a generated rationale. Each is a real editing
+ *  behaviour with a different governance meaning: hedging removed is a confidence question,
+ *  member-specific clinical added is a completeness question, and a criteria citation corrected is
+ *  a grounding question. Lumping them under "edited" throws away the distinction. */
+export type EditKind =
+  | 'Hedging removed'
+  | 'Member-specific clinical added'
+  | 'Criteria citation corrected'
+  | 'Plain-language rewrite'
+  | 'Scope narrowed';
+
+export const EDIT_KINDS: EditKind[] = [
+  'Hedging removed', 'Member-specific clinical added', 'Criteria citation corrected',
+  'Plain-language rewrite', 'Scope narrowed',
+];
+
+/** Word-level diff, shortest-edit over a simple LCS table. Small inputs (a rationale paragraph),
+ *  so the O(n*m) table is the right trade for exactness — an approximate diff on clinical language
+ *  would show edits that did not happen, which is worse than showing none. */
+export type DiffOp = { text: string; op: 'same' | 'add' | 'del' };
+export function diffWords(before: string, after: string): DiffOp[] {
+  // Words only, with the separating space carried on each token. Keeping whitespace as its own
+  // token made it matchable by the LCS, which split contiguous edits into alternating one-word
+  // runs and dropped the spaces between them — the diff was right and read as "ConfidenceModel
+  // inconfidence thisat".
+  const a = before.split(/\s+/).filter(Boolean).map((w) => w + ' ');
+  const b = after.split(/\s+/).filter(Boolean).map((w) => w + ' ');
+  const n = a.length, m = b.length;
+  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const out: DiffOp[] = [];
+  let i = 0, j = 0;
+  const push = (text: string, op: DiffOp['op']) => {
+    const last = out[out.length - 1];
+    if (last && last.op === op) last.text += text; else out.push({ text, op });
+  };
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { push(a[i], 'same'); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) { push(a[i], 'del'); i++; }
+    else { push(b[j], 'add'); j++; }
+  }
+  while (i < n) { push(a[i], 'del'); i++; }
+  while (j < m) { push(b[j], 'add'); j++; }
+  return out;
+}
+
+/** Share of words that differ between the two texts, as a whole percentage. */
+function changePct(before: string, after: string): number {
+  const ops = diffWords(before, after);
+  const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
+  let changed = 0, total = 0;
+  for (const o of ops) { const w = words(o.text); total += w; if (o.op !== 'same') changed += w; }
+  return total ? Math.round((changed / total) * 100) : 0;
+}
+
+/** What the model presented. Deterministic off the case, and deliberately written the way a model
+ *  writes: complete, correctly hedged, and slightly generic about the individual in front of you. */
+function aiNarrativeFor(c: CaseRec, rec: string, confidence: number, criteria: string): string {
+  const verb = rec === 'Approve' ? 'meets' : rec === 'Deny' ? 'does not meet' : 'partially meets';
+  return `Clinical review of the submitted documentation indicates the requested ${c.procedure} `
+    + `${verb} the medical necessity criteria set out in ${criteria}. `
+    + `The record documents the presenting indication and supporting clinical findings. `
+    + `Conservative management appears to have been attempted and documented. `
+    + `Confidence in this assessment is ${confidence.toFixed(2)}. `
+    + `Recommend ${rec.toLowerCase()} pending clinician confirmation.`;
+}
+
+/** What the clinician submitted. Verbatim most of the time — which is itself the finding worth
+ *  measuring — and otherwise edited in one of the ways clinicians really edit. */
+function submittedNarrativeFor(
+  c: CaseRec, ai: string, rec: string, criteria: string, editSeed: number, kinds: EditKind[],
+): string {
+  let t = ai;
+  for (const k of kinds) {
+    if (k === 'Hedging removed') {
+      t = t.replace('appears to have been attempted and documented', 'was attempted and is documented in the record')
+           .replace('indicates', 'confirms');
+    } else if (k === 'Member-specific clinical added') {
+      t = t.replace('The record documents the presenting indication and supporting clinical findings. ',
+        `The record documents the presenting indication, supporting clinical findings, and ${
+          ['a documented failure of first-line therapy over 8 weeks',
+           'imaging dated within the last 60 days',
+           'a specialist consultation supporting the request',
+           'a functional-status decline documented at two visits'][editSeed % 4]}. `);
+    } else if (k === 'Criteria citation corrected') {
+      t = t.replace(criteria, `${criteria}, applied with the plan's ${
+        ['state Medicaid', 'Medicare national', 'group policy'][editSeed % 3]} overlay`);
+    } else if (k === 'Plain-language rewrite') {
+      t = t.replace('Clinical review of the submitted documentation', 'We reviewed the records sent with this request and they show')
+           .replace('medical necessity criteria set out in', 'medical necessity rules in');
+    } else if (k === 'Scope narrowed') {
+      t = t.replace(`Recommend ${rec.toLowerCase()} pending clinician confirmation.`,
+        `Recommend ${rec.toLowerCase()} for the initial ${3 + (editSeed % 4)} units only; further units require resubmission with updated clinical.`);
+    }
+  }
+  // A clinician who edits at all almost always signs their reasoning rather than leaving the
+  // model's closing line standing.
+  if (kinds.length) t = t.replace('Confidence in this assessment is', 'Model confidence at assessment was');
+  return t;
 }
 
 function buildAiDecisions(cases: CaseRec[]): AiDecisionRecord[] {
@@ -260,6 +375,25 @@ function buildAiDecisions(cases: CaseRec[]): AiDecisionRecord[] {
     if (panel && !converged) flags.push('panel split');
     if (!grounded) flags.push('ungrounded verdict');
 
+    // ---- the language the reviewer actually saw, and what they did to it ----------------------
+    // Auto-cleared work is never edited, because no clinician read it — that is the point of the
+    // gate, and it is also why the verbatim rate has to be reported over REVIEWED cases only.
+    const recText = lowConfidence ? 'Escalate' : agreed ? finalDecision : otherDecision(finalDecision, n);
+    const criteriaText = `${c.procedure} — criteria set v${2 + (n % 3)}.0`;
+    const aiNarrative = aiNarrativeFor(c, recText, confidence, criteriaText);
+    const editSeed = spread100(`${c.authId}|${c.member}|edit`);
+    // ~38% of reviewed rationales get edited. The other 62% ship exactly as generated, which is
+    // the automation-bias number a plan should be watching, not a footnote.
+    const editCount = autoCleared ? 0 : editSeed < 62 ? 0 : editSeed < 88 ? 1 : 2;
+    const editKinds: EditKind[] = [];
+    for (let k = 0; k < editCount; k++) {
+      const kind = EDIT_KINDS[spread100(`${c.authId}|${c.member}|kind${k}`) % EDIT_KINDS.length];
+      if (!editKinds.includes(kind)) editKinds.push(kind);
+    }
+    const submittedNarrative = submittedNarrativeFor(c, aiNarrative, recText, criteriaText, editSeed, editKinds);
+    const narrativeEdited = submittedNarrative !== aiNarrative;
+    const narrativeChangePct = narrativeEdited ? changePct(aiNarrative, submittedNarrative) : 0;
+
     const modelsUsed = panel ? 'sonnet x4 · haiku · opus' : 'sonnet x4 · haiku';
     // Anchored to Symphony's run ledger: ~36–40k tokens on an auto-cleared case, ~60–65k where a
     // panel is convened, with cost tracking tokens rather than invented alongside them.
@@ -275,14 +409,15 @@ function buildAiDecisions(cases: CaseRec[]): AiDecisionRecord[] {
       workflowVersion: PRODUCTION_CONFIG.workflow,
       bundle: PRODUCTION_CONFIG.bundle,
       model: PRODUCTION_CONFIG.model,
-      criteriaSet: `${c.procedure} — criteria set v${2 + (n % 3)}.0`,
-      recommendation: lowConfidence ? 'Escalate' : agreed ? (finalDecision as AiRecommendation) : otherDecision(finalDecision, n),
+      criteriaSet: criteriaText,
+      recommendation: recText as AiRecommendation,
       confidence, band, finalDecision, agreed, outcome,
       overrideReason: outcome === 'Overridden' ? overrideReasonFor(c, band) : null,
       overriddenBy: outcome === 'Overridden' ? c.nurse : null,
       autoCleared, pended, pendReason,
       agentsCompleted: AGENTS.length, agentsTotal: AGENTS.length,
       modelsUsed, panel, converged, groundedMet, groundedTotal, grounded, flags,
+      aiNarrative, submittedNarrative, narrativeEdited, narrativeChangePct, editKinds,
       tokens, cost, latencySec,
     };
   });

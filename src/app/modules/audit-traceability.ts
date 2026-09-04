@@ -17,6 +17,7 @@ import { Interaction } from '../shared/interaction';
 import { Nav } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
 import { LOBS, daysAgo, TODAY_ISO } from '../data/case-fields';
+import { diffWords, DiffOp, EditKind, EDIT_KINDS } from '../data/ai-oversight';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Disposition, DispositionCertificate, DISPOSITION_APPROVERS } from '../shared/disposition';
 import { NOTIFICATION_RULES } from '../shared/alerts';
@@ -251,6 +252,11 @@ const govSection = governanceSection;
             <div class="tile-val">{{ ai().overrideRatePct }}%</div><div class="tile-lab">Override Rate</div>
             <div class="tile-sub">{{ ai().overridden }} of {{ ai().reviewed }} reviewed · target ≤ {{ targets.maxOverrideRatePct }}%</div>
           </div>
+          <div class="tile" (click)="drillAi('Rationale Shipped Exactly As Generated', verbatimRows(), 'verbatim')">
+            <div class="tile-ic" [class.hot]="verbatimPct() >= 70"></div>
+            <div class="tile-val">{{ verbatimPct() }}%</div><div class="tile-lab">Rationale Shipped Verbatim</div>
+            <div class="tile-sub">of clinician-reviewed cases · watch for automation bias</div>
+          </div>
           <div class="tile" (click)="drillAi('Model-Attributable Overrides', modelAttributableRows(), 'model-attributable')">
             <div class="tile-ic" [class.hot]="ai().modelAttributable > 0"></div>
             <div class="tile-val">{{ ai().modelAttributable }}</div><div class="tile-lab">Model-Attributable Overrides</div>
@@ -302,6 +308,43 @@ const govSection = governanceSection;
               }
             </tbody>
           </table>
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head"><h3 class="pt">What the Model Said, and What Went Out</h3>
+            <span class="section-note sm">The rationale the model presented to the reviewer, what the clinician changed, and the text recorded on the determination. A structured override reason says a change happened; only these two say what it was.</span></div>
+          <div class="panel-pad narrbar">
+            <span class="albl">Show</span>
+            <button class="qp" [class.on]="narrFilter() === 'edited'" (click)="narrFilter.set('edited')">Edited<span class="qn">{{ editedRows().length | number }}</span></button>
+            <button class="qp" [class.on]="narrFilter() === 'verbatim'" (click)="narrFilter.set('verbatim')">Shipped verbatim<span class="qn">{{ verbatimRows().length | number }}</span></button>
+            <span class="spacer"></span>
+            @for (k of editKinds; track k) {
+              <button class="qp sm" [class.on]="narrKind() === k" (click)="narrKind.set(narrKind() === k ? '' : k)">{{ k }}<span class="qn">{{ editKindCount(k) }}</span></button>
+            }
+          </div>
+          <table class="z-table">
+            <thead><tr>
+              <th>Authorization</th><th>Member</th><th>Reviewer</th><th>Recommendation</th>
+              <th class="num">Words Changed</th><th>What Changed</th>
+            </tr></thead>
+            <tbody>
+              @for (r of narrativeRows(); track r.authId) {
+                <tr class="clk" (click)="openNarrative(r)">
+                  <td class="strong mono">{{ r.authId }}</td>
+                  <td>{{ r.member }}<div class="sub">{{ r.lob }}</div></td>
+                  <td>{{ r.reviewer }}</td>
+                  <td>{{ r.recommendation }}<div class="sub">final: {{ r.finalDecision }}</div></td>
+                  <td class="num">@if (r.narrativeEdited) { <b>{{ r.narrativeChangePct }}%</b> } @else { <span class="sub">verbatim</span> }</td>
+                  <td>@for (k of r.editKinds; track k) { <span class="chip">{{ k }}</span> }
+                      @if (!r.editKinds.length) { <span class="sub">accepted as generated</span> }</td>
+                </tr>
+              } @empty { <tr><td colspan="6" class="empty">Nothing matches this filter.</td></tr> }
+            </tbody>
+          </table>
+          @if (narrativeOverflow() > 0) {
+            <div class="panel-pad sub">Showing the first {{ narrativeRows().length }} · {{ narrativeOverflow() | number }} more —
+              <button class="lnk" (click)="drillAi('Rationale Changes', narrativeAll(), 'narratives')">open all in explorer</button></div>
+          }
         </div>
 
         <div class="panel mt-6">
@@ -1133,6 +1176,53 @@ const govSection = governanceSection;
         }
       }
     }
+
+    @if (narrativeOpen(); as r) {
+      <div class="nscrim" (click)="closeNarrative()"></div>
+      <aside class="npanel" role="dialog" aria-label="Rationale comparison">
+        <header class="nhead">
+          <div>
+            <h3>{{ r.authId }} · {{ r.member }}</h3>
+            <p class="sub">{{ r.reviewer }} · model {{ r.model }} · {{ r.criteriaSet }} · confidence {{ r.confidence.toFixed(2) }}</p>
+          </div>
+          <button class="x" (click)="closeNarrative()" aria-label="Close">×</button>
+        </header>
+        <div class="nbody">
+          <div class="ncol">
+            <div class="nlab">What the model stated</div>
+            <p class="ntext">{{ r.aiNarrative }}</p>
+          </div>
+          <div class="ncol">
+            <div class="nlab">What the clinician changed
+              @if (r.narrativeEdited) { <span class="chip amber">{{ r.narrativeChangePct }}% of words</span> }
+              @else { <span class="chip">no change</span> }
+            </div>
+            @if (r.narrativeEdited) {
+              <p class="ntext">
+                @for (d of narrativeDiff(); track $index) {
+                  @if (d.op === 'same') { <span>{{ d.text }}</span> }
+                  @else if (d.op === 'del') { <del>{{ d.text }}</del> }
+                  @else { <ins>{{ d.text }}</ins> }
+                }
+              </p>
+              <div class="nkinds">@for (k of r.editKinds; track k) { <span class="chip">{{ k }}</span> }</div>
+            } @else {
+              <p class="nverbatim">Submitted exactly as generated. Nothing in the clinical language was changed before it went on the determination.</p>
+            }
+          </div>
+          <div class="ncol">
+            <div class="nlab">What was submitted</div>
+            <p class="ntext">{{ r.submittedNarrative }}</p>
+            <div class="nmeta">
+              <div><span class="sub">Recommendation</span> <b>{{ r.recommendation }}</b></div>
+              <div><span class="sub">Final determination</span> <b>{{ r.finalDecision }}</b></div>
+              <div><span class="sub">Outcome</span> <b>{{ r.outcome }}</b></div>
+              @if (r.overrideReason) { <div><span class="sub">Override reason</span> <b>{{ r.overrideReason }}</b></div> }
+            </div>
+          </div>
+        </div>
+      </aside>
+    }
   `,
   styles: [`
     :host { display: block; }
@@ -1199,6 +1289,31 @@ const govSection = governanceSection;
     .lnk:hover { color:var(--teal-900); }
 
     /* ---- Member Timeline ---- */
+    .narrbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--border); background:var(--gray-50, #f9fafb); }
+    .narrbar .spacer { flex:1; min-width:12px; }
+    .qp.sm { font-size:10.5px; padding:2px 8px; }
+
+    .nscrim { position:fixed; inset:0; background:rgba(17,24,39,.5); z-index:130; }
+    .npanel { position:fixed; inset:5vh 4vw; z-index:131; background:#fff; border-radius:14px;
+              box-shadow:0 24px 60px rgba(0,0,0,.28); display:flex; flex-direction:column; overflow:hidden; }
+    .nhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+             padding:18px 22px; border-bottom:1px solid var(--border); }
+    .nhead h3 { margin:0; font-size:16px; }
+    .nhead .sub { margin:4px 0 0; font-size:12px; }
+    .nbody { flex:1; display:grid; grid-template-columns:repeat(3, 1fr); gap:0; overflow:hidden; }
+    @media (max-width: 1100px) { .nbody { grid-template-columns:1fr; overflow-y:auto; } }
+    .ncol { padding:16px 20px 20px; overflow-y:auto; border-right:1px solid var(--border); }
+    .ncol:last-child { border-right:0; background:var(--gray-50, #f9fafb); }
+    .nlab { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+            color:var(--gray-500); margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .ntext { font-size:13px; line-height:1.65; color:var(--ink); margin:0; }
+    .ntext del { background:#fdecea; color:#a63a31; text-decoration:line-through; border-radius:2px; padding:0 1px; }
+    .ntext ins { background:#e6f4ec; color:#1e6b45; text-decoration:none; border-radius:2px; padding:0 1px; }
+    .nverbatim { font-size:13px; line-height:1.6; color:var(--gray-500); margin:0; font-style:italic; }
+    .nkinds { display:flex; flex-wrap:wrap; gap:5px; margin-top:14px; }
+    .nmeta { margin-top:16px; padding-top:14px; border-top:1px solid var(--border); display:grid; gap:6px; font-size:12.5px; }
+    .nmeta .sub { display:inline-block; min-width:130px; }
+
     .msearch { padding:26px 26px 30px; max-width:920px; }
     .ms-h { margin:0 0 4px; font-size:17px; font-weight:700; }
     .ms-p { margin:0 0 14px; font-size:12.5px; color:var(--gray-500); max-width:62ch; line-height:1.5; }
@@ -1848,6 +1963,43 @@ export class AuditTraceability {
       ],
     });
   }
+  // ---- What the model said vs what went out ----------------------------------------------------
+  readonly editKinds = EDIT_KINDS;
+  readonly narrFilter = signal<'edited' | 'verbatim'>('edited');
+  readonly narrKind = signal<string>('');
+  private static readonly NARR_CAP = 60;
+
+  /** Verbatim rate is reported over cases a clinician ACTUALLY REVIEWED. Auto-cleared work has no
+   *  reviewer to edit it, and a case still sitting unclaimed in a queue has no reviewer yet — fold
+   *  either in and the rate climbs toward 100% while describing the gate and the backlog rather
+   *  than the clinicians, which is the opposite of what this number is for. */
+  readonly reviewedRows = computed(() => this.aiRows().filter((r) => !r.autoCleared && r.reviewer !== '—'));
+  readonly verbatimRows = computed(() => this.reviewedRows().filter((r) => !r.narrativeEdited));
+  readonly editedRows = computed(() => this.reviewedRows().filter((r) => r.narrativeEdited));
+  readonly verbatimPct = computed(() => {
+    const n = this.reviewedRows().length;
+    return n ? Math.round((this.verbatimRows().length / n) * 100) : 0;
+  });
+  editKindCount(k: EditKind) { return this.editedRows().filter((r) => r.editKinds.includes(k)).length; }
+
+  readonly narrativeAll = computed(() => {
+    const base = this.narrFilter() === 'edited' ? this.editedRows() : this.verbatimRows();
+    const k = this.narrKind();
+    return k ? base.filter((r) => r.editKinds.includes(k as EditKind)) : base;
+  });
+  readonly narrativeRows = computed(() => this.narrativeAll().slice(0, AuditTraceability.NARR_CAP));
+  readonly narrativeOverflow = computed(() => Math.max(0, this.narrativeAll().length - AuditTraceability.NARR_CAP));
+
+  readonly narrativeOpen = signal<AiDecisionRecord | null>(null);
+  openNarrative(r: AiDecisionRecord) { this.narrativeOpen.set(r); }
+  closeNarrative() { this.narrativeOpen.set(null); }
+  /** Word-level diff of the two texts, rendered inline. Exact rather than approximate: a diff that
+   *  showed an edit which did not happen would be worse than showing no diff at all. */
+  readonly narrativeDiff = computed<DiffOp[]>(() => {
+    const r = this.narrativeOpen();
+    return r ? diffWords(r.aiNarrative, r.submittedNarrative) : [];
+  });
+
   // ---- Member Timeline -------------------------------------------------------------------------
   // Same scopedEvents() the Audit Trail reads. Pivoting must never introduce a second source of
   // truth: if this tab and that tab ever disagreed, both become unusable as evidence.
