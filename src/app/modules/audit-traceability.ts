@@ -624,116 +624,148 @@ const govSection = governanceSection;
         </div>
 
         <div class="tile-row">
-          <div class="tile">
-            <div class="tile-val">{{ memberRows().length | number }}</div><div class="tile-lab">Members Touched</div>
+          <div class="tile" (click)="drillMemberSet('Members Touched', allMemberRows(), 'all-members')">
+            <div class="tile-val">{{ allMemberRows().length | number }}</div><div class="tile-lab">Members Touched</div>
             <div class="tile-sub">in {{ rangeLabel().toLowerCase() }}</div>
           </div>
-          <div class="tile">
-            <div class="tile-val">{{ memberEventCount() | number }}</div><div class="tile-lab">Member-Linked Events</div>
+          <div class="tile" (click)="drillEvents('Member-Linked Events', memberLinkedEvents(), 'member-linked')">
+            <div class="tile-val">{{ memberLinkedEvents().length | number }}</div><div class="tile-lab">Member-Linked Events</div>
             <div class="tile-sub">of {{ scopedEvents().length | number }} total</div>
           </div>
-          <div class="tile">
+          <div class="tile" (click)="drillMemberSet('Touched by 3+ Accounts', multiUserMembers(), 'multi-account')">
             <div class="tile-val">{{ multiUserMembers().length | number }}</div><div class="tile-lab">Touched by 3+ Accounts</div>
             <div class="tile-sub">handoffs worth reading end to end</div>
           </div>
-          <div class="tile" (click)="drillEvents('Break-the-Glass Access', breakGlass(), 'btg-members')">
-            <div class="tile-ic" [class.hot]="btgMembers().length > 0"></div>
-            <div class="tile-val">{{ btgMembers().length | number }}</div><div class="tile-lab">Members Accessed Under Break-the-Glass</div>
+          <div class="tile" (click)="drillMemberSet('Accessed Under Break-the-Glass', btgMemberRows(), 'btg-members')">
+            <div class="tile-ic" [class.hot]="btgMemberRows().length > 0"></div>
+            <div class="tile-val">{{ btgMemberRows().length | number }}</div><div class="tile-lab">Members Accessed Under Break-the-Glass</div>
             <div class="tile-sub">each opens in context</div>
           </div>
         </div>
 
-        <div class="split-2 mt-6">
-          <!-- LEFT: pick a member -->
-          <div class="panel">
-            <div class="panel-pad filters">
-              <h3 class="pt">Members</h3>
-              <input class="search sm" type="text" placeholder="Search member or ID…" [ngModel]="mq()" (ngModelChange)="mq.set($event)" />
-              <span class="count">{{ memberRows().length | number }}</span>
-            </div>
-            <div class="mlist">
-              @for (m of memberRows(); track m.memberId) {
-                <button class="mrow" [class.on]="selectedMember() === m.memberId" (click)="selectMember(m.memberId)">
-                  <div class="mmain">
-                    <b>{{ m.member }}</b>
-                    <div class="sub mono">{{ m.memberId }} · {{ m.lob }}</div>
-                  </div>
-                  <div class="mstats">
-                    <span class="mchip">{{ m.events }} events</span>
-                    <span class="mchip">{{ m.users }} {{ m.users === 1 ? 'account' : 'accounts' }}</span>
-                    <span class="mchip">{{ m.modules }}</span>
-                  </div>
-                </button>
-              } @empty { <div class="empty">No members match "{{ mq() }}".</div> }
-            </div>
-          </div>
+        @if (!selectedMemberRow()) {
+          <!-- Search first. A plan with millions of lives cannot be browsed, and a list that long is
+               slower to work with than a search box even when it does render. -->
+          <div class="panel mt-6">
+            <div class="msearch">
+              <h3 class="ms-h">Find a member</h3>
+              <p class="ms-p">Search by name or member ID to open their complete record — every account that touched them, threaded by authorization or case.</p>
+              <input class="ms-in" type="text" placeholder="Member name or ID…" autocomplete="off"
+                     [ngModel]="mq()" (ngModelChange)="mq.set($event)" />
 
-          <!-- RIGHT: that member's whole history -->
-          <div class="panel">
-            @if (selectedMemberRow(); as m) {
-              <div class="panel-pad mhead">
-                <div>
-                  <h3 class="pt">{{ m.member }}</h3>
-                  <div class="sub mono">{{ m.memberId }} · {{ m.lob }} · {{ m.records }} record(s) · {{ m.users }} account(s) · {{ m.phi }} PHI event(s)</div>
-                </div>
-                <button class="btn outline sm" (click)="drillMember(m)">Open in explorer</button>
-              </div>
-              <div class="panel-pad actorbar">
-                <span class="albl">Filter by account</span>
-                <button class="qp" [class.on]="!memberActor()" (click)="memberActor.set('')">All accounts</button>
-                @for (a of memberActors(); track a.actorId) {
-                  <button class="qp" [class.on]="memberActor() === a.actorId" (click)="memberActor.set(a.actorId)">{{ a.actor }}<span class="qn">{{ a.n }}</span></button>
-                }
-              </div>
-              <div class="threads">
-                @for (t of memberThreads(); track t.correlationId) {
-                  <div class="thread">
-                    <button class="thead" (click)="toggleThread(t.correlationId)">
-                      <span class="tcar" [class.open]="openThreads().has(t.correlationId)">▸</span>
-                      <span class="tid mono">{{ t.entityId }}</span>
-                      <span class="ttype">{{ t.entityType }}</span>
-                      <span class="tspan sub">{{ t.opened }} → {{ t.closed }}</span>
-                      <span class="tn">{{ t.events.length }} events · {{ t.actors.length }} accounts</span>
+              @if (mq().trim().length >= 2) {
+                <div class="ms-res">
+                  @for (m of memberSearchResults(); track m.memberId) {
+                    <button class="mrow" (click)="selectMember(m.memberId)">
+                      <span class="mmain"><b>{{ m.member }}</b>
+                        <span class="sub mono">{{ m.memberId }} · {{ m.lob }}</span></span>
+                      <span class="mstats">
+                        <span class="mchip">{{ m.events }} events</span>
+                        <span class="mchip">{{ m.users }} {{ m.users === 1 ? 'account' : 'accounts' }}</span>
+                        <span class="mchip">{{ m.records }} {{ m.records === 1 ? 'record' : 'records' }}</span>
+                        <span class="mchip">{{ m.modules }}</span>
+                      </span>
                     </button>
-                    @if (openThreads().has(t.correlationId)) {
-                      <div class="tacts">
-                        <button class="lnk" (click)="drillThread(t)">Open this record's full trail</button>
-                        <button class="lnk" (click)="drillGovernanceRecord(t.entityId, t.correlationId)">Governance record</button>
-                      </div>
-                    }
-                    @if (openThreads().has(t.correlationId)) {
-                      <ol class="tl">
-                        @for (e of t.events; track e.eventId) {
-                          <li class="tli" [attr.data-cat]="e.category">
-                            <button class="tlin" (click)="openEvent(e)" [attr.aria-label]="'Open full record for ' + e.action">
-                              <span class="tlt mono">{{ e.timestamp.replace('T', ' ') }}</span>
-                              <span class="tlb">
-                                <span class="tla">{{ e.action }}
-                                  @if (e.phi) { <span class="phi">PHI</span> }
-                                  @if (e.outcome !== 'Success') { <span class="chip red">{{ e.outcome }}</span> }
-                                </span>
-                                @if (e.field) {
-                                  <span class="tlf">
-                                    @if (e.changeAction) { <span class="chg" [attr.data-a]="e.changeAction">{{ e.changeAction }}</span> }
-                                    <span class="sub">{{ e.field }}:</span> <span class="was">{{ e.before ?? '—' }}</span> → <b>{{ e.after }}</b>
-                                  </span>
-                                }
-                                <span class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }</span>
-                              </span>
-                              <span class="tlgo mono">{{ e.eventId }} ›</span>
-                            </button>
-                          </li>
-                        }
-                      </ol>
-                    }
+                  } @empty { <div class="empty">No member matches "{{ mq() }}" in {{ rangeLabel().toLowerCase() }}.</div> }
+                  @if (memberSearchOverflow() > 0) {
+                    <div class="ms-more">{{ memberSearchOverflow() | number }} more match — narrow the search to see them.</div>
+                  }
+                </div>
+              } @else {
+                <!-- Not a browse list: three short, purposeful ways in. -->
+                <div class="ms-entry">
+                  <div class="ms-col">
+                    <div class="ms-lab">Accessed under break-the-glass</div>
+                    @for (m of btgMemberRows().slice(0, 6); track m.memberId) {
+                      <button class="ms-link" (click)="selectMember(m.memberId)">{{ m.member }} <span class="sub">{{ m.events }} events</span></button>
+                    } @empty { <div class="sub">None in range.</div> }
                   </div>
-                } @empty { <div class="empty">No activity for this account on this member.</div> }
-              </div>
-            } @else {
-              <div class="empty pick">Select a member to see everything done on them, by everyone.</div>
-            }
+                  <div class="ms-col">
+                    <div class="ms-lab">Touched by the most accounts</div>
+                    @for (m of mostHandledMembers(); track m.memberId) {
+                      <button class="ms-link" (click)="selectMember(m.memberId)">{{ m.member }} <span class="sub">{{ m.users }} accounts</span></button>
+                    } @empty { <div class="sub">None in range.</div> }
+                  </div>
+                  <div class="ms-col">
+                    <div class="ms-lab">Most recent activity</div>
+                    @for (m of recentMembers(); track m.memberId) {
+                      <button class="ms-link" (click)="selectMember(m.memberId)">{{ m.member }} <span class="sub mono">{{ m.lastActivity }}</span></button>
+                    } @empty { <div class="sub">None in range.</div> }
+                  </div>
+                </div>
+              }
+            </div>
           </div>
-        </div>
+        } @else if (selectedMemberRow(); as m) {
+          <div class="panel mt-6">
+            <div class="panel-pad mhead">
+              <div>
+                <button class="lnk back" (click)="clearMember()">‹ Back to search</button>
+                <h3 class="pt">{{ m.member }}</h3>
+                <div class="sub mono">{{ m.memberId }} · {{ m.lob }} · {{ m.records }} record(s) · {{ m.users }} account(s) · {{ m.phi }} PHI event(s) · {{ m.modules }}</div>
+              </div>
+              <button class="btn outline sm" (click)="drillMember(m)">Open in explorer</button>
+            </div>
+
+            <div class="panel-pad actorbar">
+              <span class="albl">Accounts on this member</span>
+              <button class="qp" [class.on]="!memberActor()" (click)="memberActor.set('')">All<span class="qn">{{ m.events }}</span></button>
+              @for (a of memberActors(); track a.actorId) {
+                <button class="qp" [class.on]="memberActor() === a.actorId" (click)="memberActor.set(a.actorId)">{{ a.actor }}<span class="qn">{{ a.n }}</span></button>
+              }
+            </div>
+            @if (activeActor(); as a) {
+              <div class="panel-pad xlink">
+                Showing only <b>{{ a.actor }}</b> on this member.
+                <button class="lnk" (click)="drillAccountTrail({ userId: a.actorId, name: a.actor })">Open their full activity across all members ›</button>
+                <button class="lnk" (click)="drillUserMembersById(a.actorId, a.actor)">Every member they touched ›</button>
+              </div>
+            }
+
+            <div class="threads">
+              @for (t of memberThreads(); track t.correlationId) {
+                <div class="thread">
+                  <button class="thead" (click)="toggleThread(t.correlationId)">
+                    <span class="tcar" [class.open]="openThreads().has(t.correlationId)">▸</span>
+                    <span class="tid mono">{{ t.entityId }}</span>
+                    <span class="ttype">{{ t.entityType }}</span>
+                    <span class="tspan sub">{{ t.opened }} → {{ t.closed }}</span>
+                    <span class="tn">{{ t.events.length }} events · {{ t.actors.length }} accounts</span>
+                  </button>
+                  @if (openThreads().has(t.correlationId)) {
+                    <div class="tacts">
+                      <button class="lnk" (click)="drillThread(t)">Open this record's full trail</button>
+                      <button class="lnk" (click)="drillGovernanceRecord(t.entityId, t.correlationId)">Governance record</button>
+                    </div>
+                    <ol class="tl">
+                      @for (e of t.events; track e.eventId) {
+                        <li class="tli" [attr.data-cat]="e.category">
+                          <button class="tlin" (click)="openEvent(e)" [attr.aria-label]="'Open full record for ' + e.action">
+                            <span class="tlt mono">{{ e.timestamp.replace('T', ' ') }}</span>
+                            <span class="tlb">
+                              <span class="tla">{{ e.action }}
+                                @if (e.phi) { <span class="phi">PHI</span> }
+                                @if (e.outcome !== 'Success') { <span class="chip red">{{ e.outcome }}</span> }
+                              </span>
+                              @if (e.field) {
+                                <span class="tlf">
+                                  @if (e.changeAction) { <span class="chg" [attr.data-a]="e.changeAction">{{ e.changeAction }}</span> }
+                                  <span class="sub">{{ e.field }}:</span> <span class="was">{{ e.before ?? '—' }}</span> → <b>{{ e.after }}</b>
+                                </span>
+                              }
+                              <span class="tlm sub">{{ e.actor }} · {{ e.actorRole }} · {{ e.channel }}@if (e.reasonCode) { · {{ e.reasonCode }} }</span>
+                            </span>
+                            <span class="tlgo mono">{{ e.eventId }} ›</span>
+                          </button>
+                        </li>
+                      }
+                    </ol>
+                  }
+                </div>
+              } @empty { <div class="empty">No activity for this account on this member.</div> }
+            </div>
+          </div>
+        }
       }
 
       <!-- ==================== GOVERNANCE & ACCESS CONTROLS ==================== -->
@@ -1167,9 +1199,22 @@ const govSection = governanceSection;
     .lnk:hover { color:var(--teal-900); }
 
     /* ---- Member Timeline ---- */
-    .split-2 { display:grid; grid-template-columns: minmax(300px, 380px) 1fr; gap:16px; align-items:start; }
-    @media (max-width: 1100px) { .split-2 { grid-template-columns: 1fr; } }
-    .mlist { max-height:620px; overflow-y:auto; border-top:1px solid var(--border); }
+    .msearch { padding:26px 26px 30px; max-width:920px; }
+    .ms-h { margin:0 0 4px; font-size:17px; font-weight:700; }
+    .ms-p { margin:0 0 14px; font-size:12.5px; color:var(--gray-500); max-width:62ch; line-height:1.5; }
+    .ms-in { width:100%; max-width:520px; border:1px solid var(--gray-300); border-radius:9px;
+             padding:11px 14px; font:inherit; font-size:14px; outline:none; }
+    .ms-in:focus { border-color:var(--teal-600); box-shadow:0 0 0 3px var(--teal-50); }
+    .ms-res { margin-top:14px; border:1px solid var(--gray-200); border-radius:9px; overflow:hidden; max-height:480px; overflow-y:auto; }
+    .ms-more { padding:10px 16px; font-size:12px; color:var(--gray-500); background:var(--gray-50, #f9fafb); }
+    .ms-entry { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:22px; margin-top:22px;
+                padding-top:18px; border-top:1px solid var(--gray-100); }
+    .ms-col { display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
+    .ms-lab { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--gray-500); margin-bottom:4px; }
+    .ms-link { border:0; background:none; padding:2px 0; font:inherit; font-size:12.5px; font-weight:600;
+               color:var(--teal-700); cursor:pointer; text-align:left; }
+    .ms-link:hover { text-decoration:underline; }
+    .ms-link .sub { font-weight:500; margin-left:5px; }
     .mrow { display:flex; flex-direction:column; gap:5px; width:100%; text-align:left; border:0;
             border-bottom:1px solid var(--gray-100); background:#fff; padding:11px 16px; cursor:pointer; font:inherit; }
     .mrow:hover { background:var(--gray-50, #f9fafb); }
@@ -1181,6 +1226,11 @@ const govSection = governanceSection;
     .mrow.on .mchip { background:#fff; color:var(--teal-700); }
 
     .mhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); }
+    .lnk.back { display:block; margin-bottom:6px; font-size:11.5px; text-decoration:none; }
+    .lnk.back:hover { text-decoration:underline; }
+    .xlink { display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:12.5px; color:var(--gray-500);
+             background:var(--teal-50); border-bottom:1px solid var(--border); }
+    .xlink b { color:var(--ink); }
     .actorbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--border); background:var(--gray-50, #f9fafb); }
     .albl { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--gray-500); margin-right:4px; }
     .qp { border:1px solid var(--border); background:#fff; border-radius:999px; padding:3px 10px; font:inherit;
@@ -1788,10 +1838,14 @@ export class AuditTraceability {
         { label: 'Record Hash', value: e.recordHash },
       ],
       note: `This record is chained to the event before it. Altering any field above changes this record's hash and every hash after it, which is what makes the alteration detectable — run "Verify chain" on the Audit Trail tab to re-walk it.`,
-      actions: [{
-        label: 'Governance record', tone: 'teal',
-        run: () => this.drillGovernanceRecord(e.entityId, e.correlationId),
-      }],
+      actions: [
+        { label: 'Governance record', tone: 'teal', run: () => this.drillGovernanceRecord(e.entityId, e.correlationId) },
+        { label: `${e.actor} — all activity`, tone: 'teal' as const, run: () => this.drillAccountTrail({ userId: e.actorId, name: e.actor }) },
+        ...(e.memberId ? [{
+          label: 'Open member timeline', tone: 'teal' as const,
+          run: () => { this.ix.closeDrawer(); this.sel.set('member'); this.selectMember(e.memberId!); },
+        }] : []),
+      ],
     });
   }
   // ---- Member Timeline -------------------------------------------------------------------------
@@ -1802,26 +1856,37 @@ export class AuditTraceability {
   readonly memberActor = signal('');
   readonly openThreads = signal<Set<string>>(new Set());
 
-  private readonly allMemberRows = computed(() => memberAuditRollup(this.scopedEvents()));
-  readonly memberRows = computed(() => {
+  /** Search caps at 40 rows and needs two characters. Neither is cosmetic: a plan with millions of
+   *  lives returns tens of thousands of "smith" matches, and rendering them costs more than it
+   *  tells anyone. The overflow count stays visible so the number is never silently truncated. */
+  private static readonly SEARCH_CAP = 40;
+
+  readonly allMemberRows = computed(() => memberAuditRollup(this.scopedEvents()));
+  readonly memberLinkedEvents = computed(() => this.scopedEvents().filter((e) => e.memberId));
+
+  private readonly memberMatches = computed(() => {
     const q = this.mq().trim().toLowerCase();
-    const rows = this.allMemberRows();
-    return q ? rows.filter((m) => m.member.toLowerCase().includes(q) || m.memberId.toLowerCase().includes(q)) : rows;
+    if (q.length < 2) return [] as MemberAuditRow[];
+    return this.allMemberRows().filter((m) => m.member.toLowerCase().includes(q) || m.memberId.toLowerCase().includes(q));
   });
-  readonly memberEventCount = computed(() => this.scopedEvents().filter((e) => e.memberId).length);
+  readonly memberSearchResults = computed(() => this.memberMatches().slice(0, AuditTraceability.SEARCH_CAP));
+  readonly memberSearchOverflow = computed(() => Math.max(0, this.memberMatches().length - AuditTraceability.SEARCH_CAP));
+
   readonly multiUserMembers = computed(() => this.allMemberRows().filter((m) => m.users >= 3));
-  readonly multiRecordMembers = computed(() => this.allMemberRows().filter((m) => m.records >= 2));
-  /** Members whose record was opened under an emergency justification — the highest-value starting
-   *  point on this tab, because every one of them needs a human to read the whole timeline. */
-  readonly btgMembers = computed(() => {
+  readonly mostHandledMembers = computed(() => [...this.allMemberRows()].sort((a, b) => b.users - a.users).slice(0, 6));
+  readonly recentMembers = computed(() => this.allMemberRows().slice(0, 6));
+  /** Members whose record was opened under an emergency justification — the highest-value way into
+   *  this tab, because every one of them needs a human to read the whole timeline. */
+  readonly btgMemberRows = computed(() => {
     const ids = new Set<string>();
     for (const e of this.scopedEvents()) if (e.action.startsWith('Break-the-glass') && e.memberId) ids.add(e.memberId);
-    return [...ids];
+    return this.allMemberRows().filter((m) => ids.has(m.memberId));
   });
+
   readonly selectedMemberRow = computed(() => this.allMemberRows().find((m) => m.memberId === this.selectedMember()) ?? null);
 
-  /** Every account that touched the selected member, with how many events each — the "by user"
-   *  cut of a member's own record, which is how a handoff dispute actually gets settled. */
+  /** Every account that touched the selected member, with how many events each — the "by user" cut
+   *  of a member's own record, which is how a handoff dispute actually gets settled. */
   readonly memberActors = computed(() => {
     const id = this.selectedMember();
     if (!id) return [] as { actorId: string; actor: string; n: number }[];
@@ -1833,6 +1898,7 @@ export class AuditTraceability {
     }
     return [...counts.values()].sort((a, b) => b.n - a.n);
   });
+  readonly activeActor = computed(() => this.memberActors().find((a) => a.actorId === this.memberActor()) ?? null);
   readonly memberThreads = computed<TimelineThread[]>(() => {
     const id = this.selectedMember();
     return id ? memberTimeline(id, this.scopedEvents(), this.memberActor() || undefined) : [];
@@ -1842,13 +1908,11 @@ export class AuditTraceability {
     this.selectedMember.set(id);
     this.memberActor.set('');
     // Open the most recent thread by default — landing on an all-collapsed list makes the reader
-    // do a click before seeing anything, every single time.
+    // click once before seeing anything, every single time.
     const first = memberTimeline(id, this.scopedEvents())[0];
     this.openThreads.set(new Set(first ? [first.correlationId] : []));
   }
-  toggleThread(id: string) {
-    this.openThreads.update((set) => { const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  }
+  clearMember() { this.selectedMember.set(''); this.memberActor.set(''); }
   /** Cross-pivot jump: from one account's row straight to one member's full record, with that
    *  account pre-selected so you see their part first and can clear it to see everyone else's. */
   openMemberFromUser(memberId: string, actorId: string) {
@@ -1856,6 +1920,21 @@ export class AuditTraceability {
     this.mq.set('');
     this.selectMember(memberId);
     this.memberActor.set(actorId);
+  }
+  toggleThread(id: string) {
+    this.openThreads.update((set) => { const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  /** Any list of members, opened in the explorer with the member column wired back INTO this tab —
+   *  so a tile drill is a way in rather than a dead end. */
+  drillMemberSet(title: string, rows: MemberAuditRow[], slugName: string) {
+    this.ix.openExplorer({
+      title, context: `${rows.length} member(s) · ${this.rangeLabel()}`,
+      columns: ['Member', 'Member ID', 'LOB', 'Modules', 'Records', 'Events', 'Accounts', 'PHI Events', 'First Activity', 'Last Activity'],
+      rows: rows.map((m) => [m.member, m.memberId, m.lob, m.modules, m.records, m.events, m.users, m.phi, m.firstActivity, m.lastActivity]),
+      exportName: `audit-members-${slugName}${TODAY_ISO}`,
+      rowLink: { column: 0, run: (row) => { this.ix.closeExplorer(); this.sel.set('member'); this.selectMember(String(row[1])); } },
+    });
   }
   /** One record's complete trail, flat and exportable — the thread expanded in place is for
    *  reading, this is for handing over. */
@@ -1869,28 +1948,32 @@ export class AuditTraceability {
     this.exporter.open({
       title: 'Members Touched', name: `audit-members${TODAY_ISO}`,
       columns: ['Member', 'Member ID', 'LOB', 'Modules', 'Events', 'Accounts', 'Records', 'PHI Events', 'First Activity', 'Last Activity'],
-      rows: this.memberRows().map((m) => [m.member, m.memberId, m.lob, m.modules, m.events, m.users, m.records, m.phi, m.firstActivity, m.lastActivity]),
+      rows: this.allMemberRows().map((m) => [m.member, m.memberId, m.lob, m.modules, m.events, m.users, m.records, m.phi, m.firstActivity, m.lastActivity]),
     });
   }
 
-  /** "Which members did this account touch" — the by-user-across-members half of the pair. Each
-   *  row jumps into that member's full timeline, so the two pivots are one click apart. */
-  /** Distinct members one account touched. Cheap enough to compute per row at this scale, and
+  /** Distinct members one account touched.
+ Cheap enough to compute per row at this scale, and
    *  reading it off the same scoped events keeps it consistent with the drill it opens. */
   membersTouched(a: UserActivityRow): number {
     const ids = new Set<string>();
     for (const e of this.scopedEvents()) if (e.actorId === a.userId && e.memberId) ids.add(e.memberId);
     return ids.size;
   }
-  drillUserMembers(a: UserActivityRow) {
-    const rows = membersForUser(a.userId, this.scopedEvents());
+  drillUserMembers(a: UserActivityRow) { this.drillUserMembersById(a.userId, a.name, a.role); }
+
+  /** Every member one account touched. Each row opens that member's timeline with this account
+   *  pre-selected, so you land on their part of the record and can clear the filter to see who
+   *  else was in there — the two pivots are one click apart in both directions. */
+  drillUserMembersById(userId: string, name: string, role?: string) {
+    const rows = membersForUser(userId, this.scopedEvents());
     this.ix.openExplorer({
-      title: `Members touched — ${a.name}`,
-      context: `${rows.length} member(s) · ${a.events} event(s) by ${a.name} (${a.role}) in ${this.rangeLabel().toLowerCase()}`,
+      title: `Members touched — ${name}`,
+      context: `${rows.length} member(s) touched by ${name}${role ? ` (${role})` : ''} in ${this.rangeLabel().toLowerCase()}`,
       columns: ['Member', 'Member ID', 'LOB', 'Records', 'Events', 'PHI Events', 'First Touch', 'Last Touch', 'What They Did'],
       rows: rows.map((m: UserMemberRow) => [m.member, m.memberId, m.lob, m.records, m.events, m.phi, m.firstTouch, m.lastTouch, m.actions]),
-      exportName: `audit-members-of-${slug(a.userId)}${TODAY_ISO}`,
-      memberColumn: 0,
+      exportName: `audit-members-of-${slug(userId)}${TODAY_ISO}`,
+      rowLink: { column: 0, run: (row) => { this.ix.closeExplorer(); this.openMemberFromUser(String(row[1]), userId); } },
     });
   }
 

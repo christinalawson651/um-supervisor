@@ -49,6 +49,10 @@ export interface ExplorerData {
   rows: (string | number)[][]; // ALL contributing cases
   exportName: string;
   memberColumn?: number;       // index of the Member column (renders clickable)
+  /** Override for lists that are a navigation surface rather than a clinical case list: makes one
+   *  column a link that runs this, instead of opening the member's clinical drawer. The audit
+   *  pivots use it to hand off from one view to the other. */
+  rowLink?: { column: number; label?: string; run: (row: (string | number)[]) => void };
 }
 
 @Injectable({ providedIn: 'root' })

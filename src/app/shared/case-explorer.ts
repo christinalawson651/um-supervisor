@@ -112,7 +112,9 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                       <td class="selth"><input type="checkbox" [checked]="selected().has(rowId(row))" [disabled]="!isRowReassignable(row)" (change)="toggleSel(rowId(row))" /></td>
                     }
                     @for (vc of visibleCols(); track vc.i) {
-                      @if (vc.i === 0 && isReferralList()) {
+                      @if (e.rowLink && vc.i === e.rowLink.column) {
+                        <td><a class="mlink" (click)="e.rowLink!.run(row)">{{ row[vc.i] }}</a></td>
+                      } @else if (vc.i === 0 && isReferralList()) {
                         <td><a class="mlink" (click)="openReferralDetail(row, e)">{{ row[vc.i] }}</a></td>
                       } @else if (vc.i === e.memberColumn) {
                         <td><a class="mlink" (click)="openAuth(row, e)">{{ row[vc.i] }}</a></td>
