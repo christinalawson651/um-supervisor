@@ -1091,6 +1091,51 @@ const govSection = governanceSection;
           </div>
         </div>
 
+        @if (archiveLookup(); as l) {
+          <div class="panel mt-6 lookup">
+            <div class="panel-pad lk-head">
+              <div>
+                <h3 class="pt">Looking for {{ l.account }} · {{ l.from }} → {{ l.to }}</h3>
+                <div class="sub">{{ lookupSegments().length }} sealed segment(s) cover this window, holding
+                  {{ lookupEvents() | number }} archived events. These are not queryable from the Audit Trail until restored.</div>
+              </div>
+              <button class="lnk" (click)="clearLookup()">Dismiss</button>
+            </div>
+            @if (lookupSegments().length) {
+              <table class="z-table">
+                <thead><tr><th>Segment</th><th>Period</th><th class="num">Events</th><th>Tier</th><th>Legal Hold</th><th>Retrieval</th></tr></thead>
+                <tbody>
+                  @for (g of lookupSegments(); track g.segmentId) {
+                    <tr class="clk" (click)="drillSegments('Segment ' + g.segmentId, [g], g.segmentId)">
+                      <td class="strong mono">{{ g.segmentId }}</td>
+                      <td class="mono">{{ g.periodFrom }} → {{ g.periodTo }}</td>
+                      <td class="num">{{ g.eventCount | number }}</td>
+                      <td>{{ g.tier }}@if (g.wormLocked) { <span class="chip">WORM</span> }</td>
+                      <td>@if (g.legalHold) { <span class="chip amber">{{ g.legalHold }}</span> } @else { <span class="sub">—</span> }</td>
+                      <td>@if (restoreStateOf(g.segmentId); as r) {
+                            <span class="chip" [class.amber]="r.status === 'In Progress'">{{ r.status }}</span>
+                            <div class="sub mono">{{ r.requestId }}</div>
+                          } @else { <span class="sub">Not requested</span> }</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <div class="panel-pad lk-foot">
+                @if (lookupNeedingRestore().length) {
+                  <button class="btn primary sm" (click)="requestRestore()">
+                    Request restore of {{ lookupNeedingRestore().length }} segment{{ lookupNeedingRestore().length > 1 ? 's' : '' }}
+                  </button>
+                  <span class="sub">{{ restoreSla }}-day retrieval SLA · the request is itself logged</span>
+                } @else {
+                  <span class="sub">Every segment covering this window is already requested or retrieved.</span>
+                }
+              </div>
+            } @else {
+              <div class="panel-pad sub">No archived segment covers this window — the period is either inside the online store already, or older than the retention schedule keeps.</div>
+            }
+          </div>
+        }
+
         <div class="tile-row">
           <div class="tile" (click)="sel.set('trail')">
             <div class="tile-val">{{ archive().onlineEvents | number }}</div><div class="tile-lab">Online — Queryable</div>
@@ -1231,7 +1276,7 @@ const govSection = governanceSection;
           <table class="z-table">
             <thead><tr><th>Request</th><th>Segment</th><th>Requested By</th><th>Reason</th><th>Requested</th><th>Fulfilled</th><th>Status</th></tr></thead>
             <tbody>
-              @for (r of restores; track r.requestId) {
+              @for (r of restores(); track r.requestId) {
                 <tr>
                   <td class="strong mono">{{ r.requestId }}</td>
                   <td class="mono">{{ r.segmentId }}</td>
@@ -1434,6 +1479,9 @@ const govSection = governanceSection;
     .skv { font-size:12px; } .skv .sub { margin-right:5px; }
     .hactions { display:flex; gap:8px; }
 
+    .lookup { border:1px solid var(--teal-600); }
+    .lk-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); background:var(--teal-50); }
+    .lk-foot { display:flex; align-items:center; gap:12px; flex-wrap:wrap; border-top:1px solid var(--border); }
     .dt { display:inline-flex; align-items:center; gap:6px; font-size:12px; }
     .dt input { border:1px solid var(--gray-300); border-radius:7px; padding:3px 8px; font:inherit; font-size:12px; outline:none; }
     .dt input:focus { border-color:var(--teal-600); }
@@ -2004,7 +2052,10 @@ export class AuditTraceability {
   readonly retention: RetentionPolicy[] = RETENTION_POLICIES;
   /** The signed-in supervisor shown in the app's own top bar. */
   readonly currentUser = 'Christina Lawson';
-  readonly restores = RESTORE_REQUESTS;
+  /** A signal rather than the constant, because this screen can now create a request. A retrieval
+   *  queue where asking for something leaves the queue unchanged would be worse than not offering
+   *  the action at all. */
+  readonly restores = signal<RestoreRequest[]>([...RESTORE_REQUESTS]);
   readonly restoreSla = RESTORE_REQUESTS.length ? RESTORE_REQUESTS[0].slaDays : 5;
   readonly archive = computed(() => archiveSummary(this.disp.remaining()));
   readonly todayIso = auditSpan().to;
@@ -2022,7 +2073,7 @@ export class AuditTraceability {
   }
   heldSegments() { return this.disp.remaining().filter((g) => !!g.legalHold); }
   purgeQueue() { return this.disp.remaining().filter((g) => g.purgeEligible <= this.todayIso && !g.legalHold); }
-  openRestores() { return RESTORE_REQUESTS.filter((r) => r.status === 'In Progress').length; }
+  openRestores() { return this.restores().filter((r) => r.status === 'In Progress').length; }
 
   verifyArchive() {
     const r = verifyArchiveChain();
@@ -2042,9 +2093,9 @@ export class AuditTraceability {
   }
   drillRestores() {
     this.ix.openExplorer({
-      title: 'Restore Requests', context: `${RESTORE_REQUESTS.length} retrieval request(s) from cold storage`,
+      title: 'Restore Requests', context: `${this.restores().length} retrieval request(s) from cold storage`,
       columns: ['Request', 'Segment', 'Requested By', 'Reason', 'Requested', 'Fulfilled', 'SLA (days)', 'Status'],
-      rows: RESTORE_REQUESTS.map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]),
+      rows: this.restores().map((r) => [r.requestId, r.segmentId, r.requestedBy, r.reason, r.requestedDate, r.fulfilledDate ?? '—', r.slaDays, r.status]),
       exportName: `audit-archive-restores${TODAY_ISO}`,
     });
   }
@@ -2293,7 +2344,58 @@ export class AuditTraceability {
     const from = this.winFrom(), to = this.winTo();
     return ARCHIVE_SEGMENTS.filter((sg) => sg.periodTo >= from && sg.periodFrom <= to);
   });
-  goArchive() { this.sel.set('retention'); }
+  /** What the reader was actually looking for when they left the activity panel. Switching tabs
+   *  without it drops them on a retention screen with no idea which of 46 segments matters — the
+   *  link answered "where do I go" and then abandoned the question that sent them. */
+  readonly archiveLookup = signal<{ account: string; from: string; to: string } | null>(null);
+  goArchive() {
+    const u = this.selectedUserRow();
+    this.archiveLookup.set({ account: u ? u.name : '—', from: this.winFrom(), to: this.winTo() });
+    this.sel.set('retention');
+  }
+  clearLookup() { this.archiveLookup.set(null); }
+  /** Segments overlapping the window that was asked for. */
+  lookupSegments = computed(() => {
+    const l = this.archiveLookup();
+    if (!l) return [] as ArchiveSegment[];
+    return this.disp.remaining()
+      .filter((g) => g.periodTo >= l.from && g.periodFrom <= l.to)
+      .sort((a, b) => a.periodFrom.localeCompare(b.periodFrom));
+  });
+  readonly lookupEvents = computed(() => this.lookupSegments().reduce((n, g) => n + g.eventCount, 0));
+  /** Segments in the window that already have a restore in flight or fulfilled — asking twice for
+   *  the same segment is noise in a queue that a compliance team works by hand. */
+  restoreStateOf(segmentId: string): RestoreRequest | null {
+    return this.restores().find((r) => r.segmentId === segmentId && r.status !== 'Denied') ?? null;
+  }
+  readonly lookupNeedingRestore = computed(() => this.lookupSegments().filter((g) => !this.restoreStateOf(g.segmentId)));
+
+  /** Creating the request is the point. It is a REQUEST, not a retrieval — cold storage has an SLA
+   *  and pretending otherwise would misrepresent the one number a plan cares about here. */
+  requestRestore() {
+    const l = this.archiveLookup();
+    const needed = this.lookupNeedingRestore();
+    if (!l || !needed.length) return;
+    const held = needed.filter((g) => g.legalHold);
+    this.ix.ask({
+      title: `Request restore of ${needed.length} segment${needed.length > 1 ? 's' : ''}`,
+      body: `Retrieve ${this.lookupEvents().toLocaleString()} archived events covering ${l.from} → ${l.to} for ${l.account}. `
+        + `Cold-storage retrieval runs to a ${this.restoreSla}-day SLA; the events do not become queryable until it completes.`
+        + (held.length ? ` ${held.length} of these segments is under legal hold — the hold does not block retrieval, only disposition.` : ''),
+      breakdown: needed.map((g) => ({ count: g.eventCount, label: g.segmentId, target: `${g.periodFrom} → ${g.periodTo}` })),
+      confirmLabel: 'Request restore', tone: 'teal',
+      onConfirm: () => {
+        const next = needed.map((g, k) => ({
+          requestId: `RST-${String(this.restores().length + k + 1).padStart(4, '0')}`,
+          segmentId: g.segmentId, requestedBy: this.currentUser, requestedDate: TODAY_ISO,
+          reason: `Account activity review — ${l.account}, ${l.from} → ${l.to}`,
+          status: 'In Progress' as const, fulfilledDate: null, slaDays: this.restoreSla,
+        }));
+        this.restores.update((r) => [...next, ...r]);
+        this.ix.toast(`${next.length} restore request(s) raised — due within ${this.restoreSla} days.`);
+      },
+    });
+  }
   selectUser(id: string) {
     const next = this.selectedUser() === id ? '' : id;
     this.selectedUser.set(next);
