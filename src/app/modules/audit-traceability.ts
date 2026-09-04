@@ -646,37 +646,6 @@ const govSection = governanceSection;
           </div>
         </div>
 
-        <div class="panel mt-6">
-          <div class="panel-pad tbl-head"><h3 class="pt">Relationship Screening</h3>
-            <span class="section-note sm">Accounts that opened the PHI of a member sharing their surname, address, postal code or telephone number. A staff member reading a relative's or a neighbour's record is inside their role, inside their caseload and often inside working hours — no other control on this tab can see it. Every row is a question to ask, never a finding: the innocent explanation is the common one.</span></div>
-          <div class="panel-pad narrbar">
-            <span class="albl">Strength</span>
-            @for (st of strengths; track st) {
-              <button class="qp" [class.on]="commStrength() === st" (click)="commStrength.set(commStrength() === st ? '' : st)">{{ st }}<span class="qn">{{ commCount(st) }}</span></button>
-            }
-            <span class="spacer"></span>
-            <span class="sub">{{ commRows().length | number }} of {{ commAll().length | number }} pair(s) · {{ commBtg() }} involved break-the-glass</span>
-          </div>
-          <table class="z-table">
-            <thead><tr>
-              <th>Account</th><th>Member</th><th>What they share</th><th>Strength</th>
-              <th class="num">PHI Events</th><th class="num">Break-the-Glass</th><th>Last Touch</th>
-            </tr></thead>
-            <tbody>
-              @for (c of commRows(); track c.actorId + c.memberId) {
-                <tr>
-                  <td class="strong"><button class="lnk" (click)="openActor(c.actor)">{{ c.actor }}</button><div class="sub">{{ c.actorRole }}</div></td>
-                  <td><button class="lnk" (click)="openMemberFromId(c.memberId)">{{ c.member }}</button><div class="sub mono">{{ c.memberId }}</div></td>
-                  <td>@for (f of c.flags; track f) { <span class="chip" [class.amber]="strengthOf(f) !== 'Low'">{{ f }}</span> }</td>
-                  <td><span class="chip" [class.amber]="c.strength === 'Medium'" [class.red]="c.strength === 'High'">{{ c.strength }}</span></td>
-                  <td class="num">{{ c.phiEvents | number }}</td>
-                  <td class="num"><b [class.hot]="c.breakGlass > 0">{{ c.breakGlass }}</b></td>
-                  <td class="mono">{{ c.lastTouch }}</td>
-                </tr>
-              } @empty { <tr><td colspan="7" class="empty">No account shares identifying details with a member whose PHI they opened in this range.</td></tr> }
-            </tbody>
-          </table>
-        </div>
 
         @if (selectedUserRow(); as u) {
           <div class="panel mt-6 acct-panel">
@@ -780,12 +749,18 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad filters">
-            <h3 class="pt">Activity by Account</h3>
-            <span class="section-note sm">Select an account to see its access scope and activity over time.</span>
-            <input class="search sm" type="text" placeholder="Search account or role…" [ngModel]="aq()" (ngModelChange)="aq.set($event)" />
-            <label class="chk"><input type="checkbox" [checked]="flaggedOnly()" (change)="flaggedOnly.set($any($event.target).checked)" /> Flagged only</label>
-            <span class="count">{{ activity().length }} account(s)</span>
+            <button class="pcap" (click)="togglePanel('accounts')" [attr.aria-expanded]="isOpen('accounts')">
+              <span class="tcar" [class.open]="isOpen('accounts')">▸</span>
+              <h3 class="pt">Activity by Account</h3>
+              <span class="pcount">{{ activity().length }}</span>
+            </button>
+            @if (isOpen('accounts')) {
+              <span class="section-note sm">Select an account to see its access scope and activity over time.</span>
+              <input class="search sm" type="text" placeholder="Search account or role…" [ngModel]="aq()" (ngModelChange)="aq.set($event)" />
+              <label class="chk"><input type="checkbox" [checked]="flaggedOnly()" (change)="flaggedOnly.set($any($event.target).checked)" /> Flagged only</label>
+            }
           </div>
+          @if (isOpen('accounts')) {
           <table class="z-table">
             <thead><tr>
               <th class="srt" (click)="sortAct('name')">Account{{ caretAct('name') }}</th>
@@ -825,6 +800,49 @@ const govSection = governanceSection;
               } @empty { <tr><td colspan="13" class="empty">No accounts match this filter.</td></tr> }
             </tbody>
           </table>
+          }
+        </div>
+
+        <div class="panel mt-6">
+          <div class="panel-pad tbl-head">
+            <button class="pcap" (click)="togglePanel('screening')" [attr.aria-expanded]="isOpen('screening')">
+              <span class="tcar" [class.open]="isOpen('screening')">▸</span>
+              <h3 class="pt">Relationship Screening</h3>
+              <span class="pcount">{{ commAll().length | number }}@if (commCount('High')) { · {{ commCount('High') }} high }</span>
+            </button>
+            @if (isOpen('screening')) {
+              <span class="section-note sm">Accounts that opened the PHI of a member sharing their surname, address, postal code or telephone number. A staff member reading a relative's or a neighbour's record is inside their role, inside their caseload and often inside working hours — no other control on this tab can see it. Every row is a question to ask, never a finding: the innocent explanation is the common one.</span>
+            }
+          </div>
+          @if (isOpen('screening')) {
+          <div class="panel-pad narrbar">
+            <span class="albl">Strength</span>
+            @for (st of strengths; track st) {
+              <button class="qp" [class.on]="commStrength() === st" (click)="commStrength.set(commStrength() === st ? '' : st)">{{ st }}<span class="qn">{{ commCount(st) }}</span></button>
+            }
+            <span class="spacer"></span>
+            <span class="sub">{{ commRows().length | number }} of {{ commAll().length | number }} pair(s) · {{ commBtg() }} involved break-the-glass</span>
+          </div>
+          <table class="z-table">
+            <thead><tr>
+              <th>Account</th><th>Member</th><th>What they share</th><th>Strength</th>
+              <th class="num">PHI Events</th><th class="num">Break-the-Glass</th><th>Last Touch</th>
+            </tr></thead>
+            <tbody>
+              @for (c of commRows(); track c.actorId + c.memberId) {
+                <tr>
+                  <td class="strong"><button class="lnk" (click)="openActor(c.actor)">{{ c.actor }}</button><div class="sub">{{ c.actorRole }}</div></td>
+                  <td><button class="lnk" (click)="openMemberFromId(c.memberId)">{{ c.member }}</button><div class="sub mono">{{ c.memberId }}</div></td>
+                  <td>@for (f of c.flags; track f) { <span class="chip" [class.amber]="strengthOf(f) !== 'Low'">{{ f }}</span> }</td>
+                  <td><span class="chip" [class.amber]="c.strength === 'Medium'" [class.red]="c.strength === 'High'">{{ c.strength }}</span></td>
+                  <td class="num">{{ c.phiEvents | number }}</td>
+                  <td class="num"><b [class.hot]="c.breakGlass > 0">{{ c.breakGlass }}</b></td>
+                  <td class="mono">{{ c.lastTouch }}</td>
+                </tr>
+              } @empty { <tr><td colspan="7" class="empty">No account shares identifying details with a member whose PHI they opened in this range.</td></tr> }
+            </tbody>
+          </table>
+          }
         </div>
       }
 
@@ -1668,6 +1686,13 @@ const govSection = governanceSection;
     .tlm { font-size:11px; margin-top:2px; }
     .empty.pick { padding:70px 24px; color:var(--gray-500); font-weight:500; text-align:center; }
 
+    .pcap { display:flex; align-items:center; gap:8px; border:0; background:none; padding:0; margin:0;
+            font:inherit; cursor:pointer; text-align:left; }
+    .pcap .pt { margin:0; }
+    .pcap:hover .pt { color:var(--teal-700); }
+    .pcap:focus-visible { outline:2px solid var(--teal-600); outline-offset:3px; border-radius:4px; }
+    .pcount { font-size:11px; font-weight:700; color:var(--gray-500); background:var(--gray-100);
+              border-radius:999px; padding:1px 8px; white-space:nowrap; }
     .memln { margin-top:2px; font-size:11.5px; }
     .scr { display:block; font-size:10.5px; color:var(--gray-500); margin-top:2px; }
     .scr .ctl { font-weight:700; letter-spacing:.03em; text-transform:uppercase; font-size:9.5px; }
@@ -2537,6 +2562,17 @@ export class AuditTraceability {
   drillBucket(name: string, b: ActivityBucket) {
     if (!b.total) { this.ix.toast(`No activity for ${name} in ${b.label}.`, 'info'); return; }
     this.drillEvents(`${name} — ${b.label}`, b.events, `activity-${slug(name)}-${slug(b.key)}`);
+  }
+
+  /** Collapsible panels. The account inventory is 22 rows and the screening queue can be dozens;
+   *  either one pushes everything after it off a short screen. Collapsed state is per-panel and
+   *  lives for the session only — a panel that stayed shut across a reload would hide a control
+   *  from the next person to open the tab. Both start open: hiding the primary surface of a tab by
+   *  default is a worse trade than a bit of scrolling. */
+  private readonly collapsed = signal<Set<string>>(new Set());
+  isOpen(key: string) { return !this.collapsed().has(key); }
+  togglePanel(key: string) {
+    this.collapsed.update((c) => { const n = new Set(c); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
 
   // ---- Relationship screening --------------------------------------------------------------------
