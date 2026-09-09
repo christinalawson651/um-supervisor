@@ -1062,7 +1062,7 @@ function scenarioEvents(): Draft[] {
     entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
     field: 'Care Management bridge', before: null,
-    after: `Authorization ${jAuth} finalized — Denied (Clinical Denial). Shared with the assigned case owner / care manager`,
+    after: `Authorization ${jAuth} finalized — Denied (Clinical Denial). Shared with ${mendez.name}, assigned case owner / care manager`,
     reasonCode: 'UM-CM-BRIDGE · member engaged with care management',
   }));
   out.push(jBase({
@@ -1070,7 +1070,7 @@ function scenarioEvents(): Draft[] {
     entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
     field: 'Alert', before: null,
-    after: 'Review case for care planning follow-up — denial outreach, appeal rights, RSV prevention education, and the open Lead Toxicity Screening care gap',
+    after: `${mendez.name} — review case for care planning follow-up: denial outreach, appeal rights, RSV prevention education, and the open Lead Toxicity Screening care gap`,
     reasonCode: 'ALERT-AUTH-STATUS-CASE-OWNER',
   }));
   out.push(jBase({
