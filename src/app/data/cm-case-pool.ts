@@ -12,7 +12,19 @@ export const CARE_MANAGERS: CareManagerMeta[] = [
   { name: 'James Wong', discipline: 'Medication Mgmt', team: 'Pharmacy & Medication Team' },
   { name: 'Angela Ruiz, RN', discipline: 'Complex Care', team: 'Complex Care Team' },
   { name: 'Kevin Brooks, RN', discipline: 'Transitional Care', team: 'Integrated Care Team' },
+  // The two specialised case owners named in the TruCare workflow specification. Real care
+  // managers with real caseloads rather than labels on one demo member: a programme with a
+  // population of one is not a programme, and the first thing anyone does after being shown a
+  // member is ask to see the rest of them.
+  { name: 'J. Mendez, RN (CCM)', discipline: 'Pediatric EPSDT', team: 'Pediatric & Family Team' },
+  { name: 'K. Malone, LCSW', discipline: 'Foster Care', team: 'Pediatric & Family Team' },
 ];
+
+/** The workflow-specification members. Their ids live here, with the pool they belong to, so the
+ *  audit trail and every care-management surface resolve the same member rather than each deriving
+ *  their own id and quietly disagreeing. */
+export const SCENARIO_JADE_ID = 'ME63950C7';
+export const SCENARIO_WILLIS_ID = 'M8315A35D';
 
 // Case lifecycle stage — the member's overall journey (owned by the Intake & Assessment SLA and
 // Care Plan & Outcomes tabs, not Workforce & Caseload). Kept here as shared infra for when those
@@ -106,7 +118,7 @@ const GOAL_DESCRIPTIONS = ['Medication adherence', 'Daily weight monitoring', 'S
 // Transitional Care caseloads skew sicker than Medication Mgmt, matching real-world case mix.
 // Small values because the base distribution below is already concentrated toward Low/Moderate;
 // a larger shift here would push most of a discipline's caseload into High/Critical.
-const DISCIPLINE_RISK_BIAS: Record<string, number> = { 'Complex Care': 0.7, 'Transitional Care': 0.3, 'Behavioral Health': 0.2, 'Medication Mgmt': -0.6 };
+const DISCIPLINE_RISK_BIAS: Record<string, number> = { 'Complex Care': 0.7, 'Transitional Care': 0.3, 'Behavioral Health': 0.2, 'Medication Mgmt': -0.6, 'Pediatric EPSDT': 0.1, 'Foster Care': 0.5 };
 
 // Target active caseload per care manager — preserves the same operational scale the CM
 // dashboard has always shown (now 161 total with Kevin Brooks added to Integrated Care Team,
@@ -114,7 +126,7 @@ const DISCIPLINE_RISK_BIAS: Record<string, number> = { 'Complex Care': 0.7, 'Tra
 // Block size per care manager. About a fifth of each block ends up unclaimed (see `unclaimed`
 // below), so the OWNED caseload lands near [27, 22, 25, 18, 21, 16] — which is what
 // CAPACITY_PER_CM is calibrated against.
-const ACTIVE_PER_CM = [34, 28, 31, 22, 26, 20];
+const ACTIVE_PER_CM = [34, 28, 31, 22, 26, 20, 19, 16];
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
 function addDays(base: Date, days: number): Date { const d = new Date(base); d.setDate(d.getDate() + days); return d; }
@@ -227,4 +239,21 @@ function buildActive(): CmCaseRec[] {
   return out;
 }
 
-export const CM_CASE_POOL: CmCaseRec[] = buildActive();
+/** Stamps the two specification members onto the first case each of their owners actually holds.
+ *  Everything clinical stays as generated — only identity, line of business and the programme-
+ *  shaped fields are fixed — so they behave like any other member in every rollup rather than
+ *  being a special case the rest of the app has to know about. */
+function withScenarioMembers(pool: CmCaseRec[]): CmCaseRec[] {
+  const stamp = (owner: string, memberId: string, member: string, dx: string, caseType: CaseType) => {
+    const i = pool.findIndex((c) => c.careManager === owner);
+    if (i < 0) return;
+    pool[i] = { ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType, riskLevel: 'High', acuity: 'High' };
+  };
+  stamp('J. Mendez, RN (CCM)', SCENARIO_JADE_ID, 'Pinket, Jade',
+    'Z00.129 — Routine child health exam with abnormal findings', 'Complex Case');
+  stamp('K. Malone, LCSW', SCENARIO_WILLIS_ID, 'Williams, Willis',
+    'Z62.810 — Personal history of abuse in childhood', 'Complex Case');
+  return pool;
+}
+
+export const CM_CASE_POOL: CmCaseRec[] = withScenarioMembers(buildActive());

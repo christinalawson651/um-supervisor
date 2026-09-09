@@ -11,7 +11,7 @@
 // RNG-free pattern as the rest of this app: the same case always produces the same event chain, so
 // a demo can be walked through twice and land on the same rows.
 import { CASE_POOL, CaseRec, NURSES } from './case-pool';
-import { CM_CASE_POOL, CARE_MANAGERS } from './cm-case-pool';
+import { CM_CASE_POOL, CARE_MANAGERS, SCENARIO_JADE_ID, SCENARIO_WILLIS_ID } from './cm-case-pool';
 import { TODAY, MD_REVIEWERS, lobOf } from './case-fields';
 import { AI_DECISIONS } from './ai-oversight';
 import { registerScenarioCareTeam, CareTeamMember, ExternalProgramLink } from './cm-care-team';
@@ -801,8 +801,10 @@ export interface ScenarioMember {
   memberId: string; name: string; age: string; program: string; caseType: string;
   caseOwner: string; lob: string; summary: string;
 }
-const SCEN_JADE = `M${digest('Pinket, Jade').slice(0, 8).toUpperCase()}`;
-const SCEN_WILLIS = `M${digest('Williams, Willis').slice(0, 8).toUpperCase()}`;
+// Single-sourced from the case pool: two modules deriving the same member id independently is two
+// modules that can quietly stop agreeing.
+const SCEN_JADE = SCENARIO_JADE_ID;
+const SCEN_WILLIS = SCENARIO_WILLIS_ID;
 
 export const SCENARIO_MEMBERS: ScenarioMember[] = [
   {

@@ -7,8 +7,11 @@ import { TODAY, LOBS } from './case-fields';
 import type { CmCaseRec } from './cm-case-pool';
 
 // "Case Type" per the real intake wizard's own dropdown (Case Type field, required).
-export type CaseType = 'Care Coordination' | 'Case Management' | 'Disability' | 'Disease Management';
-export const CASE_TYPES: CaseType[] = ['Care Coordination', 'Case Management', 'Disability', 'Disease Management'];
+export type CaseType = 'Care Coordination' | 'Case Management' | 'Complex Case' | 'Disability' | 'Disease Management';
+// 'Complex Case' is the type the TruCare workflow specification assigns to both specialised
+// scenarios, and it is the one that activates programme rules engines like EPSDT periodicity —
+// so it is a real type here rather than a label the demo narrates over the top of a generic one.
+export const CASE_TYPES: CaseType[] = ['Care Coordination', 'Case Management', 'Complex Case', 'Disability', 'Disease Management'];
 
 export type ConsentType = 'HIPAA Authorization' | 'Program Enrollment' | 'ROI' | 'Verbal';
 export const CONSENT_TYPES: ConsentType[] = ['HIPAA Authorization', 'Program Enrollment', 'ROI', 'Verbal'];

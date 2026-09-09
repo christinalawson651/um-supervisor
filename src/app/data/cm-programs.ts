@@ -6,7 +6,7 @@
 // lifecycle — not tied to the case closing or the care plan closing. That's why disenrollment needs
 // its own metric rather than reusing carePlanStatus/carePlanClosedDate.
 import { TODAY } from './case-fields';
-import { CmCaseRec, CM_CASE_POOL } from './cm-case-pool';
+import { CmCaseRec, CM_CASE_POOL, SCENARIO_JADE_ID, SCENARIO_WILLIS_ID } from './cm-case-pool';
 
 // The specialised Medicaid programmes lead, because they are what a state contract is actually
 // awarded and audited against — EPSDT periodicity, foster-care coordination, children with complex
@@ -141,4 +141,24 @@ export function buildProgramEnrollments(cases: CmCaseRec[]): CmProgramEnrollment
 // Enrollment membership (who's in what, and when they joined/left) is stable for the session —
 // only the case's care manager/queue/status fields ever mutate — so this can be built once here,
 // the same treatment CM_CASE_POOL itself gets in cm-case-pool.ts.
-export const CM_PROGRAM_ENROLLMENTS: CmProgramEnrollment[] = buildProgramEnrollments(CM_CASE_POOL);
+/** The specification members carry the programmes the specification says they do, replacing
+ *  whatever the generator happened to give them. Willis carries two on purpose: a foster child
+ *  with a trauma history is in foster-care coordination AND behavioural health at the same time,
+ *  and "how do you manage someone in several programmes at once" is a question on the agenda. */
+function withScenarioEnrollments(rows: CmProgramEnrollment[]): CmProgramEnrollment[] {
+  const kept = rows.filter((r) => r.memberId !== SCENARIO_JADE_ID && r.memberId !== SCENARIO_WILLIS_ID);
+  const on = (back: number) => isoDate(addDays(TODAY, -back));
+  return [
+    ...kept,
+    { memberId: SCENARIO_JADE_ID, program: 'Pediatric EPSDT', enrolledDate: on(150),
+      status: 'Active', endDate: null, disenrollReason: null, route: 'Auto — eligibility rule' },
+    { memberId: SCENARIO_WILLIS_ID, program: 'Foster Care Coordination', enrolledDate: on(21),
+      status: 'Active', endDate: null, disenrollReason: null, route: 'Referral — external agency' },
+    { memberId: SCENARIO_WILLIS_ID, program: 'Behavioral Health / SUD', enrolledDate: on(13),
+      status: 'Active', endDate: null, disenrollReason: null, route: 'Referral — internal' },
+    { memberId: SCENARIO_WILLIS_ID, program: 'Pediatric EPSDT', enrolledDate: on(20),
+      status: 'Active', endDate: null, disenrollReason: null, route: 'Auto — eligibility rule' },
+  ];
+}
+
+export const CM_PROGRAM_ENROLLMENTS: CmProgramEnrollment[] = withScenarioEnrollments(buildProgramEnrollments(CM_CASE_POOL));
