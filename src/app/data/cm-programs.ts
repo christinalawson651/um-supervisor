@@ -8,19 +8,48 @@
 import { TODAY } from './case-fields';
 import { CmCaseRec, CM_CASE_POOL } from './cm-case-pool';
 
+// The specialised Medicaid programmes lead, because they are what a state contract is actually
+// awarded and audited against — EPSDT periodicity, foster-care coordination, children with complex
+// needs, SMI, LTSS. The chronic-condition and SDOH programmes stay because the overlap is the
+// point: a foster child carries EPSDT AND behavioural health, a member with SMI carries SUD, and a
+// plan is asked how it manages a person in several at once rather than how it runs one.
 export type CareProgramName =
-  | 'CHF'
-  | 'COPD'
-  | 'CKD'
+  | 'Pediatric EPSDT'
+  | 'Foster Care Coordination'
+  | 'Children with Complex Needs'
+  | 'Serious Mental Illness (SMI)'
+  | 'LTSS / HCBS'
   | 'Behavioral Health / SUD'
   | 'High-Risk Maternity'
-  | 'SDOH / Community Resource Support'
-  | 'Weight & Nutrition Management'
-  | 'Smoking Cessation';
+  | 'SDOH / Community Resource Support';
 
 export const CARE_PROGRAMS: CareProgramName[] = [
-  'CHF', 'COPD', 'CKD', 'Behavioral Health / SUD', 'High-Risk Maternity',
-  'SDOH / Community Resource Support', 'Weight & Nutrition Management', 'Smoking Cessation',
+  'Pediatric EPSDT', 'Foster Care Coordination', 'Children with Complex Needs',
+  'Serious Mental Illness (SMI)', 'LTSS / HCBS', 'Behavioral Health / SUD',
+  'High-Risk Maternity', 'SDOH / Community Resource Support',
+];
+
+/** Which programmes are physical-health, behavioural-health, or both. The agenda asks how PH and
+ *  BH needs are managed together; a taxonomy that cannot say which is which cannot answer it. */
+export type ProgramDomain = 'PH' | 'BH' | 'PH + BH';
+export const PROGRAM_DOMAIN: Record<CareProgramName, ProgramDomain> = {
+  'Pediatric EPSDT': 'PH + BH',
+  'Foster Care Coordination': 'PH + BH',
+  'Children with Complex Needs': 'PH + BH',
+  'Serious Mental Illness (SMI)': 'BH',
+  'LTSS / HCBS': 'PH',
+  'Behavioral Health / SUD': 'BH',
+  'High-Risk Maternity': 'PH',
+  'SDOH / Community Resource Support': 'PH + BH',
+};
+
+/** How a member reaches a programme. Auto-enrolment from a rule is the answer to "how are members
+ *  identified and assigned", and it matters for oversight that the three are distinguishable: a
+ *  rule that fires wrongly is a different problem from a care manager referring wrongly. */
+export type EnrollmentRoute = 'Auto — eligibility rule' | 'Auto — claims/utilization trigger' | 'Referral — internal' | 'Referral — external agency' | 'Manual — care manager';
+export const ENROLLMENT_ROUTES: EnrollmentRoute[] = [
+  'Auto — eligibility rule', 'Auto — claims/utilization trigger',
+  'Referral — internal', 'Referral — external agency', 'Manual — care manager',
 ];
 
 export type ProgramDisenrollReason =
@@ -37,6 +66,9 @@ export interface CmProgramEnrollment {
   status: 'Active' | 'Disenrolled';
   endDate: string | null;               // set only when status === 'Disenrolled'
   disenrollReason: ProgramDisenrollReason | null;
+  /** How the member got here. An auto-enrolment that fired on a rule and a care manager's manual
+   *  add are the same row otherwise, and they are not the same thing to review. */
+  route: EnrollmentRoute;
 }
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
@@ -88,7 +120,19 @@ export function buildProgramEnrollments(cases: CmCaseRec[]): CmProgramEnrollment
         endDate = isoDate(addDays(TODAY, -Math.max(0, enrolledDaysAgo - Math.min(durationDays, enrolledDaysAgo - 1))));
         disenrollReason = reasonFor((i * 71 + k * 13 + 17) % 100);
       }
-      out.push({ memberId: c.memberId, program, enrolledDate, status, endDate, disenrollReason });
+      // Route follows the programme's nature: the paediatric and LTSS programmes are driven off
+      // eligibility rules, foster care always arrives as an external referral from child welfare,
+      // and the rest are a mix of utilisation triggers and clinician judgement.
+      const routeSeed = (i * 29 + k * 11) % 100;
+      const route: EnrollmentRoute =
+        program === 'Foster Care Coordination' ? 'Referral — external agency'
+        : program === 'Pediatric EPSDT' ? 'Auto — eligibility rule'
+        : program === 'LTSS / HCBS' ? (routeSeed < 70 ? 'Auto — eligibility rule' : 'Referral — external agency')
+        : routeSeed < 34 ? 'Auto — claims/utilization trigger'
+        : routeSeed < 62 ? 'Referral — internal'
+        : routeSeed < 84 ? 'Manual — care manager'
+        : 'Auto — eligibility rule';
+      out.push({ memberId: c.memberId, program, enrolledDate, status, endDate, disenrollReason, route });
     }
   });
   return out;

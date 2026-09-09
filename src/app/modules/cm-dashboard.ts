@@ -1517,14 +1517,16 @@ export class CmDashboard {
   readonly totalMembersLabel = computed(() => String(this.scopedCases().length));
 
   private readonly PROGRAM_COLORS: Record<CareProgramName, string> = {
-    'CHF': '#0d9488', 'COPD': '#3b82f6', 'CKD': '#8b5cf6', 'Behavioral Health / SUD': '#f59e0b',
-    'High-Risk Maternity': '#ec4899', 'SDOH / Community Resource Support': '#10b981',
-    'Weight & Nutrition Management': '#f97316', 'Smoking Cessation': '#64748b',
+    'Pediatric EPSDT': '#0d9488', 'Foster Care Coordination': '#8b5cf6',
+    'Children with Complex Needs': '#3b82f6', 'Serious Mental Illness (SMI)': '#f59e0b',
+    'LTSS / HCBS': '#f97316', 'Behavioral Health / SUD': '#ec4899',
+    'High-Risk Maternity': '#64748b', 'SDOH / Community Resource Support': '#10b981',
   };
   private readonly PROGRAM_ICONS: Record<CareProgramName, string> = {
-    'CHF': 'bolt', 'COPD': 'wifi', 'CKD': 'filter', 'Behavioral Health / SUD': 'sparkles',
-    'High-Risk Maternity': 'users', 'SDOH / Community Resource Support': 'mappin',
-    'Weight & Nutrition Management': 'balance', 'Smoking Cessation': 'xcircle',
+    'Pediatric EPSDT': 'users', 'Foster Care Coordination': 'mappin',
+    'Children with Complex Needs': 'sparkles', 'Serious Mental Illness (SMI)': 'bolt',
+    'LTSS / HCBS': 'balance', 'Behavioral Health / SUD': 'wifi',
+    'High-Risk Maternity': 'filter', 'SDOH / Community Resource Support': 'xcircle',
   };
   private readonly REASON_COLORS: Record<ProgramDisenrollReason, string> = {
     'Goals Met': '#10b981', 'Member Declined': '#f59e0b', 'Lost to Follow-Up': '#ef4444',

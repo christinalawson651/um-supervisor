@@ -21,7 +21,13 @@ import { AI_DECISIONS } from './ai-oversight';
 // ---------------------------------------------------------------------------------------------
 export type AccessRole =
   | 'UM Nurse Reviewer' | 'Medical Director' | 'UM Supervisor' | 'Care Manager' | 'CM Supervisor'
-  | 'Appeals Reviewer' | 'Intake Coordinator' | 'Compliance Analyst' | 'System Administrator' | 'Interface Service Account';
+  | 'Appeals Reviewer' | 'Intake Coordinator' | 'Compliance Analyst' | 'System Administrator'
+  // A social worker coordinating a foster-care or child-welfare case is not a Care Manager with a
+  // different job title: they own the case, they take referrals from an external agency, and they
+  // are deliberately NOT entitled to make or override a medical-necessity determination. Modelling
+  // them as a Care Manager would grant clinical rights the role should never hold.
+  | 'Program Specialist (Social Worker)'
+  | 'Interface Service Account';
 
 /** How wide an account's record access runs. Ordered loosely from narrowest to widest so a
  *  reviewer scanning the column can see the outliers without reading every row. */
@@ -146,6 +152,11 @@ function buildUsers(): SystemUser[] {
   push('Christina Lawson', 'UM Supervisor', 'Utilization Management', [], [], [], 'Team caseload');
   push('Renee Alvarez', 'CM Supervisor', 'Care Management', [], [], [], 'Team caseload');
   push('Daniel Okafor', 'Appeals Reviewer', 'Appeals & Grievances', ['TX'], [], [], 'Appeal scope');
+  // Named in the workflow specification, and carrying the scope those programmes actually imply.
+  push('J. Mendez, RN (CCM)', 'Care Manager', 'Care Management', ['TX'],
+    ['Medicaid'], ['Pediatric EPSDT'], 'Programme caseload');
+  push('K. Malone, LCSW', 'Program Specialist (Social Worker)', 'Care Management', ['TX'],
+    ['Medicaid'], ['Foster Care Coordination'], 'Programme caseload');
   push('Tanya Brooks', 'Intake Coordinator', 'Intake', [], [], [], 'Demographic & eligibility only');
   push('Priya Shah, RN (QI)', 'Compliance Analyst', 'Quality & Compliance', [], [], [], 'All members — audit read-only');
   push('svc_trucare_hl7', 'Interface Service Account', 'IT Integration', [], [], [], 'Transport only — no UI access');
@@ -772,11 +783,356 @@ function operationalEvents(): Draft[] {
   return out;
 }
 
+// ---------------------------------------------------------------------------------------------
+// The two members from the TruCare workflow specification, carried end to end.
+//
+// These exist so the oversight half of the demo is the SAME record as the workflow half: after
+// walking Jade Pinket's Synagis denial or Willis Williams's foster-care coordination in the
+// front-line screens, you search that member here and every step is on the trail — who did it,
+// under which criteria version, what the model suggested, what a human accepted. An oversight
+// module that cannot show the case you just demonstrated is a different product bolted alongside,
+// and an auditor notices.
+//
+// Written out longhand rather than generated, because a specification scenario has a specific
+// sequence and specific role gates, and the point is that the sequence is auditable.
+// ---------------------------------------------------------------------------------------------
+export interface ScenarioMember {
+  memberId: string; name: string; age: string; program: string; caseType: string;
+  caseOwner: string; lob: string; summary: string;
+}
+const SCEN_JADE = `M${digest('Pinket, Jade').slice(0, 8).toUpperCase()}`;
+const SCEN_WILLIS = `M${digest('Williams, Willis').slice(0, 8).toUpperCase()}`;
+
+export const SCENARIO_MEMBERS: ScenarioMember[] = [
+  {
+    memberId: SCEN_JADE, name: 'Pinket, Jade', age: '28 months', program: 'Pediatric EPSDT',
+    caseType: 'Complex Case', caseOwner: 'J. Mendez, RN (CCM)', lob: 'Medicaid',
+    summary: 'EPSDT member with a missed lead-toxicity screening and a Synagis prior authorization denied on AAP criteria.',
+  },
+  {
+    memberId: SCEN_WILLIS, name: 'Williams, Willis', age: '11 years', program: 'Foster Care Coordination',
+    caseType: 'Complex Case', caseOwner: 'K. Malone, LCSW', lob: 'Medicaid',
+    summary: 'Foster-care referral from child welfare: two placement moves, same-day medical home visit, immunization gap, ICT convened.',
+  },
+];
+
+function scenarioEvents(): Draft[] {
+  const out: Draft[] = [];
+  const u = (name: string) => USER_BY_NAME.get(name)!;
+  const svc = u('svc_trucare_hl7');
+  const intake = u('Tanya Brooks');
+  const mendez = u('J. Mendez, RN (CCM)');
+  const malone = u('K. Malone, LCSW');
+  const md = u(MD_REVIEWERS[0]);
+  const nurse = u(NURSES[0]);
+  const day = (back: number) => addDays(TODAY, -back);
+
+  // =============================================================== Scenario 1 — Jade Pinket
+  // Two records, deliberately: the care-management case and the authorization are separate things
+  // that hand off to each other, and threading them as one blob hides the handoff — which is the
+  // most interesting moment in the scenario. The CM thread opens first, the auth thread runs
+  // inside it, and the alert back to the case owner closes the loop on the CM side.
+  const jCmCorr = 'COR-CM-EPSDT-0001';
+  const jCorr = 'COR-AUTH-EPSDT-0001';
+  const jAuth = 'AUTH-EPSDT-0001';
+  const jBase = (over: Partial<Draft>): Draft => ({
+    timestamp: '', actor: intake.name, actorId: intake.userId, actorRole: intake.role,
+    category: 'Case Management', action: '', entityType: 'Authorization', entityId: jAuth,
+    memberId: SCEN_JADE, lob: 'Medicaid', field: null, before: null, after: null,
+    channel: 'Web UI', sourceIp: ipFor(intake, 3), sessionId: `S-${digest(SCEN_JADE).slice(0, 8)}`,
+    correlationId: jCorr, reasonCode: null, phi: true, outcome: 'Success', ...over,
+  });
+
+  // Enrolment is a rule firing, not a person deciding — which is exactly what the programme
+  // oversight question asks about, so it is attributed to the rule and carries its name.
+  out.push(jBase({
+    timestamp: stamp(day(150), 0, 486), category: 'Case Management', action: 'Program enrollment — auto',
+    entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Program', before: null, after: 'Care Management — Pediatric EPSDT · Complex Case',
+    reasonCode: 'RULE-EPSDT-PERIODICITY-v2.1',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(150), 0, 488), action: 'Case owner assigned', entityType: 'CM Case', entityId: SCEN_JADE,
+    correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, channel: 'System Rule', sourceIp: '172.19.4.11',
+    field: 'Case Owner', before: 'Unassigned', after: mendez.name, reasonCode: 'RULE-CM-ASSIGNMENT-PEDS',
+  }));
+  // The care gap. Auto-detected, and it stays open across everything that follows — which is the
+  // point the Timeline makes: a denial did not close the gap that was already there.
+  out.push(jBase({
+    timestamp: stamp(day(120), 0, 502), category: 'Clinical Decision', action: 'Care gap identified',
+    entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Lead Toxicity Screening', before: 'Due at 24 months', after: 'MISSED — no claim or result on file',
+    reasonCode: 'EPSDT-PERIODICITY-LEAD-24MO', outcome: 'Denied',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(120), 0, 505), action: 'Care gap routed for outreach', entityType: 'CM Case', entityId: SCEN_JADE,
+    correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, channel: 'System Rule', sourceIp: '172.19.4.11',
+    field: 'Task', before: null, after: `Outreach task queued to ${mendez.name}`, reasonCode: 'TASK-CARE-GAP-OUTREACH',
+  }));
+
+  // ---- the authorization ----
+  out.push(jBase({
+    timestamp: stamp(day(9), 0, 540), action: 'Authorization request received', channel: 'API',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Status', before: null, after: 'Submitted — Synagis (palivizumab), outpatient medication PA',
+    reasonCode: 'PROVIDER-PORTAL',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(9), 0, 544), action: 'Source document received', field: 'Document',
+    after: 'Provider portal upload — clinical packet, 6 pages', reasonCode: 'DOC-RECEIVED',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(9), 0, 548), category: 'Clinical Decision', action: 'Document fields extracted',
+    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Extraction', after: '21/22 fields at or above threshold · confidence 0.94', reasonCode: 'extractor · v0.2.0',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(9), 0, 551), category: 'Clinical Decision',
+    action: 'Extracted field below threshold — routed for verification', channel: 'System Rule',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Gestational age at birth', before: null, after: 'Held for human verification — handwritten on referral form',
+    reasonCode: 'EXTRACT-LOW-CONFIDENCE', outcome: 'Denied',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(9), 0, 556), category: 'Access', action: 'Member eligibility verified',
+    entityType: 'Member', entityId: SCEN_JADE, field: 'EPSDT Indicator', before: null,
+    after: 'Yes — EPSDT medical necessity standard applies; state plan limits cannot be the sole basis for denial',
+    reasonCode: '42 CFR §441.57 · EPSDT',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(9), 0, 560), category: 'Clinical Decision', action: 'Policy version resolved',
+    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Policy', before: 'Medicaid · TX · EPSDT', after: 'AAP Synagis Policy v4.0 (Committee on Infectious Diseases)',
+    reasonCode: 'EPSDT overrides state plan limitation',
+  }));
+  // Field-level edit: the verification the extraction asked for actually happening.
+  out.push(jBase({
+    timestamp: stamp(day(8), 0, 602), action: 'Field edited',
+    actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
+    field: 'Gestational age at birth', before: '(unverified — handwritten)', after: '39 weeks 2 days — full term',
+    screen: 'Clinical Review — Diagnosis', control: 'Number', reasonCode: 'FIELD-VERIFIED-FROM-SOURCE',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(8), 0, 606), category: 'Clinical Decision', action: 'Clinical criteria applied',
+    actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
+    field: 'Guideline', after: 'AAP Synagis Policy v4.0 — no qualifying prematurity, CLD, cardiac, immunocompromise or transplant history',
+    reasonCode: 'CRIT-NOT-MET',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(8), 0, 610), category: 'Clinical Decision', action: 'AI recommendation generated',
+    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'AI Recommendation', after: 'Deny · confidence 0.94 · grounded 4/4',
+    reasonCode: 'claude-sonnet-4-6 · med-necessity v0.2.0 · AAP Synagis v4.0',
+  }));
+  // Role gate: a nurse cannot issue an adverse determination alone.
+  out.push(jBase({
+    timestamp: stamp(day(7), 0, 620), category: 'Case Management', action: 'Case routed to Medical Director',
+    actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
+    field: 'Assigned To', before: nurse.name, after: md.name, reasonCode: 'ADVERSE-DETERMINATION-ADVISOR-REVIEW',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(7), 0, 638), category: 'Clinical Decision', action: 'Medical Director review completed',
+    actor: md.name, actorId: md.userId, actorRole: md.role, sourceIp: ipFor(md, 3),
+    field: 'Advisor Finding', before: null, after: 'Concurs with RN — no AAP criterion met on submitted documentation',
+    reasonCode: 'MD-REVIEW-CONCUR',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(7), 0, 646), category: 'Clinical Decision', action: 'Determination recorded',
+    actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
+    field: 'Decision', before: 'Pending', after: 'Denied — Clinical Denial',
+    reasonCode: 'DET-NOT-MEDICALLY-NECESSARY · EPSDT standard applied',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(7), 0, 650), category: 'Correspondence', action: 'Determination letter generated',
+    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Letter', after: 'EPSDT Adverse Determination notice — auto-merged, appeal rights and State Fair Hearing appended',
+    reasonCode: 'TEMPLATE-EPSDT-ADVERSE-v1.2',
+  }));
+  out.push(jBase({
+    timestamp: stamp(day(6), 0, 700), category: 'Correspondence', action: 'Determination letter transmitted to member',
+    channel: 'Batch Interface', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Notice Status', after: 'Sent — print/mail and member portal', reasonCode: 'EPSDT-NOTICE-REQUIREMENT',
+  }));
+  // The hand-back to care management, which is the part a UM-only trail loses.
+  out.push(jBase({
+    timestamp: stamp(day(6), 0, 704), category: 'Case Management', action: 'Case owner alerted',
+    entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Alert', before: null, after: `Synagis authorization finalized — Denied. Routed to ${mendez.name} for care-plan follow-up`,
+    reasonCode: 'ALERT-AUTH-STATUS-CASE-OWNER',
+  }));
+  // AI care plan suggestions — generated, tagged, and NOT active until a human accepts.
+  const jSuggestions: [string, string][] = [
+    ['Problem', 'Risk for respiratory compromise related to RSV exposure; medication prophylaxis denied'],
+    ['Goal', 'Member remains free of signs of respiratory distress through the current RSV season'],
+    ['Intervention', 'Caregiver education — RSV prevention, early recognition of respiratory distress'],
+    ['Intervention', 'Schedule PCP follow-up; close the open Lead Toxicity Screening care gap'],
+    ['Intervention', 'Appeal-rights education and care manager contact for denial follow-up'],
+  ];
+  jSuggestions.forEach(([kind, text], k) => {
+    out.push(jBase({
+      timestamp: stamp(day(6), 0, 710 + k * 2), category: 'Clinical Decision',
+      action: 'AI care plan item suggested', entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule',
+      correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+      field: kind, before: null, after: `${text} — AI-Suggested, pending care manager review`,
+      reasonCode: 'CAREPLAN-AI-ASSIST · not active until accepted',
+    }));
+  });
+  // A human dispositions them. Two accepted, one edited, one declined — because a feed where
+  // everything is accepted verbatim tells you nothing about whether anyone read it.
+  const jDispositions: [string, string, string][] = [
+    ['Problem', 'Accepted', 'Risk for respiratory compromise related to RSV exposure; medication prophylaxis denied'],
+    ['Goal', 'Accepted', 'Member remains free of signs of respiratory distress through the current RSV season'],
+    ['Intervention', 'Edited', 'Caregiver education — RSV prevention, early recognition, and inhaler technique review'],
+    ['Intervention', 'Accepted', 'Schedule PCP follow-up; close the open Lead Toxicity Screening care gap'],
+  ];
+  jDispositions.forEach(([kind, verdict, text], k) => {
+    out.push(jBase({
+      timestamp: stamp(day(5), 0, 540 + k * 3), category: 'Case Management',
+      action: `AI care plan item ${verdict.toLowerCase()}`, entityType: 'CM Case', entityId: SCEN_JADE,
+      correlationId: jCmCorr, actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role, sourceIp: ipFor(mendez, 4),
+      field: kind, before: 'AI-Suggested — pending review', after: `${verdict} — ${text}`,
+      screen: 'Care Plan — Activity Feed', control: 'Dropdown', reasonCode: `CAREPLAN-${verdict.toUpperCase()}`,
+    }));
+  });
+  out.push(jBase({
+    timestamp: stamp(day(5), 0, 556), category: 'Case Management', action: 'AI care plan item declined',
+    entityType: 'CM Case', entityId: SCEN_JADE, correlationId: jCmCorr,
+    actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role, sourceIp: ipFor(mendez, 4),
+    field: 'Intervention', before: 'AI-Suggested — pending review',
+    after: 'Declined — appeal-rights education already delivered verbally at outreach on the denial call',
+    screen: 'Care Plan — Activity Feed', control: 'Dropdown', reasonCode: 'CAREPLAN-DECLINED',
+  }));
+
+  // =============================================================== Scenario 2 — Willis Williams
+  const wCorr = 'COR-CM-FOSTER-0001';
+  const wBase = (over: Partial<Draft>): Draft => ({
+    timestamp: '', actor: malone.name, actorId: malone.userId, actorRole: malone.role,
+    category: 'Case Management', action: '', entityType: 'CM Case', entityId: SCEN_WILLIS,
+    memberId: SCEN_WILLIS, lob: 'Medicaid', field: null, before: null, after: null,
+    channel: 'Web UI', sourceIp: ipFor(malone, 5), sessionId: `S-${digest(SCEN_WILLIS).slice(0, 8)}`,
+    correlationId: wCorr, reasonCode: null, phi: true, outcome: 'Success', ...over,
+  });
+
+  out.push(wBase({
+    timestamp: stamp(day(21), 0, 522), action: 'Referral received', channel: 'Batch Interface',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Referral', before: null,
+    after: 'Child Welfare / Dept. of Family & Children\'s Services — foster placement, care coordination and EPSDT/medical home linkage',
+    reasonCode: 'REFERRAL-EXTERNAL-CHILD-WELFARE',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(21), 0, 560), action: 'Referral accepted', field: 'Case Status',
+    before: 'Referred', after: 'Open — Complex Case, Foster Care Coordination',
+    screen: 'Referral Queue', control: 'Dropdown', reasonCode: 'REFERRAL-ACCEPTED',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(21), 0, 563), action: 'Case owner assigned', field: 'Case Owner',
+    before: 'Unassigned', after: `${malone.name} — Program Specialist (Social Worker), primary`,
+    reasonCode: 'FOSTER-CARE-SW-PRIMARY',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(21), 0, 566), action: 'Secondary care manager linked', field: 'Care Team',
+    before: null, after: `${mendez.name} — RN, medical/EPSDT components`,
+    reasonCode: 'PH-BH-DUAL-OWNERSHIP',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(21), 0, 570), action: 'Outreach task created', channel: 'System Rule',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Task', before: null, after: 'Contact foster placement / caseworker — trauma-informed outreach SLA',
+    reasonCode: 'TASK-TRAUMA-INFORMED-OUTREACH',
+  }));
+  // Placement history — the residence chain the specification calls out.
+  out.push(wBase({
+    timestamp: stamp(day(20), 0, 600), action: 'Field edited', field: 'Current Residence',
+    before: 'Emergency Foster Home A (non-relative)', after: 'Foster / Guardian Home — Foster Parent B (guardian)',
+    screen: 'Member 360 — Demographics', control: 'Lookup',
+    reasonCode: 'PLACEMENT-CHANGE-2 · prior placements retained in residence history',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(20), 0, 604), action: 'Field edited', field: 'Address-dependent workflows',
+    before: 'Foster Home A district', after: 'Re-matched — medical home, school district, correspondence mailing',
+    screen: 'Member 360 — Demographics', control: 'Lookup', reasonCode: 'ADDRESS-DEPENDENT-REMATCH',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(19), 0, 588), category: 'Clinical Decision', action: 'Care gap identified',
+    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Immunization series', before: 'Due', after: 'OVERDUE — TDAP and Meningococcal',
+    reasonCode: 'EPSDT-IMMUNIZATION-CATCHUP', outcome: 'Denied',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(19), 0, 612), action: 'Same-day appointment scheduled', field: 'Appointment',
+    before: null, after: 'Well-child visit — Foster Care / Wraparound Medical Home, same day (hearing, vision, dental)',
+    screen: 'Provider Directory — Medical Home Search', control: 'Lookup', reasonCode: 'SAME-DAY-MEDICAL-HOME',
+  }));
+  ['Meal assistance', 'Clothing closet', 'School supplies and enrollment support'].forEach((svcName, k) => {
+    out.push(wBase({
+      timestamp: stamp(day(19), 0, 616 + k * 2), action: 'Co-located service referral logged',
+      field: 'Linked intervention', before: null, after: `${svcName} — co-located at medical home`,
+      screen: 'Provider Directory — Medical Home Search', control: 'Checkbox', reasonCode: 'SDOH-COLOCATED-REFERRAL',
+    }));
+  });
+  out.push(wBase({
+    timestamp: stamp(day(18), 0, 545), action: 'Case note recorded', field: 'Trauma-Informed Care note',
+    before: null, after: 'Safety confirmed · age-appropriate explanation given · child and caregiver offered scheduling choice · strengths-based language',
+    screen: 'Case Notes — Trauma-Informed Template', control: 'Free text',
+    reasonCode: 'TRAUMA-INFORMED-TEMPLATE · Trauma History Considered: Yes',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(14), 0, 570), action: 'ICT meeting convened', field: 'ICT Meeting #1',
+    before: null,
+    after: 'Attendees: Social Worker, RN Care Manager, Foster Parent B, School Liaison, Medical Director — placement stability, immunization plan, nutrition concern; dietitian referral assigned',
+    screen: 'Care Management — ICT Meetings', control: 'Free text', reasonCode: 'ICT-MEETING-DOCUMENTED',
+  }));
+  const wSuggestions: [string, string, string][] = [
+    ['Problem', 'History of abuse / trauma — risk for psychological and emotional distress', 'documented birth-parent abuse history'],
+    ['Problem', 'Nutritional deficit — risk for impaired growth and development', 'documented inadequate nutrition history'],
+    ['Goal', 'Engage in trauma-focused counselling and demonstrate age-appropriate coping within 90 days', 'trauma history'],
+    ['Intervention', 'Refer to trauma-focused behavioural health (TF-CBT), choice-based approach', 'trauma history'],
+    ['Intervention', 'Refer to registered dietitian; connect family to co-located meal assistance', 'nutrition deficit'],
+    ['Intervention', 'Complete immunization catch-up schedule and close the identified care gap', 'immunization care gap'],
+  ];
+  wSuggestions.forEach(([kind, text, source], k) => {
+    out.push(wBase({
+      timestamp: stamp(day(13), 0, 520 + k * 2), category: 'Clinical Decision',
+      action: 'AI care plan item suggested', channel: 'System Rule',
+      actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+      field: kind, before: null, after: `${text} — AI-Suggested, pending review`,
+      // The specification asks that a suggestion name the data that drove it; without that a
+      // reviewer is asked to accept clinical content on trust.
+      reasonCode: `CAREPLAN-AI-ASSIST · source: ${source}`,
+    }));
+  });
+  out.push(wBase({
+    timestamp: stamp(day(12), 0, 534), action: 'AI care plan item accepted',
+    field: 'Problem', before: 'AI-Suggested — pending review',
+    after: 'Accepted — History of abuse / trauma; risk for psychological and emotional distress',
+    screen: 'Care Plan — Activity Feed', control: 'Dropdown', reasonCode: 'CAREPLAN-ACCEPTED',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(12), 0, 537), action: 'AI care plan item edited',
+    field: 'Intervention', before: 'AI-Suggested — refer to registered dietitian',
+    after: 'Edited — refer to registered dietitian AND enrol in WIC; caregiver requested both',
+    screen: 'Care Plan — Activity Feed', control: 'Free text', reasonCode: 'CAREPLAN-EDITED',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(7), 0, 566), action: 'ICT meeting convened', field: 'ICT Meeting #2',
+    before: null,
+    after: 'Attendees: Social Worker, RN Care Manager, Foster Parent B, Guardian ad Litem, Behavioral Health Clinician — counselling engagement, school adjustment, growth monitoring; next ICT in 60 days',
+    screen: 'Care Management — ICT Meetings', control: 'Free text', reasonCode: 'ICT-MEETING-DOCUMENTED',
+  }));
+
+  return out;
+}
+
 function buildEvents(): AuditEvent[] {
   const drafts: Draft[] = [
     ...CASE_POOL.flatMap((c, i) => umEventsFor(c, i)),
     ...CM_CASE_POOL.map((_, i) => cmEventsFor(i)).flat(),
     ...operationalEvents(),
+    ...scenarioEvents(),
   ].sort((a, b) => a.timestamp.localeCompare(b.timestamp) || a.entityId.localeCompare(b.entityId));
 
   // The hash chain is built in timestamp order — that ordering is what makes an inserted or
@@ -854,6 +1210,7 @@ export const PERMISSION_MATRIX: Record<AccessRole, Partial<Record<Permission, st
   'Care Manager': { 'View member PHI': 'Yes — assigned caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No — not applicable', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes — own cases', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
   'CM Supervisor': { 'View member PHI': 'Yes — team caseload', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No — not applicable', 'Override AI recommendation': 'No', 'Reopen closed case': 'Yes', 'Reassign work': 'Yes', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
   'Appeals Reviewer': { 'View member PHI': 'Yes — appeal scope', 'Approve authorization': 'Yes — appeal outcome', 'Deny authorization': 'Yes — appeal outcome', 'View AI confidence score': 'No — blinded on appeal', 'Override AI recommendation': 'Yes — reason required', 'Reopen closed case': 'Yes', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
+  'Program Specialist (Social Worker)': { 'View member PHI': 'Yes — assigned caseload', 'Approve authorization': 'No — not a clinical role', 'Deny authorization': 'No — not a clinical role', 'View AI confidence score': 'Yes — care plan suggestions only', 'Override AI recommendation': 'No — may decline a suggested care plan item', 'Reopen closed case': 'Yes — own cases', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
   'Intake Coordinator': { 'View member PHI': 'Yes — demographic & eligibility only', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'Yes — unassigned queue', 'Export member-level data': 'No', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
   'Compliance Analyst': { 'View member PHI': 'Yes — audit scope, read-only', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'Yes — read-only', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'Yes — logged', 'Publish configuration change': 'No', 'Administer user accounts': 'No' },
   'System Administrator': { 'View member PHI': 'No — masked', 'Approve authorization': 'No', 'Deny authorization': 'No', 'View AI confidence score': 'No', 'Override AI recommendation': 'No', 'Reopen closed case': 'No', 'Reassign work': 'No', 'Export member-level data': 'No', 'Publish configuration change': 'Yes — with approval', 'Administer user accounts': 'Yes' },
@@ -972,6 +1329,7 @@ export const MEMBER_NAMES: Map<string, string> = (() => {
   const m = new Map<string, string>();
   for (const c of CASE_POOL) m.set(`M${digest(c.member).slice(0, 8).toUpperCase()}`, c.member);
   for (const c of CM_CASE_POOL) m.set(c.memberId, c.member);
+  for (const sm of SCENARIO_MEMBERS) m.set(sm.memberId, sm.name);
   return m;
 })();
 export function memberName(memberId: string): string { return MEMBER_NAMES.get(memberId) ?? memberId; }
