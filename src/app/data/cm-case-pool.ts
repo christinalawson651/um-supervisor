@@ -263,15 +263,44 @@ function buildActive(): CmCaseRec[] {
  *  shaped fields are fixed — so they behave like any other member in every rollup rather than
  *  being a special case the rest of the app has to know about. */
 function withScenarioMembers(pool: CmCaseRec[]): CmCaseRec[] {
-  const stamp = (owner: string, memberId: string, member: string, dx: string, caseType: CaseType, age: number) => {
+  const stamp = (
+    owner: string, memberId: string, member: string, dx: string, caseType: CaseType, age: number,
+    plan: { opened: string; review: string; template: CarePlanTemplate; goals: CarePlanGoal[] },
+  ) => {
     const i = pool.findIndex((c) => c.careManager === owner);
     if (i < 0) return;
-    pool[i] = { ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType, riskLevel: 'Moderate', acuity: 'Medium', age, pediatric: true };
+    pool[i] = {
+      ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType,
+      riskLevel: 'Moderate', acuity: 'Medium', age, pediatric: true,
+      // The care plan is stamped too, not just identity. Both members carry an ACTIVE plan in the
+      // tenant, and leaving the generated fields underneath had Willis failing the documentation
+      // check on a chart the source system shows as complete — a compliance panel disagreeing with
+      // the record it audits is worse than no panel.
+      carePlanStatus: 'Open', carePlanOpenedDate: plan.opened, carePlanClosedDate: null,
+      carePlanReviewDate: plan.review, carePlanTemplate: plan.template, goals: plan.goals,
+      // Consent and assessment complete the documentation set the tenant shows on both charts.
+      consentExpiresDate: isoDate(addDays(TODAY, 300)),
+    };
   };
+  const goal = (id: string, description: string, status: GoalStatus, interventionStatus: InterventionStatus): CarePlanGoal =>
+    ({ id, description, status, interventionStatus });
+
   stamp('Jessica Mendez, RN', SCENARIO_JADE_ID, 'Pinket, Jade',
-    'Asthma, moderate persistent · RSV exposure risk', 'Complex Case', 2);
+    'Asthma, moderate persistent · RSV exposure risk', 'Complex Case', 2,
+    { opened: '2026-09-05', review: '2026-09-12', template: 'Custom / Other', goals: [
+      goal('JP-G0', 'Remain free of signs of respiratory distress through the RSV season', 'In Progress', 'Active'),
+      goal('JP-G1', 'Close the overdue lead toxicity screening', 'Not Started', 'Active'),
+    ] });
+
+  // Foster Care: Trauma-Informed Care Plan — active, three goals against the two documented
+  // problems, every one carrying an intervention. Matches the tenant's Care Plan tab.
   stamp('K. Malone, LCSW', SCENARIO_WILLIS_ID, 'Williams, Willis',
-    'History of abuse / trauma · nutritional deficit · underimmunization', 'Complex Case', 11);
+    'History of abuse / trauma · nutritional deficit · underimmunization', 'Complex Case', 11,
+    { opened: '2026-09-05', review: '2026-10-05', template: 'Custom / Other', goals: [
+      goal('WW-G0', 'Engage in trauma-focused counselling and demonstrate age-appropriate coping', 'In Progress', 'Active'),
+      goal('WW-G1', 'Measurable improvement in growth and nutrition indicators at next well-child visit', 'In Progress', 'Active'),
+      goal('WW-G2', 'Complete overdue TDAP and meningococcal immunization series', 'Not Started', 'Active'),
+    ] });
   return pool;
 }
 

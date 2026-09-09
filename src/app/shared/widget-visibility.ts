@@ -22,15 +22,33 @@ export class WidgetVisibility {
     this.enabled.set(this.load());
   }
 
+  /** Saved layouts record which widgets EXISTED when they were saved, not just which were on.
+   *  Without that, a widget added in a later release is indistinguishable from one the user turned
+   *  off, so it stays hidden forever for everyone with a saved layout — they never learn it shipped.
+   *  Anything in the current defaults that the saved layout never knew about is treated as new and
+   *  defaults to visible; anything it knew about and left out stays off, because that was a choice. */
   private load(): string[] {
     try {
       const raw = localStorage.getItem(this.key);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Legacy format was a bare array of enabled ids, with no record of what was known.
+        const saved: { enabled: string[]; known: string[] } = Array.isArray(parsed)
+          ? { enabled: parsed, known: parsed }
+          : parsed;
+        const fresh = this.defaultIds.filter((id) => !saved.known.includes(id));
+        return [...saved.enabled.filter((id) => this.defs.some((d) => d.id === id)), ...fresh];
+      }
     } catch {}
     return [...this.defaultIds];
   }
   private persist() {
-    try { localStorage.setItem(this.key, JSON.stringify(this.enabled())); } catch {}
+    try {
+      localStorage.setItem(this.key, JSON.stringify({
+        enabled: this.enabled(),
+        known: this.defs.map((d) => d.id),
+      }));
+    } catch {}
   }
 
   /** Live-previews from the draft while the picker is open (matches the "toggle to preview" hint), otherwise the saved/committed list. */
