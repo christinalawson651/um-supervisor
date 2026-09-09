@@ -21,6 +21,7 @@ const CM_AUDIT_WIDGETS = [
   { id: 'byManager', title: 'Pass Rate by Care Manager' },
   { id: 'elements', title: 'Rubric Element Findings' },
   { id: 'irr', title: 'Inter-Rater Reliability' },
+  { id: 'specialty', title: 'Compliance by Specialty' },
   { id: 'regCompliance', title: 'Regulatory Compliance by Program' },
   { id: 'actions', title: 'Corrective Actions' },
   { id: 'flags', title: 'Audit Flags' },
@@ -57,6 +58,7 @@ interface CmAuditFlag {
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
+import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompliance, specialtyOf } from '../data/cm-compliance';
 @Component({
   selector: 'app-cm-audit-tab',
   standalone: true,
@@ -205,6 +207,48 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           </div>
         } @empty { <div class="empty">No files were blind-rescored in this window.</div> }
       </div>
+    </div>
+    }
+
+    @if (!isHidden('specialty')) {
+    <div class="panel mt-6">
+      <div class="panel-pad tbl-head"><h3 class="panel-title">Compliance by Specialty</h3>
+        <span class="section-note sm">Timeliness, chart completeness and follow-through, per specialty. Line of business answers which regulator's clock applies; specialty answers which team is meeting it — and a supervisor can only assign work against the second. A case can be timely and empty, or complete and late, so the three are measured separately rather than blended into one number.</span>
+        <z-widget-actions (exportClick)="exportSpecialty()" (removeClick)="hide('specialty')"></z-widget-actions>
+      </div>
+      <table class="z-table">
+        <thead><tr>
+          <th>Specialty</th><th class="num">Members</th>
+          <th class="agree-col">TAT Compliance</th>
+          <th class="agree-col">Documentation</th>
+          <th class="agree-col">To-Do Completion</th>
+          <th class="num">Overdue</th>
+          <th class="num">All Three</th>
+        </tr></thead>
+        <tbody>
+          @for (r of specialty(); track r.specialty) {
+            <tr class="clickable" (click)="drillSpecialty(r)">
+              <td class="strong">{{ r.specialty }}</td>
+              <td class="num">{{ r.members }}</td>
+              <td class="agree-col">
+                <span class="ibar-track sm"><span class="ibar-fill" [class.amber]="r.tatPct < passTarget" [class.teal]="r.tatPct >= passTarget" [style.width.%]="r.tatPct"></span></span>
+                <span class="mpct">{{ r.tatPct }}%</span>
+              </td>
+              <td class="agree-col">
+                <span class="ibar-track sm"><span class="ibar-fill" [class.amber]="r.docPct < passTarget" [class.teal]="r.docPct >= passTarget" [style.width.%]="r.docPct"></span></span>
+                <span class="mpct">{{ r.docPct }}%</span>
+              </td>
+              <td class="agree-col">
+                <span class="ibar-track sm"><span class="ibar-fill" [class.amber]="r.todoPct < passTarget" [class.teal]="r.todoPct >= passTarget" [style.width.%]="r.todoPct"></span></span>
+                <span class="mpct">{{ r.todosComplete }}/{{ r.todosTotal }}</span>
+              </td>
+              <td class="num"><b [class.warn]="r.todosOverdue > 0">{{ r.todosOverdue }}</b></td>
+              <td class="num"><b [class.warn]="r.allThreePct < passTarget">{{ r.allThreePct }}%</b></td>
+            </tr>
+          } @empty { <tr><td colspan="7" class="empty">No cases in scope.</td></tr> }
+        </tbody>
+      </table>
+      <div class="foot-note panel-pad">A member counts under "All Three" only where the regulatory clocks were met, the chart carries consent, assessment, an open care plan and goals, and no task on the case is past its due date.</div>
     </div>
     }
 
@@ -605,6 +649,37 @@ export class CmAuditTab {
       rows: this.irrByAuditor().map((a) => [a.auditor, a.rescored, a.agree, a.pct]),
     });
   }
+  // ---- compliance by specialty -----------------------------------------------------------------
+  readonly specialty = computed(() => specialtyCompliance(this.scopedCases()));
+
+  private readonly SPECIALTY_COLUMNS = ['Member', 'Member ID', 'Specialty', 'Care Manager', 'LOB',
+    'TAT Compliant', 'Documentation Complete', 'Documentation Missing', 'To-Dos', 'Completed', 'Overdue'];
+  private specialtyRow(m: MemberCompliance): (string | number)[] {
+    return [m.member, m.memberId, m.specialty, m.careManager, m.lob,
+      m.tat ? 'Yes' : 'No', m.doc ? 'Yes' : 'No', m.docMissing.join('; ') || '—',
+      m.todosTotal, m.todosComplete, m.todosOverdue];
+  }
+  drillSpecialty(r: SpecialtyCompliance) {
+    const rows = memberCompliance(this.scopedCases().filter((c) => specialtyOf(c) === r.specialty));
+    this.ix.openExplorer({
+      title: `${r.specialty} — Compliance Detail`,
+      context: `${r.members} member(s) · TAT ${r.tatPct}% · documentation ${r.docPct}% · to-dos ${r.todosComplete}/${r.todosTotal}${r.todosOverdue ? ` · ${r.todosOverdue} overdue` : ''}`,
+      columns: this.SPECIALTY_COLUMNS, rows: rows.map((m) => this.specialtyRow(m)),
+      exportName: `cm-compliance-${slug(r.specialty)}${TODAY_ISO}`,
+      memberColumn: 0,
+    });
+  }
+  exportSpecialty() {
+    this.exporter.open({
+      title: 'Compliance by Specialty', name: `cm-compliance-by-specialty${TODAY_ISO}`,
+      columns: ['Specialty', 'Members', 'TAT Compliant', 'TAT %', 'Documentation Complete', 'Documentation %',
+        'To-Dos', 'To-Dos Complete', 'To-Do %', 'Overdue', 'All Three', 'All Three %'],
+      rows: this.specialty().map((r) => [r.specialty, r.members, r.tatCompliant, r.tatPct,
+        r.docCompliant, r.docPct, r.todosTotal, r.todosComplete, r.todoPct, r.todosOverdue,
+        r.allThree, r.allThreePct]),
+    });
+  }
+
   exportRegCompliance() {
     this.exporter.open({
       title: 'Regulatory Compliance by Program', name: `cm-audit-reg-compliance${TODAY_ISO}`,
