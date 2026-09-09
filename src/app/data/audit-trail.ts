@@ -14,6 +14,7 @@ import { CASE_POOL, CaseRec, NURSES } from './case-pool';
 import { CM_CASE_POOL, CARE_MANAGERS } from './cm-case-pool';
 import { TODAY, MD_REVIEWERS, lobOf } from './case-fields';
 import { AI_DECISIONS } from './ai-oversight';
+import { registerScenarioCareTeam, CareTeamMember, ExternalProgramLink } from './cm-care-team';
 
 // ---------------------------------------------------------------------------------------------
 // Users — the actor roster every event attributes to. Roles here are ACCESS roles (what the system
@@ -1074,6 +1075,31 @@ function scenarioEvents(): Draft[] {
       screen: 'Provider Directory — Medical Home Search', control: 'Checkbox', reasonCode: 'SDOH-COLOCATED-REFERRAL',
     }));
   });
+  // ---- external programme linkage -------------------------------------------------------------
+  // FosterConnect is a community organisation, not a plan programme: the plan refers and tracks,
+  // FosterConnect decides and delivers. Logged as a linkage so the Programs view can show it
+  // without it polluting plan enrolment counts.
+  out.push(wBase({
+    timestamp: stamp(day(19), 0, 624), action: 'External program linked',
+    field: 'External program', before: null,
+    after: 'FosterConnect (community-based organization) — clothing, food assistance, respite care',
+    screen: 'Care Management — Programs', control: 'Lookup',
+    reasonCode: 'EXT-PROGRAM-REFERRAL · plan refers and tracks; organisation delivers',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(19), 0, 627), action: 'Care team member added',
+    field: 'Care Team', before: null,
+    after: 'Fred Flint, SW — FosterConnect · 123-456-7777 · External program contact',
+    screen: 'Care Management — Care Team', control: 'Free text',
+    reasonCode: 'CARE-TEAM-EXTERNAL-CONTACT',
+  }));
+  out.push(wBase({
+    timestamp: stamp(day(11), 0, 590), action: 'External program service confirmed',
+    field: 'FosterConnect', before: 'Referred', after: 'Engaged — clothing and food assistance delivered; respite scheduled',
+    screen: 'Care Management — Programs', control: 'Dropdown',
+    reasonCode: 'EXT-PROGRAM-CLOSED-LOOP · organisation reports back',
+  }));
+
   out.push(wBase({
     timestamp: stamp(day(18), 0, 545), action: 'Case note recorded', field: 'Trauma-Informed Care note',
     before: null, after: 'Safety confirmed · age-appropriate explanation given · child and caregiver offered scheduling choice · strengths-based language',
@@ -1126,6 +1152,46 @@ function scenarioEvents(): Draft[] {
 
   return out;
 }
+
+// The specification names these people, and a demo that says "Fred Flint, FosterConnect" while the
+// screen shows a generated name is a demo nobody believes. Registered against the scenario member
+// so every care-team surface resolves to the same names the workflow walk-through used.
+(function registerScenarioTeams() {
+  const teamDate = (() => { const d = new Date(TODAY); d.setDate(d.getDate() - 21); return d.toISOString().slice(0, 10); })();
+  const linkDate = (() => { const d = new Date(TODAY); d.setDate(d.getDate() - 19); return d.toISOString().slice(0, 10); })();
+  const willisTeam: CareTeamMember[] = [
+    { memberId: SCEN_WILLIS, name: 'K. Malone, LCSW', relation: 'Primary case owner',
+      organization: 'Zyter TruCare — Care Management', phone: '214-555-0121', internal: true, addedDate: teamDate },
+    { memberId: SCEN_WILLIS, name: 'J. Mendez, RN (CCM)', relation: 'Secondary care manager',
+      organization: 'Zyter TruCare — Care Management', phone: '214-555-0134', internal: true, addedDate: teamDate },
+    { memberId: SCEN_WILLIS, name: 'Fred Flint, SW', relation: 'External program contact',
+      organization: 'FosterConnect', phone: '123-456-7777', internal: false, addedDate: linkDate },
+    { memberId: SCEN_WILLIS, name: 'Foster Parent B', relation: 'Guardian / caregiver',
+      organization: 'Foster / Guardian Home', phone: '214-555-0188', internal: false, addedDate: teamDate },
+    { memberId: SCEN_WILLIS, name: 'Dr. Owen Hartley', relation: 'Primary care provider',
+      organization: 'Foster Care / Wraparound Medical Home', phone: '214-555-0143', internal: false, addedDate: linkDate },
+    { memberId: SCEN_WILLIS, name: 'M. Okonjo', relation: 'School liaison',
+      organization: 'Independent School District', phone: '214-555-0155', internal: false, addedDate: teamDate },
+    { memberId: SCEN_WILLIS, name: 'C. Barrett, Esq.', relation: 'Guardian ad Litem',
+      organization: 'Court Appointed Special Advocates', phone: '214-555-0166', internal: false, addedDate: teamDate },
+  ];
+  const willisLinks: ExternalProgramLink[] = [{
+    memberId: SCEN_WILLIS, programId: 'EXT-FOSTERCONNECT', referredDate: linkDate,
+    referredBy: 'K. Malone, LCSW', status: 'Engaged',
+    lastConfirmed: (() => { const d = new Date(TODAY); d.setDate(d.getDate() - 11); return d.toISOString().slice(0, 10); })(),
+  }];
+  registerScenarioCareTeam(SCEN_WILLIS, willisTeam, willisLinks);
+
+  const jadeTeam: CareTeamMember[] = [
+    { memberId: SCEN_JADE, name: 'J. Mendez, RN (CCM)', relation: 'Primary case owner',
+      organization: 'Zyter TruCare — Care Management', phone: '214-555-0134', internal: true, addedDate: teamDate },
+    { memberId: SCEN_JADE, name: 'Dr. Priya Raman', relation: 'Primary care provider',
+      organization: 'Northside Pediatrics', phone: '214-555-0129', internal: false, addedDate: teamDate },
+    { memberId: SCEN_JADE, name: 'Parent / Guardian', relation: 'Guardian / caregiver',
+      organization: 'Household', phone: '214-555-0173', internal: false, addedDate: teamDate },
+  ];
+  registerScenarioCareTeam(SCEN_JADE, jadeTeam, []);
+})();
 
 function buildEvents(): AuditEvent[] {
   const drafts: Draft[] = [

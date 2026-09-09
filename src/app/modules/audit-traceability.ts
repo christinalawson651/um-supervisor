@@ -20,6 +20,7 @@ import { Interaction } from '../shared/interaction';
 import { Nav } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
 import { LOBS, daysAgo, TODAY_ISO } from '../data/case-fields';
+import { careTeamFor, externalLinksFor, EXTERNAL_PROGRAM_BY_ID } from '../data/cm-care-team';
 import { diffWords, DiffOp, EditKind, EDIT_KINDS } from '../data/ai-oversight';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Disposition, DispositionCertificate, DISPOSITION_APPROVERS } from '../shared/disposition';
@@ -938,6 +939,40 @@ const govSection = governanceSection;
               <button class="btn outline sm" (click)="drillMember(m)">Open in explorer</button>
             </div>
 
+            @if (careTeam().length) {
+              <div class="panel-pad teamstrip">
+                <span class="albl">Care team</span>
+                @for (t of careTeam(); track t.name + t.relation) {
+                  <span class="tm" [class.ext]="!t.internal">
+                    <b>{{ t.name }}</b>
+                    <span class="tmr">{{ t.relation }}</span>
+                    <span class="sub">{{ t.organization }} · {{ t.phone }}</span>
+                    @if (!t.internal) { <span class="tmx">external</span> }
+                  </span>
+                }
+              </div>
+            }
+            @if (externalLinks().length) {
+              <div class="panel-pad extstrip">
+                <span class="albl">Community programs</span>
+                @for (l of externalLinks(); track l.programId) {
+                  @if (programOf(l.programId); as p) {
+                    <span class="ext-card">
+                      <b>{{ p.name }}</b>
+                      <span class="sub">{{ p.sponsor }} · {{ p.services.join(', ') }}</span>
+                      <span class="sub">{{ p.contactName }} · {{ p.contactPhone }}</span>
+                      <span class="lst" [attr.data-s]="l.status">{{ l.status }}</span>
+                      @if (l.lastConfirmed) {
+                        <span class="sub">confirmed {{ l.lastConfirmed }}</span>
+                      } @else {
+                        <span class="sub warn">not confirmed back — {{ p.reportsBack ? 'awaiting report' : 'organisation does not report delivery' }}</span>
+                      }
+                    </span>
+                  }
+                }
+              </div>
+            }
+
             <div class="panel-pad actorbar">
               <span class="albl">Accounts on this member</span>
               <button class="qp" [class.on]="!memberActor()" (click)="memberActor.set('')">All<span class="qn">{{ m.events }}</span></button>
@@ -1639,6 +1674,27 @@ const govSection = governanceSection;
     .xlink { display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:12.5px; color:var(--gray-500);
              background:var(--teal-50); border-bottom:1px solid var(--border); }
     .xlink b { color:var(--ink); }
+    .teamstrip, .extstrip { display:flex; align-items:stretch; flex-wrap:wrap; gap:8px;
+                            border-bottom:1px solid var(--border); }
+    .teamstrip .albl, .extstrip .albl { align-self:center; }
+    .tm { display:flex; flex-direction:column; gap:1px; border:1px solid var(--border); border-radius:8px;
+          padding:6px 10px; background:#fff; min-width:170px; }
+    .tm.ext { border-style:dashed; background:var(--gray-50, #f9fafb); }
+    .tm b { font-size:12.5px; }
+    .tmr { font-size:11px; font-weight:600; color:var(--teal-700); }
+    .tm .sub { font-size:10.5px; }
+    .tmx { font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+           color:var(--gray-500); }
+    .ext-card { display:flex; flex-direction:column; gap:1px; border:1px solid var(--teal-600);
+                border-radius:8px; padding:7px 11px; background:var(--teal-50); min-width:230px; }
+    .ext-card b { font-size:12.5px; }
+    .ext-card .sub { font-size:10.5px; }
+    .ext-card .sub.warn { color:var(--amber-fg); font-weight:600; }
+    .lst { align-self:flex-start; font-size:9.5px; font-weight:700; letter-spacing:.05em;
+           text-transform:uppercase; padding:1px 6px; border-radius:3px; margin-top:2px;
+           background:var(--gray-100); color:var(--gray-500); }
+    .lst[data-s="Engaged"], .lst[data-s="Completed"] { background:var(--green-bg); color:var(--green-fg); }
+    .lst[data-s="Declined"], .lst[data-s="Unable to contact"] { background:var(--amber-bg); color:var(--amber-fg); }
     .actorbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--border); background:var(--gray-50, #f9fafb); }
     .albl { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--gray-500); margin-right:4px; }
     .qp { border:1px solid var(--border); background:#fff; border-radius:999px; padding:3px 10px; font:inherit;
@@ -2803,6 +2859,13 @@ export class AuditTraceability {
     this.openThreads.set(new Set(first ? [first.correlationId] : []));
   }
   clearMember() { this.selectedMember.set(''); this.memberActor.set(''); }
+
+  /** Who is actually around this member, internal and external together. A team list that stopped
+   *  at the plan's own staff could not answer how a single source of truth is kept across
+   *  agencies — the person a foster child sees most may not work for the plan at all. */
+  readonly careTeam = computed(() => (this.selectedMember() ? careTeamFor(this.selectedMember()) : []));
+  readonly externalLinks = computed(() => (this.selectedMember() ? externalLinksFor(this.selectedMember()) : []));
+  programOf(id: string) { return EXTERNAL_PROGRAM_BY_ID.get(id) ?? null; }
   /** Cross-pivot jump: from one account's row straight to one member's full record, with that
    *  account pre-selected so you see their part first and can clear it to see everyone else's. */
   openMemberFromUser(memberId: string, actorId: string) {
