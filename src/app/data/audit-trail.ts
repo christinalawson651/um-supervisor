@@ -846,31 +846,60 @@ function scenarioEvents(): Draft[] {
     correlationId: jCorr, reasonCode: null, phi: true, outcome: 'Success', ...over,
   });
 
+  // ---- EPSDT periodicity history --------------------------------------------------------------
+  // The specification's timeline is written in the member's AGE, not in calendar dates, because
+  // that is how a periodicity schedule works: the 24-month lead screening is due at 24 months
+  // whenever that falls. Dated off a date of birth so the ages stay true as the demo clock moves.
+  //
+  // The completed visits matter as much as the missed one. A care gap on its own reads as a
+  // disengaged family; the same gap sitting after four visits that all happened on time reads as
+  // one screening that slipped, which is a different conversation with a different intervention.
+  const jadeDob = (() => { const d = new Date(TODAY); d.setMonth(d.getMonth() - 28); d.setDate(d.getDate() - 9); return d; })();
+  const atAge = (months: number) => { const d = new Date(jadeDob); d.setMonth(d.getMonth() + months); return d; };
+  ([[2, '2-month'], [4, '4-month'], [6, '6-month'], [12, '12-month']] as [number, string][])
+    .forEach(([m, label], k) => {
+      out.push(jBase({
+        timestamp: stamp(atAge(m), 0, 540 + k), category: 'Clinical Decision',
+        action: 'EPSDT periodic screening completed', entityType: 'CM Case', entityId: SCEN_JADE,
+        channel: 'Batch Interface', actor: svc.name, actorId: svc.userId, actorRole: svc.role,
+        sourceIp: '172.19.4.11', correlationId: jCmCorr,
+        field: `${label} well-child visit`, before: 'Due', after: 'Complete — on schedule',
+        reasonCode: `EPSDT-PERIODICITY-${m}MO`,
+      }));
+    });
+
   // Enrolment is a rule firing, not a person deciding — which is exactly what the programme
   // oversight question asks about, so it is attributed to the rule and carries its name.
   out.push(jBase({
-    timestamp: stamp(day(150), 0, 486), category: 'Case Management', action: 'Program enrollment — auto',
+    timestamp: stamp(atAge(23), 0, 486), category: 'Case Management', action: 'Program enrollment — auto',
     entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
     field: 'Program', before: null, after: 'Care Management — Pediatric EPSDT · Complex Case',
     reasonCode: 'RULE-EPSDT-PERIODICITY-v2.1',
   }));
   out.push(jBase({
-    timestamp: stamp(day(150), 0, 488), action: 'Case owner assigned', entityType: 'CM Case', entityId: SCEN_JADE,
+    timestamp: stamp(atAge(23), 0, 488), action: 'Case owner assigned', entityType: 'CM Case', entityId: SCEN_JADE,
     correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, channel: 'System Rule', sourceIp: '172.19.4.11',
     field: 'Case Owner', before: 'Unassigned', after: mendez.name, reasonCode: 'RULE-CM-ASSIGNMENT-PEDS',
   }));
   // The care gap. Auto-detected, and it stays open across everything that follows — which is the
   // point the Timeline makes: a denial did not close the gap that was already there.
   out.push(jBase({
-    timestamp: stamp(day(120), 0, 502), category: 'Clinical Decision', action: 'Care gap identified',
+    timestamp: stamp(atAge(24), 0, 502), category: 'Clinical Decision', action: 'Care gap identified',
     entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
     field: 'Lead Toxicity Screening', before: 'Due at 24 months', after: 'MISSED — no claim or result on file',
     reasonCode: 'EPSDT-PERIODICITY-LEAD-24MO', outcome: 'Denied',
   }));
   out.push(jBase({
-    timestamp: stamp(day(120), 0, 505), action: 'Care gap routed for outreach', entityType: 'CM Case', entityId: SCEN_JADE,
+    timestamp: stamp(atAge(24), 0, 504), action: 'Care gap dismissal blocked', entityType: 'CM Case', entityId: SCEN_JADE,
+    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    correlationId: jCmCorr, field: 'Lead Toxicity Screening', before: 'Dismissal attempted',
+    after: 'Blocked — an EPSDT-required screening cannot be cleared without care manager documentation',
+    reasonCode: 'EPSDT-GAP-NO-SILENT-DISMISSAL', outcome: 'Denied',
+  }));
+  out.push(jBase({
+    timestamp: stamp(atAge(24), 0, 505), action: 'Care gap routed for outreach', entityType: 'CM Case', entityId: SCEN_JADE,
     correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, channel: 'System Rule', sourceIp: '172.19.4.11',
     field: 'Task', before: null, after: `Outreach task queued to ${mendez.name}`, reasonCode: 'TASK-CARE-GAP-OUTREACH',
   }));
@@ -1047,15 +1076,27 @@ function scenarioEvents(): Draft[] {
     field: 'Task', before: null, after: 'Contact foster placement / caseworker — trauma-informed outreach SLA',
     reasonCode: 'TASK-TRAUMA-INFORMED-OUTREACH',
   }));
-  // Placement history — the residence chain the specification calls out.
+  // Placement history — BOTH moves the specification calls out, at the dates it gives. The first
+  // removal predates the plan's involvement and is carried as history rather than as something the
+  // plan did: continuity of care and child-welfare reporting both need the whole chain, and a
+  // residence history that starts when the referral arrived is not a chronology, it is a fragment.
+  const onDate = (iso: string) => new Date(`${iso}T00:00:00`);
   out.push(wBase({
-    timestamp: stamp(day(20), 0, 600), action: 'Field edited', field: 'Current Residence',
-    before: 'Emergency Foster Home A (non-relative)', after: 'Foster / Guardian Home — Foster Parent B (guardian)',
+    timestamp: stamp(onDate('2024-12-30'), 0, 600), action: 'Placement change recorded',
+    field: 'Residence', before: 'Birth Home — birth parent(s)',
+    after: 'Emergency Foster Home A (non-relative) — removed by child welfare intervention',
+    screen: 'Member 360 — Demographics', control: 'Lookup',
+    reasonCode: 'PLACEMENT-CHANGE-1 · historical, recorded from child welfare record',
+  }));
+  out.push(wBase({
+    timestamp: stamp(onDate('2026-01-03'), 0, 604), action: 'Placement change recorded',
+    field: 'Residence', before: 'Emergency Foster Home A (non-relative)',
+    after: 'Foster / Guardian Home — Foster Parent B (guardian)',
     screen: 'Member 360 — Demographics', control: 'Lookup',
     reasonCode: 'PLACEMENT-CHANGE-2 · prior placements retained in residence history',
   }));
   out.push(wBase({
-    timestamp: stamp(day(20), 0, 604), action: 'Field edited', field: 'Address-dependent workflows',
+    timestamp: stamp(day(20), 0, 608), action: 'Field edited', field: 'Address-dependent workflows',
     before: 'Foster Home A district', after: 'Re-matched — medical home, school district, correspondence mailing',
     screen: 'Member 360 — Demographics', control: 'Lookup', reasonCode: 'ADDRESS-DEPENDENT-REMATCH',
   }));
@@ -1102,6 +1143,17 @@ function scenarioEvents(): Draft[] {
     reasonCode: 'EXT-PROGRAM-CLOSED-LOOP · organisation reports back',
   }));
 
+  // Still outstanding, and shown as outstanding. A demo timeline where every item is complete is a
+  // timeline nobody believes, and "what is still open on this child" is the question the oversight
+  // act exists to answer.
+  out.push(wBase({
+    timestamp: stamp(day(17), 0, 530), action: 'Suggested action pending',
+    field: 'Child Welfare Screening', before: null,
+    after: 'Standardized child welfare / safety screening — to be scheduled',
+    screen: 'Care Management — Suggested Actions', control: 'Checkbox',
+    reasonCode: 'CHILD-WELFARE-SCREENING-DUE', outcome: 'Denied',
+  }));
+
   out.push(wBase({
     timestamp: stamp(day(18), 0, 545), action: 'Case note recorded', field: 'Trauma-Informed Care note',
     before: null, after: 'Safety confirmed · age-appropriate explanation given · child and caregiver offered scheduling choice · strengths-based language',
@@ -1111,7 +1163,7 @@ function scenarioEvents(): Draft[] {
   out.push(wBase({
     timestamp: stamp(day(14), 0, 570), action: 'ICT meeting convened', field: 'ICT Meeting #1',
     before: null,
-    after: 'Attendees: Social Worker, RN Care Manager, Foster Parent B, School Liaison, Medical Director — placement stability, immunization plan, nutrition concern; dietitian referral assigned',
+    after: 'Attendees: Medical Director, Social Worker, RN Care Manager, Foster Parent B, School Liaison — placement stability, same-day visit outcome, immunization plan, nutrition concern; dietitian referral assigned',
     screen: 'Care Management — ICT Meetings', control: 'Free text', reasonCode: 'ICT-MEETING-DOCUMENTED',
   }));
   const wSuggestions: [string, string, string][] = [
@@ -1146,9 +1198,9 @@ function scenarioEvents(): Draft[] {
     screen: 'Care Plan — Activity Feed', control: 'Free text', reasonCode: 'CAREPLAN-EDITED',
   }));
   out.push(wBase({
-    timestamp: stamp(day(7), 0, 566), action: 'ICT meeting convened', field: 'ICT Meeting #2',
+    timestamp: stamp(day(7), 0, 566), action: 'ICT meeting scheduled', field: 'ICT Meeting #2',
     before: null,
-    after: 'Attendees: Social Worker, RN Care Manager, Foster Parent B, Guardian ad Litem, Behavioral Health Clinician — counselling engagement, school adjustment, growth monitoring; next ICT in 60 days',
+    after: 'Scheduled — Social Worker, RN Care Manager, Foster Parent B, Guardian ad Litem, Behavioral Health Clinician; counselling engagement, school adjustment, growth monitoring',
     screen: 'Care Management — ICT Meetings', control: 'Free text', reasonCode: 'ICT-MEETING-DOCUMENTED',
   }));
 
