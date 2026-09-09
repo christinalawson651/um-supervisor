@@ -154,9 +154,9 @@ function buildUsers(): SystemUser[] {
   push('Renee Alvarez', 'CM Supervisor', 'Care Management', [], [], [], 'Team caseload');
   push('Daniel Okafor', 'Appeals Reviewer', 'Appeals & Grievances', ['TX'], [], [], 'Appeal scope');
   // Named in the workflow specification, and carrying the scope those programmes actually imply.
-  push('J. Mendez, RN (CCM)', 'Care Manager', 'Care Management', ['TX'],
+  push('Jessica Mendez, RN', 'Care Manager', 'Care Management', ['MO'],
     ['Medicaid'], ['Pediatric EPSDT'], 'Programme caseload');
-  push('K. Malone, LCSW', 'Program Specialist (Social Worker)', 'Care Management', ['TX'],
+  push('K. Malone, LCSW', 'Program Specialist (Social Worker)', 'Care Management', ['MO'],
     ['Medicaid'], ['Foster Care Coordination'], 'Programme caseload');
   push('Tanya Brooks', 'Intake Coordinator', 'Intake', [], [], [], 'Demographic & eligibility only');
   push('Priya Shah, RN (QI)', 'Compliance Analyst', 'Quality & Compliance', [], [], [], 'All members — audit read-only');
@@ -824,7 +824,7 @@ function scenarioEvents(): Draft[] {
   const u = (name: string) => USER_BY_NAME.get(name)!;
   const svc = u('svc_trucare_hl7');
   const intake = u('Tanya Brooks');
-  const mendez = u('J. Mendez, RN (CCM)');
+  const mendez = u('Jessica Mendez, RN');
   const malone = u('K. Malone, LCSW');
   const md = u(MD_REVIEWERS[0]);
   const nurse = u(NURSES[0]);
@@ -846,63 +846,114 @@ function scenarioEvents(): Draft[] {
     correlationId: jCorr, reasonCode: null, phi: true, outcome: 'Success', ...over,
   });
 
-  // ---- EPSDT periodicity history --------------------------------------------------------------
-  // The specification's timeline is written in the member's AGE, not in calendar dates, because
-  // that is how a periodicity schedule works: the 24-month lead screening is due at 24 months
-  // whenever that falls. Dated off a date of birth so the ages stay true as the demo clock moves.
+  // ---- care-management spine ---------------------------------------------------------------
+  // Dated to match the tenant's own Activity feed, event for event. The oversight act only works
+  // if it is demonstrably the SAME record as the screen it follows — a trail carrying events the
+  // source system does not have is worse than one carrying fewer, because the first thing anyone
+  // asks is where the extra ones came from.
   //
-  // The completed visits matter as much as the missed one. A care gap on its own reads as a
-  // disengaged family; the same gap sitting after four visits that all happened on time reads as
-  // one screening that slipped, which is a different conversation with a different intervention.
-  const jadeDob = (() => { const d = new Date(TODAY); d.setMonth(d.getMonth() - 28); d.setDate(d.getDate() - 9); return d; })();
-  const atAge = (months: number) => { const d = new Date(jadeDob); d.setMonth(d.getMonth() + months); return d; };
-  ([[2, '2-month'], [4, '4-month'], [6, '6-month'], [12, '12-month']] as [number, string][])
-    .forEach(([m, label], k) => {
-      out.push(jBase({
-        timestamp: stamp(atAge(m), 0, 540 + k), category: 'Clinical Decision',
-        action: 'EPSDT periodic screening completed', entityType: 'CM Case', entityId: SCEN_JADE,
-        channel: 'Batch Interface', actor: svc.name, actorId: svc.userId, actorRole: svc.role,
-        sourceIp: '172.19.4.11', correlationId: jCmCorr,
-        field: `${label} well-child visit`, before: 'Due', after: 'Complete — on schedule',
-        reasonCode: `EPSDT-PERIODICITY-${m}MO`,
-      }));
-    });
-
-  // Enrolment is a rule firing, not a person deciding — which is exactly what the programme
-  // oversight question asks about, so it is attributed to the rule and carries its name.
+  // Deliberately NOT carried: the month 2 / 4 / 6 / 12 well-child visits the written specification
+  // describes. The loaded tenant shows five longitudinal events, all in August and September 2026,
+  // and inventing four years of periodicity history here would put Pulse visibly ahead of the
+  // system it is meant to be auditing. Worth loading into the tenant — a care gap after four
+  // on-time visits reads very differently from a care gap alone — but it belongs there first.
+  const onDay = (iso: string) => new Date(`${iso}T00:00:00`);
   out.push(jBase({
-    timestamp: stamp(atAge(23), 0, 486), category: 'Case Management', action: 'Program enrollment — auto',
-    entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
+    timestamp: stamp(onDay('2026-08-04'), 0, 580), category: 'Case Management',
+    action: 'EPSDT enrollment scheduled', entityType: 'CM Case', entityId: SCEN_JADE,
+    channel: 'System Rule', correlationId: jCmCorr,
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Program', before: null, after: 'Care Management — Pediatric EPSDT · Complex Case',
+    field: 'Scheduled activity', before: null, after: 'EPSDT Enrollment',
     reasonCode: 'RULE-EPSDT-PERIODICITY-v2.1',
   }));
   out.push(jBase({
-    timestamp: stamp(atAge(23), 0, 488), action: 'Case owner assigned', entityType: 'CM Case', entityId: SCEN_JADE,
-    correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, channel: 'System Rule', sourceIp: '172.19.4.11',
-    field: 'Case Owner', before: 'Unassigned', after: mendez.name, reasonCode: 'RULE-CM-ASSIGNMENT-PEDS',
-  }));
-  // The care gap. Auto-detected, and it stays open across everything that follows — which is the
-  // point the Timeline makes: a denial did not close the gap that was already there.
-  out.push(jBase({
-    timestamp: stamp(atAge(24), 0, 502), category: 'Clinical Decision', action: 'Care gap identified',
-    entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
+    timestamp: stamp(onDay('2026-08-22'), 0, 321), category: 'Clinical Decision',
+    action: 'EPSDT screening scheduled', entityType: 'CM Case', entityId: SCEN_JADE,
+    channel: 'System Rule', correlationId: jCmCorr,
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Lead Toxicity Screening', before: 'Due at 24 months', after: 'MISSED — no claim or result on file',
+    field: 'Lead Toxicity Screening', before: null, after: 'Scheduled — due 2026-08-29',
+    reasonCode: 'EPSDT-PERIODICITY-LEAD-24MO',
+  }));
+  out.push(jBase({
+    timestamp: stamp(onDay('2026-08-29'), 0, 540), category: 'Clinical Decision',
+    action: 'Care gap identified', entityType: 'CM Case', entityId: SCEN_JADE,
+    channel: 'System Rule', correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Lead Toxicity Screening', before: 'Due 2026-08-29',
+    after: 'OVERDUE — open care gap requires care-manager review',
     reasonCode: 'EPSDT-PERIODICITY-LEAD-24MO', outcome: 'Denied',
   }));
   out.push(jBase({
-    timestamp: stamp(atAge(24), 0, 504), action: 'Care gap dismissal blocked', entityType: 'CM Case', entityId: SCEN_JADE,
-    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    correlationId: jCmCorr, field: 'Lead Toxicity Screening', before: 'Dismissal attempted',
+    timestamp: stamp(onDay('2026-08-29'), 0, 542), action: 'Care gap dismissal blocked',
+    entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Lead Toxicity Screening', before: 'Dismissal attempted',
     after: 'Blocked — an EPSDT-required screening cannot be cleared without care manager documentation',
     reasonCode: 'EPSDT-GAP-NO-SILENT-DISMISSAL', outcome: 'Denied',
   }));
   out.push(jBase({
-    timestamp: stamp(atAge(24), 0, 505), action: 'Care gap routed for outreach', entityType: 'CM Case', entityId: SCEN_JADE,
-    correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, channel: 'System Rule', sourceIp: '172.19.4.11',
-    field: 'Task', before: null, after: `Outreach task queued to ${mendez.name}`, reasonCode: 'TASK-CARE-GAP-OUTREACH',
+    timestamp: stamp(onDay('2026-09-04'), 0, 600), category: 'Case Management',
+    action: 'Program enrollment — auto', entityType: 'CM Case', entityId: SCEN_JADE,
+    channel: 'System Rule', correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Program', before: null, after: 'Care Management — Pediatric EPSDT · Status: Active',
+    reasonCode: 'RULE-EPSDT-PERIODICITY-v2.1',
   }));
+  out.push(jBase({
+    timestamp: stamp(onDay('2026-09-04'), 0, 1200), category: 'Clinical Decision',
+    action: 'Clinical metric recorded', entityType: 'CM Case', entityId: SCEN_JADE,
+    correlationId: jCmCorr, actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role,
+    sourceIp: ipFor(mendez, 4), field: 'Weight', before: null, after: 'Recorded',
+    screen: 'Member 360 — Key Clinical Metrics', control: 'Number', reasonCode: 'METRIC-RECORDED',
+  }));
+  out.push(jBase({
+    timestamp: stamp(onDay('2026-09-05'), 0, 0), category: 'Case Management',
+    action: 'Complex care case opened', entityType: 'CM Case', entityId: SCEN_JADE,
+    correlationId: jCmCorr, actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role,
+    sourceIp: ipFor(mendez, 4), field: 'Case', before: null,
+    after: 'EPSDT Complex Care 24-36 months', screen: 'Care Management — Case', control: 'Dropdown',
+    reasonCode: 'CASE-OPENED-COMPLEX',
+  }));
+  out.push(jBase({
+    timestamp: stamp(onDay('2026-09-04'), 0, 602), action: 'Case owner assigned',
+    entityType: 'CM Case', entityId: SCEN_JADE, correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, channel: 'System Rule', sourceIp: '172.19.4.11',
+    field: 'Care Team', before: 'Unassigned', after: `${mendez.name} — Care Manager`,
+    reasonCode: 'RULE-CM-ASSIGNMENT-PEDS',
+  }));
+  out.push(jBase({
+    timestamp: stamp(onDay('2026-09-08'), 0, 62), category: 'Clinical Decision',
+    action: 'Assessment started', entityType: 'CM Case', entityId: SCEN_JADE,
+    correlationId: jCmCorr, actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role,
+    sourceIp: ipFor(mendez, 4), field: 'Health Risk Assessment', before: null, after: 'In Progress',
+    screen: 'Care Management — Assessments', control: 'Dropdown', reasonCode: 'HRA-STARTED',
+  }));
+  // Open items the tenant is showing as suggested actions and to-dos. Carried so the oversight view
+  // can answer "what is still outstanding on this child" with the same list the care manager sees.
+  ([['Review Preventive Immunizations', 'Encounter for prophylactic RSV immunotherapy · pediatric asthma history', '2026-10-09', 'Low'],
+    ['Asthma Care Education', 'Asthma diagnosis · viral exposure risk', '2026-10-09', 'Low']] as [string, string, string, string][])
+    .forEach(([title, detail, due, sev], k) => {
+      out.push(jBase({
+        timestamp: stamp(onDay('2026-09-08'), 0, 70 + k * 2), category: 'Clinical Decision',
+        action: 'Suggested action pending', entityType: 'CM Case', entityId: SCEN_JADE,
+        channel: 'System Rule', correlationId: jCmCorr,
+        actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+        field: title, before: null, after: `${detail} — due ${due}`,
+        reasonCode: `CARE-GAP-${sev.toUpperCase()} · awaiting care manager disposition`,
+      }));
+    });
+  ([['Care Plan Review: Pediatric EPSDT — RSV Risk Care Plan (AI Assist)', '2026-09-12'],
+    ['Schedule care follow-up', '—'],
+    ['Complete Health Risk Assessment (HRA)', '—']] as [string, string][])
+    .forEach(([title, due], k) => {
+      out.push(jBase({
+        timestamp: stamp(onDay('2026-09-08'), 0, 80 + k * 2), action: 'To-do created',
+        entityType: 'CM Case', entityId: SCEN_JADE, correlationId: jCmCorr,
+        actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role, sourceIp: ipFor(mendez, 4),
+        field: 'To-do', before: null, after: due === '—' ? title : `${title} — due ${due}`,
+        screen: 'Care Management — To-Do Worklist', control: 'Checkbox', reasonCode: 'TODO-CREATED',
+      }));
+    });
 
   // ---- the authorization ----
   out.push(jBase({
@@ -1005,38 +1056,17 @@ function scenarioEvents(): Draft[] {
   ];
   jSuggestions.forEach(([kind, text], k) => {
     out.push(jBase({
-      timestamp: stamp(day(6), 0, 710 + k * 2), category: 'Clinical Decision',
+      timestamp: stamp(onDay('2026-09-05'), 0, 710 + k * 2), category: 'Clinical Decision',
       action: 'AI care plan item suggested', entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule',
       correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
       field: kind, before: null, after: `${text} — AI-Suggested, pending care manager review`,
       reasonCode: 'CAREPLAN-AI-ASSIST · not active until accepted',
     }));
   });
-  // A human dispositions them. Two accepted, one edited, one declined — because a feed where
-  // everything is accepted verbatim tells you nothing about whether anyone read it.
-  const jDispositions: [string, string, string][] = [
-    ['Problem', 'Accepted', 'Risk for respiratory compromise related to RSV exposure; medication prophylaxis denied'],
-    ['Goal', 'Accepted', 'Member remains free of signs of respiratory distress through the current RSV season'],
-    ['Intervention', 'Edited', 'Caregiver education — RSV prevention, early recognition, and inhaler technique review'],
-    ['Intervention', 'Accepted', 'Schedule PCP follow-up; close the open Lead Toxicity Screening care gap'],
-  ];
-  jDispositions.forEach(([kind, verdict, text], k) => {
-    out.push(jBase({
-      timestamp: stamp(day(5), 0, 540 + k * 3), category: 'Case Management',
-      action: `AI care plan item ${verdict.toLowerCase()}`, entityType: 'CM Case', entityId: SCEN_JADE,
-      correlationId: jCmCorr, actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role, sourceIp: ipFor(mendez, 4),
-      field: kind, before: 'AI-Suggested — pending review', after: `${verdict} — ${text}`,
-      screen: 'Care Plan — Activity Feed', control: 'Dropdown', reasonCode: `CAREPLAN-${verdict.toUpperCase()}`,
-    }));
-  });
-  out.push(jBase({
-    timestamp: stamp(day(5), 0, 556), category: 'Case Management', action: 'AI care plan item declined',
-    entityType: 'CM Case', entityId: SCEN_JADE, correlationId: jCmCorr,
-    actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role, sourceIp: ipFor(mendez, 4),
-    field: 'Intervention', before: 'AI-Suggested — pending review',
-    after: 'Declined — appeal-rights education already delivered verbally at outreach on the denial call',
-    screen: 'Care Plan — Activity Feed', control: 'Dropdown', reasonCode: 'CAREPLAN-DECLINED',
-  }));
+  // Nothing is dispositioned yet: the tenant carries "Care Plan Review — RSV Risk Care Plan
+  // (AI Assist)" as an OPEN to-do due 2026-09-12, so all five suggestions are still pending a
+  // care manager. That is the more useful thing to be able to show anyway — five AI-generated
+  // clinical items, none of them active, because nobody has reviewed them yet.
 
   // =============================================================== Scenario 2 — Willis Williams
   const wCorr = 'COR-CM-FOSTER-0001';
@@ -1216,7 +1246,7 @@ function scenarioEvents(): Draft[] {
   const willisTeam: CareTeamMember[] = [
     { memberId: SCEN_WILLIS, name: 'K. Malone, LCSW', relation: 'Primary case owner',
       organization: 'Zyter TruCare — Care Management', phone: '214-555-0121', internal: true, addedDate: teamDate },
-    { memberId: SCEN_WILLIS, name: 'J. Mendez, RN (CCM)', relation: 'Secondary care manager',
+    { memberId: SCEN_WILLIS, name: 'Jessica Mendez, RN', relation: 'Secondary care manager',
       organization: 'Zyter TruCare — Care Management', phone: '214-555-0134', internal: true, addedDate: teamDate },
     { memberId: SCEN_WILLIS, name: 'Fred Flint, SW', relation: 'External program contact',
       organization: 'FosterConnect', phone: '123-456-7777', internal: false, addedDate: linkDate },
@@ -1236,13 +1266,11 @@ function scenarioEvents(): Draft[] {
   }];
   registerScenarioCareTeam(SCEN_WILLIS, willisTeam, willisLinks);
 
+  // One member, as the tenant's Care Team panel shows. A richer team would look better and would
+  // not match, and matching is the entire point of this record.
   const jadeTeam: CareTeamMember[] = [
-    { memberId: SCEN_JADE, name: 'J. Mendez, RN (CCM)', relation: 'Primary case owner',
-      organization: 'Zyter TruCare — Care Management', phone: '214-555-0134', internal: true, addedDate: teamDate },
-    { memberId: SCEN_JADE, name: 'Dr. Priya Raman', relation: 'Primary care provider',
-      organization: 'Northside Pediatrics', phone: '214-555-0129', internal: false, addedDate: teamDate },
-    { memberId: SCEN_JADE, name: 'Parent / Guardian', relation: 'Guardian / caregiver',
-      organization: 'Household', phone: '214-555-0173', internal: false, addedDate: teamDate },
+    { memberId: SCEN_JADE, name: 'Jessica Mendez, RN', relation: 'Primary case owner',
+      organization: 'Zyter TruCare — Care Management', phone: '214-555-0134', internal: true, addedDate: '2026-09-04' },
   ];
   registerScenarioCareTeam(SCEN_JADE, jadeTeam, []);
 })();

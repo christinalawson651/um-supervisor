@@ -16,14 +16,14 @@ export const CARE_MANAGERS: CareManagerMeta[] = [
   // managers with real caseloads rather than labels on one demo member: a programme with a
   // population of one is not a programme, and the first thing anyone does after being shown a
   // member is ask to see the rest of them.
-  { name: 'J. Mendez, RN (CCM)', discipline: 'Pediatric EPSDT', team: 'Pediatric & Family Team' },
+  { name: 'Jessica Mendez, RN', discipline: 'Pediatric EPSDT', team: 'Pediatric & Family Team' },
   { name: 'K. Malone, LCSW', discipline: 'Foster Care', team: 'Pediatric & Family Team' },
 ];
 
 /** The workflow-specification members. Their ids live here, with the pool they belong to, so the
  *  audit trail and every care-management surface resolve the same member rather than each deriving
  *  their own id and quietly disagreeing. */
-export const SCENARIO_JADE_ID = 'ME63950C7';
+export const SCENARIO_JADE_ID = 'DOC26-0100001';
 export const SCENARIO_WILLIS_ID = 'M8315A35D';
 
 // Case lifecycle stage — the member's overall journey (owned by the Intake & Assessment SLA and
@@ -266,10 +266,10 @@ function withScenarioMembers(pool: CmCaseRec[]): CmCaseRec[] {
   const stamp = (owner: string, memberId: string, member: string, dx: string, caseType: CaseType, age: number) => {
     const i = pool.findIndex((c) => c.careManager === owner);
     if (i < 0) return;
-    pool[i] = { ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType, riskLevel: 'High', acuity: 'High', age, pediatric: true };
+    pool[i] = { ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType, riskLevel: 'Moderate', acuity: 'Medium', age, pediatric: true };
   };
-  stamp('J. Mendez, RN (CCM)', SCENARIO_JADE_ID, 'Pinket, Jade',
-    'Z00.129 — Routine child health exam with abnormal findings', 'Complex Case', 2);
+  stamp('Jessica Mendez, RN', SCENARIO_JADE_ID, 'Pinket, Jade',
+    'Asthma, moderate persistent · RSV exposure risk', 'Complex Case', 2);
   stamp('K. Malone, LCSW', SCENARIO_WILLIS_ID, 'Williams, Willis',
     'Z62.810 — Personal history of abuse in childhood', 'Complex Case', 11);
   return pool;

@@ -99,7 +99,7 @@ function slotCountFor(i: number): number {
  *  drilled in. Age is the gate the real programmes actually use. */
 /** The programme a specialised caseload exists to run. */
 const ANCHOR_BY_MANAGER: Record<string, CareProgramName | undefined> = {
-  'J. Mendez, RN (CCM)': 'Pediatric EPSDT',
+  'Jessica Mendez, RN': 'Pediatric EPSDT',
   'K. Malone, LCSW': 'Foster Care Coordination',
 };
 
@@ -184,7 +184,7 @@ function withScenarioEnrollments(rows: CmProgramEnrollment[]): CmProgramEnrollme
   const on = (back: number) => isoDate(addDays(TODAY, -back));
   return [
     ...kept,
-    { memberId: SCENARIO_JADE_ID, program: 'Pediatric EPSDT', enrolledDate: on(150),
+    { memberId: SCENARIO_JADE_ID, program: 'Pediatric EPSDT', enrolledDate: '2026-09-04',
       status: 'Active', endDate: null, disenrollReason: null, route: 'Auto — eligibility rule' },
     { memberId: SCENARIO_WILLIS_ID, program: 'Foster Care Coordination', enrolledDate: on(21),
       status: 'Active', endDate: null, disenrollReason: null, route: 'Referral — external agency' },
