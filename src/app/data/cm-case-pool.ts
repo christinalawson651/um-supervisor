@@ -74,6 +74,11 @@ export interface CmCaseRec {
   memberId: string;
   member: string;
   dx: string;
+  /** Age drives programme eligibility. Without it a paediatric programme fills with whoever the
+   *  seeding happened to reach, and "Pediatric EPSDT" lists adults with heart failure — which
+   *  survives exactly as long as nobody drills into it. */
+  age: number;
+  pediatric: boolean;
   lob: string;            // one of LOBS — so the shared top-bar LOB filter has something real to scope by
   program: string;       // = care manager's discipline
   careManager: string;
@@ -111,6 +116,12 @@ export interface CmCaseRec {
 
 const FIRST = ['James', 'Maria', 'Robert', 'Linda', 'Michael', 'Patricia', 'David', 'Barbara', 'William', 'Elizabeth', 'Richard', 'Jennifer', 'Joseph', 'Susan', 'Thomas', 'Jessica', 'Charles', 'Karen', 'Daniel', 'Nancy', 'Mark', 'Lisa', 'Paul', 'Betty', 'Steven', 'Sandra', 'Andrew', 'Ashley', 'Kenneth', 'Donna'];
 const LAST = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker'];
+// Children are not small adults, and a case pool that only knows adult chronic disease cannot
+// populate a paediatric programme with anything believable.
+const PEDS_DX_POOL = ['Asthma, moderate persistent', 'ADHD', 'Autism spectrum disorder',
+  'Type 1 diabetes', 'Sickle cell disease', 'Failure to thrive', 'Global developmental delay',
+  'Congenital heart disease', 'Epilepsy', 'Anxiety disorder', 'PTSD — childhood trauma',
+  'Obesity, pediatric', 'Eczema, severe', 'Recurrent otitis media'];
 const DX_POOL = ['ESRD on dialysis', 'Breast cancer', 'Congestive heart failure', 'High-risk pregnancy', 'COPD, severe', 'Type 2 diabetes', 'Chronic kidney disease', 'Major depressive disorder', 'Asthma, uncontrolled', 'Post-stroke rehabilitation', 'Sickle cell disease', 'Rheumatoid arthritis', 'Hypertension, uncontrolled', 'Substance use disorder', 'Multiple sclerosis', 'Bipolar disorder', 'Cirrhosis', "Parkinson's disease", 'Chronic pain syndrome', 'Obesity, morbid'];
 const GOAL_DESCRIPTIONS = ['Medication adherence', 'Daily weight monitoring', 'Smoking cessation', 'Fluid management adherence', 'Post-discharge follow-up visit', 'Diabetes self-management education', 'Fall prevention', 'Depression screening follow-up'];
 
@@ -138,6 +149,10 @@ function buildActive(): CmCaseRec[] {
     const count = ACTIVE_PER_CM[cmIdx];
     for (let j = 0; j < count; j++, i++) {
       const seedRaw = (i * 37 + 11) % 100;
+      // The two specialised caseloads are paediatric by definition; elsewhere a minority of the
+      // managed population is under 18, which is what a Medicaid book actually looks like.
+      const pediatric = cm.discipline === 'Pediatric EPSDT' || cm.discipline === 'Foster Care' || seedRaw < 12;
+      const age = pediatric ? 1 + (seedRaw % 17) : 22 + (seedRaw % 64);
       // Power transform (not a uniform 1-9.9 spread) so the baseline caseload concentrates in
       // Low/Moderate with a lighter tail into High/Critical — matches real case-mix shape and
       // keeps the Needs-Attention-style flag rates a minority, not close to half the caseload.
@@ -152,7 +167,10 @@ function buildActive(): CmCaseRec[] {
       // (e.g. every Medicaid case landing on the same case type). The `Math.floor(i/4)` term
       // shifts the mapping every 4 records so LOB actually varies within each case-type/consent
       // group instead of tracking it 1:1.
-      const lob = LOBS[(i * 17 + Math.floor(i / 4) * 7 + 4) % LOBS.length];
+      // EPSDT is a Medicaid entitlement and foster-care coverage is Medicaid, so the paediatric
+      // cohort is Medicaid. It also removes an absurdity the age field exposed: an eight-year-old
+      // on Medicare Advantage, which happens only through ESRD or disability and never at this rate.
+      const lob = pediatric ? 'Medicaid' : LOBS[(i * 17 + Math.floor(i / 4) * 7 + 4) % LOBS.length];
       const stage = CM_STAGES[(i * 3 + cmIdx) % CM_STAGES.length];
       const receivedDaysAgo = 5 + (seedRaw % 240);
       const received = isoDate(addDays(TODAY, -receivedDaysAgo));
@@ -226,7 +244,8 @@ function buildActive(): CmCaseRec[] {
       out.push({
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
-        dx: DX_POOL[(i * 5 + 2) % DX_POOL.length],
+        dx: pediatric ? PEDS_DX_POOL[(i * 5 + 2) % PEDS_DX_POOL.length] : DX_POOL[(i * 5 + 2) % DX_POOL.length],
+        age, pediatric,
         lob, program: cm.discipline,
         careManager: unclaimed ? CM_UNASSIGNED : cm.name,
         riskScore, riskLevel, acuity, cost, stage, received, slaDueDate, queue, queueAgeH, queueBreached, assignmentMethod,
@@ -244,15 +263,15 @@ function buildActive(): CmCaseRec[] {
  *  shaped fields are fixed — so they behave like any other member in every rollup rather than
  *  being a special case the rest of the app has to know about. */
 function withScenarioMembers(pool: CmCaseRec[]): CmCaseRec[] {
-  const stamp = (owner: string, memberId: string, member: string, dx: string, caseType: CaseType) => {
+  const stamp = (owner: string, memberId: string, member: string, dx: string, caseType: CaseType, age: number) => {
     const i = pool.findIndex((c) => c.careManager === owner);
     if (i < 0) return;
-    pool[i] = { ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType, riskLevel: 'High', acuity: 'High' };
+    pool[i] = { ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType, riskLevel: 'High', acuity: 'High', age, pediatric: true };
   };
   stamp('J. Mendez, RN (CCM)', SCENARIO_JADE_ID, 'Pinket, Jade',
-    'Z00.129 — Routine child health exam with abnormal findings', 'Complex Case');
+    'Z00.129 — Routine child health exam with abnormal findings', 'Complex Case', 2);
   stamp('K. Malone, LCSW', SCENARIO_WILLIS_ID, 'Williams, Willis',
-    'Z62.810 — Personal history of abuse in childhood', 'Complex Case');
+    'Z62.810 — Personal history of abuse in childhood', 'Complex Case', 11);
   return pool;
 }
 

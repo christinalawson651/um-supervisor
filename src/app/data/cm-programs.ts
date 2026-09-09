@@ -93,17 +93,51 @@ function slotCountFor(i: number): number {
   return 3;
 }
 
+/** Which programmes a member is even eligible for. Enrolment used to be a positional walk over the
+ *  whole list, so a 71-year-old with heart failure could land in Pediatric EPSDT — invisible while
+ *  the programme was called CHF, and indefensible the moment it was called EPSDT and somebody
+ *  drilled in. Age is the gate the real programmes actually use. */
+/** The programme a specialised caseload exists to run. */
+const ANCHOR_BY_MANAGER: Record<string, CareProgramName | undefined> = {
+  'J. Mendez, RN (CCM)': 'Pediatric EPSDT',
+  'K. Malone, LCSW': 'Foster Care Coordination',
+};
+
+function eligibleProgramsFor(c: CmCaseRec): CareProgramName[] {
+  return c.pediatric
+    ? ['Pediatric EPSDT', 'Foster Care Coordination', 'Children with Complex Needs',
+       'Behavioral Health / SUD', 'SDOH / Community Resource Support']
+    : ['Serious Mental Illness (SMI)', 'LTSS / HCBS', 'Behavioral Health / SUD',
+       'High-Risk Maternity', 'SDOH / Community Resource Support'];
+}
+
 export function buildProgramEnrollments(cases: CmCaseRec[]): CmProgramEnrollment[] {
   const out: CmProgramEnrollment[] = [];
   cases.forEach((c, i) => {
-    const count = slotCountFor(i);
+    const eligible = eligibleProgramsFor(c);
+    const count = Math.min(slotCountFor(i), eligible.length);
     const used = new Set<number>();
+    // A specialised care manager IS the programme: everyone on the EPSDT nurse's caseload is in
+    // EPSDT, everyone on the foster-care social worker's is in foster care. Leaving that to the
+    // seeding gave a programme five members while its own case manager carried fifteen, which is
+    // not a caseload anyone would recognise.
+    const anchor = ANCHOR_BY_MANAGER[c.careManager];
+    if (anchor && eligible.includes(anchor)) {
+      const ai = eligible.indexOf(anchor);
+      used.add(ai);
+      out.push({
+        memberId: c.memberId, program: anchor,
+        enrolledDate: isoDate(addDays(TODAY, -((i * 29 + 11) % 400))),
+        status: 'Active', endDate: null, disenrollReason: null,
+        route: anchor === 'Foster Care Coordination' ? 'Referral — external agency' : 'Auto — eligibility rule',
+      });
+    }
     for (let k = 0; k < count; k++) {
-      let idx = (i * 17 + k * 23 + 5) % CARE_PROGRAMS.length;
+      let idx = (i * 17 + k * 23 + 5) % eligible.length;
       let guard = 0;
-      while (used.has(idx) && guard < CARE_PROGRAMS.length) { idx = (idx + 3) % CARE_PROGRAMS.length; guard++; }
+      while (used.has(idx) && guard < eligible.length) { idx = (idx + 3) % eligible.length; guard++; }
       used.add(idx);
-      const program = CARE_PROGRAMS[idx];
+      const program = eligible[idx];
 
       const enrolledDaysAgo = (i * 29 + k * 53 + 11) % 540; // up to ~18 months of enrollment history
       const enrolledDate = isoDate(addDays(TODAY, -enrolledDaysAgo));
