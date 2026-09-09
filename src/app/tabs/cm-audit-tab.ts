@@ -3,7 +3,7 @@ import { CmData, CM_COLUMNS, cmToRow } from '../shared/cm-data';
 import { CmCaseRec } from '../data/cm-case-pool';
 import {
   CM_FILE_AUDITS, CmFileAuditRecord, CmAuditElement, CM_AUDIT_ELEMENTS, CmDiscrepancyReason, CM_DISCREPANCY_REASONS,
-  CM_AUDIT_PASS_PCT, CM_IRR_TARGET_PCT, MIN_FILES_PER_CM, scoreElements,
+  CM_AUDIT_PASS_PCT, MIN_FILES_PER_CM, scoreElements,
   cmRegCompliance, cmRegBreachesFor, cmRegElapsed,
 } from '../data/cm-audit';
 import { Interaction } from '../shared/interaction';
@@ -20,7 +20,6 @@ const CM_AUDIT_WIDGETS = [
   { id: 'fileAudit', title: 'File Audit (Chart Review)' },
   { id: 'byManager', title: 'Pass Rate by Care Manager' },
   { id: 'elements', title: 'Rubric Element Findings' },
-  { id: 'irr', title: 'Inter-Rater Reliability' },
   { id: 'specialty', title: 'Compliance by Specialty' },
   { id: 'regCompliance', title: 'Regulatory Compliance by Program' },
   { id: 'actions', title: 'Corrective Actions' },
@@ -33,11 +32,6 @@ const AUDIT_COLUMNS = ['Member', 'Member ID#', 'LOB', 'Care Manager', 'Auditor',
 function auditRow(r: CmFileAuditRecord): (string | number)[] {
   return [r.member, r.memberId, r.lob, r.careManager, r.auditor, r.auditDate, `${r.score}%`, r.pass ? 'Pass' : 'Fail',
     r.failedElements.join('; ') || '—', r.discrepancyReason ?? '—', r.correctiveAction, r.correctiveActionStatus ?? '—', r.correctiveActionDate ?? '—'];
-}
-const IRR_COLUMNS = ['Member', 'Member ID#', 'Care Manager', 'Primary Auditor', 'Primary Score', 'Primary Result', 'Second Auditor', 'Rescore', 'Rescore Result', 'Agree'];
-function irrRow(r: CmFileAuditRecord): (string | number)[] {
-  return [r.member, r.memberId, r.careManager, r.auditor, `${r.score}%`, r.pass ? 'Pass' : 'Fail',
-    r.irrAuditor ?? '—', r.irrScore === null ? '—' : `${r.irrScore}%`, r.irrPass === null ? '—' : r.irrPass ? 'Pass' : 'Fail', r.irrAgree ? 'Yes' : 'No'];
 }
 const REG_COLUMNS = ['Member ID', 'Member', 'LOB', 'Care Manager', 'Program', 'Assessment Days', 'Assessment Window', 'Care Plan Days', 'Care Plan Window', 'Breach'];
 function regRow(c: CmCaseRec): (string | number)[] {
@@ -96,7 +90,7 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
         <span class="section-note sm">A QI reviewer pulls a sampled member record and scores it element-by-element; a file passes at {{ passTarget }}% of the rubric</span>
         <z-widget-actions (exportClick)="exportFileAudit()" (removeClick)="hide('fileAudit')"></z-widget-actions>
       </div>
-      <div class="tile-row irr-row panel-pad">
+      <div class="tile-row audit-tiles panel-pad">
         <div class="tile" (click)="drillAllAudits()">
           <div class="tile-val">{{ audits().length }}</div>
           <div class="tile-lab">Files Audited</div>
@@ -172,40 +166,6 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
             <div class="icount">{{ r.count }} · {{ findingPct(r.count) }}%</div>
           </div>
         }
-      </div>
-    </div>
-    }
-
-    @if (!isHidden('irr')) {
-    <div class="panel mt-6">
-      <div class="panel-pad tbl-head"><h3 class="panel-title">Inter-Rater Reliability (IRR)</h3>
-        <span class="section-note sm">A second QI reviewer blind-rescores a subset of the same files — this measures whether the RUBRIC is applied consistently, not whether the care manager was right. {{ irrTarget }}% is this org's own policy target.</span>
-        <z-widget-actions (exportClick)="exportIrr()" (removeClick)="hide('irr')"></z-widget-actions>
-      </div>
-      <div class="tile-row kpi-row panel-pad">
-        <div class="tile" (click)="drillRescored()">
-          <div class="tile-val">{{ rescored().length }}</div>
-          <div class="tile-lab">Files Blind-Rescored</div>
-        </div>
-        <div class="tile" (click)="drillRescored()">
-          <div class="tile-ic" [class.hot]="irrAgreementRate() < irrTarget"></div>
-          <div class="tile-val">{{ irrAgreementRate() }}%</div>
-          <div class="tile-lab">Reviewer Agreement Rate</div>
-        </div>
-        <div class="tile" (click)="drillDisagreements()">
-          <div class="tile-ic" [class.hot]="disagreements().length > 0"></div>
-          <div class="tile-val">{{ disagreements().length }}</div>
-          <div class="tile-lab">Scoring Disagreements</div>
-        </div>
-      </div>
-      <div class="ilist">
-        @for (a of irrByAuditor(); track a.auditor) {
-          <div class="irow clk" (click)="drillAuditor(a.auditor)">
-            <div class="ilab">{{ a.auditor }}</div>
-            <div class="ibar-track"><div class="ibar-fill" [class.amber]="a.pct < irrTarget" [class.teal]="a.pct >= irrTarget" [style.width.%]="a.pct"></div></div>
-            <div class="icount">{{ a.agree }}/{{ a.rescored }} · {{ a.pct }}%</div>
-          </div>
-        } @empty { <div class="empty">No files were blind-rescored in this window.</div> }
       </div>
     </div>
     }
@@ -339,7 +299,7 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
 
     .tile-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .kpi-row { grid-template-columns: repeat(3, 1fr); }
-    .irr-row { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .audit-tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     .tile-row.no-bottom { padding-bottom: 4px; }
     .tile {
       position: relative;
@@ -389,7 +349,6 @@ export class CmAuditTab {
   private lookback = inject(Lookback);
 
   readonly passTarget = CM_AUDIT_PASS_PCT;
-  readonly irrTarget = CM_IRR_TARGET_PCT;
   readonly regTarget = REG_TARGET_PCT;
   readonly minFiles = MIN_FILES_PER_CM;
 
@@ -463,20 +422,6 @@ export class CmAuditTab {
     return total ? Math.round((count / total) * 100) : 0;
   }
 
-  // ---- IRR ----
-  readonly rescored = computed(() => this.audits().filter((r) => r.irrRescored));
-  readonly disagreements = computed(() => this.rescored().filter((r) => !r.irrAgree));
-  readonly irrAgreementRate = computed(() => { const rs = this.rescored(); return rs.length ? Math.round((rs.filter((r) => r.irrAgree).length / rs.length) * 100) : 0; });
-  readonly irrByAuditor = computed(() => {
-    const rs = this.rescored();
-    return [...new Set(rs.map((r) => r.auditor))]
-      .map((auditor) => {
-        const mine = rs.filter((r) => r.auditor === auditor);
-        const agree = mine.filter((r) => r.irrAgree).length;
-        return { auditor, rescored: mine.length, agree, pct: mine.length ? Math.round((agree / mine.length) * 100) : 0 };
-      })
-      .sort((a, b) => a.pct - b.pct);
-  });
 
   // ---- Regulatory ----
   readonly regCompliance = computed(() => cmRegCompliance(this.scopedCases()));
@@ -553,15 +498,6 @@ export class CmAuditTab {
     this.openCases(`Not Meeting — ${element}`, cs, `quality-${slug(element)}`, `${cs.length} case(s) do not meet this rubric element`);
   }
 
-  private openIrr(title: string, rs: CmFileAuditRecord[], exportSlug: string, context?: string) {
-    this.ix.openExplorer({
-      title, context: context ?? `${rs.length} blind-rescored file(s)`,
-      columns: IRR_COLUMNS, rows: rs.map(irrRow), exportName: `cm-audit-${exportSlug}${TODAY_ISO}`, memberColumn: 0,
-    });
-  }
-  drillRescored() { this.openIrr('Blind-Rescored Files', this.rescored(), 'irr-rescored'); }
-  drillDisagreements() { this.openIrr('Scoring Disagreements', this.disagreements(), 'irr-disagreements', `${this.disagreements().length} file(s) where the two QI reviewers reached different pass/fail conclusions`); }
-  drillAuditor(auditor: string) { this.openIrr(`Blind-Rescored Files — ${auditor}`, this.rescored().filter((r) => r.auditor === auditor), `irr-${slug(auditor)}`); }
 
   drillRegLob(lob: string) {
     const cs = cmRegBreachesFor(lob, this.scopedCases());
@@ -640,13 +576,6 @@ export class CmAuditTab {
       title: 'Rubric Element Findings', name: `cm-audit-elements${TODAY_ISO}`,
       columns: ['Rubric Element', 'Files Failing', '% of Audited Files'],
       rows: this.elementFindings().map((f) => [f.element, f.count, f.pct]),
-    });
-  }
-  exportIrr() {
-    this.exporter.open({
-      title: 'Inter-Rater Reliability', name: `cm-audit-irr${TODAY_ISO}`,
-      columns: ['Auditor', 'Files Rescored', 'Agreements', 'Agreement Rate %'],
-      rows: this.irrByAuditor().map((a) => [a.auditor, a.rescored, a.agree, a.pct]),
     });
   }
   // ---- compliance by specialty -----------------------------------------------------------------
