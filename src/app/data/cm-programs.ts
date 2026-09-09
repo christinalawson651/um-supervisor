@@ -186,12 +186,12 @@ function withScenarioEnrollments(rows: CmProgramEnrollment[]): CmProgramEnrollme
     ...kept,
     { memberId: SCENARIO_JADE_ID, program: 'Pediatric EPSDT', enrolledDate: '2026-09-04',
       status: 'Active', endDate: null, disenrollReason: null, route: 'Auto — eligibility rule' },
-    { memberId: SCENARIO_WILLIS_ID, program: 'Foster Care Coordination', enrolledDate: on(21),
+    // The tenant shows Programs (2): the plan's foster-care programme, and FosterConnect carried
+    // as an external linkage rather than a plan enrolment. Behavioural health and EPSDT are not
+    // enrolments on this record — the EPSDT well-child activity runs as care gaps without a
+    // programme behind it, which is worth being accurate about rather than tidier.
+    { memberId: SCENARIO_WILLIS_ID, program: 'Foster Care Coordination', enrolledDate: '2026-09-08',
       status: 'Active', endDate: null, disenrollReason: null, route: 'Referral — external agency' },
-    { memberId: SCENARIO_WILLIS_ID, program: 'Behavioral Health / SUD', enrolledDate: on(13),
-      status: 'Active', endDate: null, disenrollReason: null, route: 'Referral — internal' },
-    { memberId: SCENARIO_WILLIS_ID, program: 'Pediatric EPSDT', enrolledDate: on(20),
-      status: 'Active', endDate: null, disenrollReason: null, route: 'Auto — eligibility rule' },
   ];
 }
 

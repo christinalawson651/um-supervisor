@@ -821,6 +821,7 @@ export const SCENARIO_MEMBERS: ScenarioMember[] = [
 
 function scenarioEvents(): Draft[] {
   const out: Draft[] = [];
+  const onDay = (iso: string) => new Date(`${iso}T00:00:00`);
   const u = (name: string) => USER_BY_NAME.get(name)!;
   const svc = u('svc_trucare_hl7');
   const intake = u('Tanya Brooks');
@@ -836,8 +837,8 @@ function scenarioEvents(): Draft[] {
   // most interesting moment in the scenario. The CM thread opens first, the auth thread runs
   // inside it, and the alert back to the case owner closes the loop on the CM side.
   const jCmCorr = 'COR-CM-EPSDT-0001';
-  const jCorr = 'COR-AUTH-EPSDT-0001';
-  const jAuth = 'AUTH-EPSDT-0001';
+  const jCorr = 'COR-OPE6RE0909062129';
+  const jAuth = 'OPE6RE0909062129';
   const jBase = (over: Partial<Draft>): Draft => ({
     timestamp: '', actor: intake.name, actorId: intake.userId, actorRole: intake.role,
     category: 'Case Management', action: '', entityType: 'Authorization', entityId: jAuth,
@@ -857,7 +858,6 @@ function scenarioEvents(): Draft[] {
   // and inventing four years of periodicity history here would put Pulse visibly ahead of the
   // system it is meant to be auditing. Worth loading into the tenant — a care gap after four
   // on-time visits reads very differently from a care gap alone — but it belongs there first.
-  const onDay = (iso: string) => new Date(`${iso}T00:00:00`);
   out.push(jBase({
     timestamp: stamp(onDay('2026-08-04'), 0, 580), category: 'Case Management',
     action: 'EPSDT enrollment scheduled', entityType: 'CM Case', entityId: SCEN_JADE,
@@ -955,98 +955,132 @@ function scenarioEvents(): Draft[] {
       }));
     });
 
-  // ---- the authorization ----
+  // ---- the authorization ----------------------------------------------------------------------
+  // OPE6RE0909062129, requested 2026-09-09, outpatient medication PA on a 3-day standard TAT with a
+  // 24-48 hour response window. Everything below runs inside that clock, which is the point of
+  // carrying the TAT at all: an adverse determination that arrives late is a finding regardless of
+  // whether the clinical call was right.
+  const authDay = '2026-09-09';
   out.push(jBase({
-    timestamp: stamp(day(9), 0, 540), action: 'Authorization request received', channel: 'API',
-    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Status', before: null, after: 'Submitted — Synagis (palivizumab), outpatient medication PA',
-    reasonCode: 'PROVIDER-PORTAL',
+    timestamp: stamp(onDay(authDay), 0, 540), action: 'Authorization request received',
+    channel: 'Web UI', actor: intake.name, actorId: intake.userId, actorRole: intake.role,
+    field: 'Status', before: null,
+    after: 'Ready for Review — Synagis (palivizumab), outpatient medication PA · standard, 3-day TAT',
+    reasonCode: 'REQUEST-SOURCE-CLIENT · method: manual',
   }));
   out.push(jBase({
-    timestamp: stamp(day(9), 0, 544), action: 'Source document received', field: 'Document',
-    after: 'Provider portal upload — clinical packet, 6 pages', reasonCode: 'DOC-RECEIVED',
+    timestamp: stamp(onDay(authDay), 0, 542), action: 'Authorization assigned',
+    field: 'Assigned To', before: 'Unassigned', after: 'smith_supervisor1',
+    screen: 'Authorization — Details', control: 'Lookup', reasonCode: 'UM-QUEUE-ASSIGNMENT',
   }));
   out.push(jBase({
-    timestamp: stamp(day(9), 0, 548), category: 'Clinical Decision', action: 'Document fields extracted',
-    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Extraction', after: '21/22 fields at or above threshold · confidence 0.94', reasonCode: 'extractor · v0.2.0',
-  }));
-  out.push(jBase({
-    timestamp: stamp(day(9), 0, 551), category: 'Clinical Decision',
-    action: 'Extracted field below threshold — routed for verification', channel: 'System Rule',
-    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Gestational age at birth', before: null, after: 'Held for human verification — handwritten on referral form',
-    reasonCode: 'EXTRACT-LOW-CONFIDENCE', outcome: 'Denied',
-  }));
-  out.push(jBase({
-    timestamp: stamp(day(9), 0, 556), category: 'Access', action: 'Member eligibility verified',
-    entityType: 'Member', entityId: SCEN_JADE, field: 'EPSDT Indicator', before: null,
-    after: 'Yes — EPSDT medical necessity standard applies; state plan limits cannot be the sole basis for denial',
+    timestamp: stamp(onDay(authDay), 0, 545), category: 'Access', action: 'Member eligibility verified',
+    entityType: 'Member', entityId: SCEN_JADE, field: 'Eligibility & Benefit Check',
+    before: null, after: 'Active — Medicaid MO · EPSDT medical necessity standard applies; state plan limits cannot be the sole basis for denial',
     reasonCode: '42 CFR §441.57 · EPSDT',
   }));
   out.push(jBase({
-    timestamp: stamp(day(9), 0, 560), category: 'Clinical Decision', action: 'Policy version resolved',
-    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Policy', before: 'Medicaid · TX · EPSDT', after: 'AAP Synagis Policy v4.0 (Committee on Infectious Diseases)',
+    timestamp: stamp(onDay(authDay), 0, 548), category: 'Clinical Decision', action: 'Diagnosis recorded',
+    field: 'Primary Diagnosis', before: null,
+    after: 'Z29.11 — Encounter for prophylactic immunotherapy for respiratory syncytial virus (RSV)',
+    screen: 'Authorization — Diagnoses', control: 'Lookup', reasonCode: 'DX-PRIMARY',
+  }));
+  out.push(jBase({
+    timestamp: stamp(onDay(authDay), 0, 551), action: 'Provider network status checked',
+    field: 'Provider Details', before: null, after: 'In-network — 2 provider(s) verified',
+    reasonCode: 'NETWORK-CHECK',
+  }));
+  out.push(jBase({
+    timestamp: stamp(onDay(authDay), 0, 556), category: 'Clinical Decision',
+    action: 'Policy version resolved', channel: 'System Rule',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Policy', before: 'Medicaid · MO · EPSDT',
+    after: 'AAP Synagis Policy v4.0 (Committee on Infectious Diseases)',
     reasonCode: 'EPSDT overrides state plan limitation',
   }));
-  // Field-level edit: the verification the extraction asked for actually happening.
   out.push(jBase({
-    timestamp: stamp(day(8), 0, 602), action: 'Field edited',
+    timestamp: stamp(onDay(authDay), 0, 600), category: 'Clinical Decision', action: 'Clinical criteria applied',
     actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
-    field: 'Gestational age at birth', before: '(unverified — handwritten)', after: '39 weeks 2 days — full term',
-    screen: 'Clinical Review — Diagnosis', control: 'Number', reasonCode: 'FIELD-VERIFIED-FROM-SOURCE',
-  }));
-  out.push(jBase({
-    timestamp: stamp(day(8), 0, 606), category: 'Clinical Decision', action: 'Clinical criteria applied',
-    actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
-    field: 'Guideline', after: 'AAP Synagis Policy v4.0 — no qualifying prematurity, CLD, cardiac, immunocompromise or transplant history',
+    field: 'Guideline',
+    after: 'AAP Synagis Policy v4.0 — criteria NOT met: no qualifying prematurity, CLD, hemodynamically significant cardiac disease, immunocompromise or transplant history on file',
     reasonCode: 'CRIT-NOT-MET',
   }));
   out.push(jBase({
-    timestamp: stamp(day(8), 0, 610), category: 'Clinical Decision', action: 'AI recommendation generated',
-    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    timestamp: stamp(onDay(authDay), 0, 604), category: 'Clinical Decision',
+    action: 'AI recommendation generated', channel: 'System Rule',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
     field: 'AI Recommendation', after: 'Deny · confidence 0.94 · grounded 4/4',
     reasonCode: 'claude-sonnet-4-6 · med-necessity v0.2.0 · AAP Synagis v4.0',
   }));
   // Role gate: a nurse cannot issue an adverse determination alone.
   out.push(jBase({
-    timestamp: stamp(day(7), 0, 620), category: 'Case Management', action: 'Case routed to Medical Director',
+    timestamp: stamp(onDay(authDay), 0, 610), category: 'Case Management',
+    action: 'Case routed to Medical Director',
     actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
-    field: 'Assigned To', before: nurse.name, after: md.name, reasonCode: 'ADVERSE-DETERMINATION-ADVISOR-REVIEW',
+    field: 'Assigned To', before: nurse.name, after: md.name,
+    reasonCode: 'ADVERSE-DETERMINATION-ADVISOR-REVIEW',
   }));
   out.push(jBase({
-    timestamp: stamp(day(7), 0, 638), category: 'Clinical Decision', action: 'Medical Director review completed',
+    timestamp: stamp(onDay(authDay), 0, 640), category: 'Clinical Decision',
+    action: 'Medical Director review completed',
     actor: md.name, actorId: md.userId, actorRole: md.role, sourceIp: ipFor(md, 3),
-    field: 'Advisor Finding', before: null, after: 'Concurs with RN — no AAP criterion met on submitted documentation',
+    field: 'Advisor Finding', before: null,
+    after: 'Concurs with RN — no AAP criterion met on submitted documentation; routed back to nurse for determination',
     reasonCode: 'MD-REVIEW-CONCUR',
   }));
   out.push(jBase({
-    timestamp: stamp(day(7), 0, 646), category: 'Clinical Decision', action: 'Determination recorded',
+    timestamp: stamp(onDay(authDay), 0, 660), category: 'Clinical Decision', action: 'Determination recorded',
     actor: nurse.name, actorId: nurse.userId, actorRole: nurse.role, sourceIp: ipFor(nurse, 3),
-    field: 'Decision', before: 'Pending', after: 'Denied — Clinical Denial',
+    field: 'Decision', before: 'Ready for Review', after: 'Denied — Clinical Denial',
     reasonCode: 'DET-NOT-MEDICALLY-NECESSARY · EPSDT standard applied',
   }));
   out.push(jBase({
-    timestamp: stamp(day(7), 0, 650), category: 'Correspondence', action: 'Determination letter generated',
-    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Letter', after: 'EPSDT Adverse Determination notice — auto-merged, appeal rights and State Fair Hearing appended',
+    timestamp: stamp(onDay(authDay), 0, 664), category: 'Correspondence',
+    action: 'Determination letter generated', channel: 'System Rule',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Letter',
+    after: 'EPSDT Adverse Determination notice — auto-merged; appeal rights, State Fair Hearing and care manager contact appended',
     reasonCode: 'TEMPLATE-EPSDT-ADVERSE-v1.2',
   }));
   out.push(jBase({
-    timestamp: stamp(day(6), 0, 700), category: 'Correspondence', action: 'Determination letter transmitted to member',
-    channel: 'Batch Interface', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Notice Status', after: 'Sent — print/mail and member portal', reasonCode: 'EPSDT-NOTICE-REQUIREMENT',
+    timestamp: stamp(onDay(authDay), 0, 700), category: 'Correspondence',
+    action: 'Determination letter transmitted to member', channel: 'Batch Interface',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Notice Status', after: 'Sent — print/mail and member portal',
+    reasonCode: 'EPSDT-NOTICE-REQUIREMENT',
   }));
-  // The hand-back to care management, which is the part a UM-only trail loses.
+
+  // ---- the bridge into care management ---------------------------------------------------------
+  // The determination does not end at the letter. This member is engaged with Care Management, so
+  // the outcome crosses back to the case owner and becomes care-plan work — and that crossing is
+  // the thing an audit most often cannot show, because UM and CM are usually two systems with two
+  // trails. Here it is one chain: the alert carries the authorization number it came from, and the
+  // care plan items that follow carry the denial as their source.
   out.push(jBase({
-    timestamp: stamp(day(6), 0, 704), category: 'Case Management', action: 'Case owner alerted',
+    timestamp: stamp(onDay(authDay), 0, 704), category: 'Case Management',
+    action: 'Authorization outcome shared with care management',
     entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Alert', before: null, after: `Synagis authorization finalized — Denied. Routed to ${mendez.name} for care-plan follow-up`,
+    field: 'Care Management bridge', before: null,
+    after: `Authorization ${jAuth} finalized — Denied (Clinical Denial). Shared with the assigned case owner / care manager`,
+    reasonCode: 'UM-CM-BRIDGE · member engaged with care management',
+  }));
+  out.push(jBase({
+    timestamp: stamp(onDay(authDay), 0, 706), category: 'Case Management', action: 'Case owner alerted',
+    entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule', correlationId: jCmCorr,
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Alert', before: null,
+    after: 'Review case for care planning follow-up — denial outreach, appeal rights, RSV prevention education, and the open Lead Toxicity Screening care gap',
     reasonCode: 'ALERT-AUTH-STATUS-CASE-OWNER',
   }));
-  // AI care plan suggestions — generated, tagged, and NOT active until a human accepts.
+  out.push(jBase({
+    timestamp: stamp(onDay(authDay), 0, 708), action: 'To-do created',
+    entityType: 'CM Case', entityId: SCEN_JADE, correlationId: jCmCorr,
+    actor: mendez.name, actorId: mendez.userId, actorRole: mendez.role, sourceIp: ipFor(mendez, 4),
+    field: 'To-do', before: null,
+    after: `Family outreach — Synagis denial, appeal rights and RSV prevention (source: ${jAuth})`,
+    screen: 'Care Management — To-Do Worklist', control: 'Checkbox', reasonCode: 'TODO-CREATED · denial follow-up',
+  }));
   const jSuggestions: [string, string][] = [
     ['Problem', 'Risk for respiratory compromise related to RSV exposure; medication prophylaxis denied'],
     ['Goal', 'Member remains free of signs of respiratory distress through the current RSV season'],
@@ -1056,13 +1090,15 @@ function scenarioEvents(): Draft[] {
   ];
   jSuggestions.forEach(([kind, text], k) => {
     out.push(jBase({
-      timestamp: stamp(onDay('2026-09-05'), 0, 710 + k * 2), category: 'Clinical Decision',
-      action: 'AI care plan item suggested', entityType: 'CM Case', entityId: SCEN_JADE, channel: 'System Rule',
-      correlationId: jCmCorr, actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+      timestamp: stamp(onDay(authDay), 0, 712 + k * 2), category: 'Clinical Decision',
+      action: 'AI care plan item suggested', entityType: 'CM Case', entityId: SCEN_JADE,
+      channel: 'System Rule', correlationId: jCmCorr,
+      actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
       field: kind, before: null, after: `${text} — AI-Suggested, pending care manager review`,
-      reasonCode: 'CAREPLAN-AI-ASSIST · not active until accepted',
+      reasonCode: `CAREPLAN-AI-ASSIST · source: ${jAuth} denial rationale · not active until accepted`,
     }));
   });
+
   // Nothing is dispositioned yet: the tenant carries "Care Plan Review — RSV Risk Care Plan
   // (AI Assist)" as an OPEN to-do due 2026-09-12, so all five suggestions are still pending a
   // care manager. That is the more useful thing to be able to show anyway — five AI-generated
@@ -1078,160 +1114,149 @@ function scenarioEvents(): Draft[] {
     correlationId: wCorr, reasonCode: null, phi: true, outcome: 'Success', ...over,
   });
 
+  // Dated to the tenant's own longitudinal record, ten events, all September 2026.
+  //
+  // Deliberately NOT carried: the two placement moves the written specification describes
+  // (birth home to emergency foster home in December 2024, and on to the current guardian in
+  // January 2026). The tenant holds a current address and no residence history, so putting two
+  // years of placement chronology in Pulse would have it auditing events the source system does
+  // not have. It is the single most valuable thing to load INTO the tenant for this scenario —
+  // continuity of care and child-welfare reporting both need the chain — but it belongs there
+  // first, and a claim Pulse cannot trace back is worse than a gap it can explain.
+
   out.push(wBase({
-    timestamp: stamp(day(21), 0, 522), action: 'Referral received', channel: 'Batch Interface',
+    timestamp: stamp(onDay('2026-09-01'), 0, 570), category: 'Clinical Decision',
+    action: 'Outpatient visit — well child', channel: 'Batch Interface',
     actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Referral', before: null,
-    after: 'Child Welfare / Dept. of Family & Children\'s Services — foster placement, care coordination and EPSDT/medical home linkage',
-    reasonCode: 'REFERRAL-EXTERNAL-CHILD-WELFARE',
+    field: 'Encounter', before: null, after: 'Well-child visit completed',
+    reasonCode: 'EPSDT-WELL-CHILD',
   }));
   out.push(wBase({
-    timestamp: stamp(day(21), 0, 560), action: 'Referral accepted', field: 'Case Status',
-    before: 'Referred', after: 'Open — Complex Case, Foster Care Coordination',
-    screen: 'Referral Queue', control: 'Dropdown', reasonCode: 'REFERRAL-ACCEPTED',
+    timestamp: stamp(onDay('2026-09-02'), 0, 585), category: 'Clinical Decision',
+    action: 'EPSDT screening scheduled', channel: 'System Rule',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Well-Child Visit / EPSDT', before: null, after: 'Scheduled',
+    reasonCode: 'EPSDT-PERIODICITY-11YR',
+  }));
+  // Two separate gaps, because they are two separate vaccine series and close independently.
+  ([['TDAP Immunization', '2026-09-05'], ['Meningococcal Immunization', '2026-09-05']] as [string, string][])
+    .forEach(([series, due], k) => {
+      out.push(wBase({
+        timestamp: stamp(onDay('2026-09-03'), 0, 600 + k * 2), category: 'Clinical Decision',
+        action: 'Care gap identified', channel: 'System Rule',
+        actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+        field: series, before: 'Due', after: `Overdue vaccine series — immunization record review · due ${due}`,
+        reasonCode: 'EPSDT-IMMUNIZATION-CATCHUP', outcome: 'Denied',
+      }));
+    });
+  out.push(wBase({
+    timestamp: stamp(onDay('2026-09-03'), 0, 610), action: 'Referral outreach scheduled',
+    field: 'Outreach', before: null, after: 'Scheduled — foster placement / caseworker contact',
+    screen: 'Care Management — To-Do Worklist', control: 'Date', reasonCode: 'TASK-TRAUMA-INFORMED-OUTREACH',
+  }));
+  ([['General note added', 'Trauma-informed contact — safety confirmed, age-appropriate explanation given, caregiver offered scheduling choice', '2026-09-04', 540],
+    ['General note added', 'Nutrition concern documented — growth indicators to be monitored at next well-child visit', '2026-09-04', 560]] as [string, string, string, number][])
+    .forEach(([action, note, on, mins]) => {
+      out.push(wBase({
+        timestamp: stamp(onDay(on), 0, mins), action, field: 'Note', before: null, after: note,
+        screen: 'Case Notes — Trauma-Informed Template', control: 'Free text',
+        reasonCode: 'TRAUMA-INFORMED-TEMPLATE · Trauma History Considered: Yes',
+      }));
+    });
+  out.push(wBase({
+    timestamp: stamp(onDay('2026-09-06'), 0, 585), action: 'Outbound contact note added',
+    field: 'Contact', before: null, after: 'Outbound contact — foster caregiver reached, appointment confirmed',
+    screen: 'Case Notes — Trauma-Informed Template', control: 'Free text', reasonCode: 'OUTREACH-COMPLETED',
   }));
   out.push(wBase({
-    timestamp: stamp(day(21), 0, 563), action: 'Case owner assigned', field: 'Case Owner',
-    before: 'Unassigned', after: `${malone.name} — Program Specialist (Social Worker), primary`,
+    timestamp: stamp(onDay('2026-09-08'), 0, 600), action: 'Case opened',
+    field: 'Case Status', before: 'Referred', after: 'New case management opened — Complex Case, Foster Care Coordination',
+    screen: 'Care Management — Case', control: 'Dropdown', reasonCode: 'CASE-OPENED-COMPLEX',
+  }));
+  out.push(wBase({
+    timestamp: stamp(onDay('2026-09-08'), 0, 604), action: 'Case owner assigned',
+    field: 'Care Team', before: 'Unassigned', after: `${malone.name} — Care Manager`,
     reasonCode: 'FOSTER-CARE-SW-PRIMARY',
   }));
   out.push(wBase({
-    timestamp: stamp(day(21), 0, 566), action: 'Secondary care manager linked', field: 'Care Team',
-    before: null, after: `${mendez.name} — RN, medical/EPSDT components`,
+    timestamp: stamp(onDay('2026-09-08'), 0, 606), action: 'Secondary care manager linked',
+    field: 'Care Team', before: null, after: `${mendez.name} — Care Manager, medical/EPSDT components`,
     reasonCode: 'PH-BH-DUAL-OWNERSHIP',
   }));
   out.push(wBase({
-    timestamp: stamp(day(21), 0, 570), action: 'Outreach task created', channel: 'System Rule',
-    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Task', before: null, after: 'Contact foster placement / caseworker — trauma-informed outreach SLA',
-    reasonCode: 'TASK-TRAUMA-INFORMED-OUTREACH',
+    timestamp: stamp(onDay('2026-09-09'), 0, 540), action: 'Monthly care contact scheduled',
+    field: 'Scheduled activity', before: null, after: 'Monthly care contact — foster care cadence',
+    screen: 'Care Management — Schedule', control: 'Date', reasonCode: 'FOSTER-CARE-MONTHLY-CADENCE',
   }));
-  // Placement history — BOTH moves the specification calls out, at the dates it gives. The first
-  // removal predates the plan's involvement and is carried as history rather than as something the
-  // plan did: continuity of care and child-welfare reporting both need the whole chain, and a
-  // residence history that starts when the referral arrived is not a chronology, it is a fragment.
-  const onDate = (iso: string) => new Date(`${iso}T00:00:00`);
-  out.push(wBase({
-    timestamp: stamp(onDate('2024-12-30'), 0, 600), action: 'Placement change recorded',
-    field: 'Residence', before: 'Birth Home — birth parent(s)',
-    after: 'Emergency Foster Home A (non-relative) — removed by child welfare intervention',
-    screen: 'Member 360 — Demographics', control: 'Lookup',
-    reasonCode: 'PLACEMENT-CHANGE-1 · historical, recorded from child welfare record',
-  }));
-  out.push(wBase({
-    timestamp: stamp(onDate('2026-01-03'), 0, 604), action: 'Placement change recorded',
-    field: 'Residence', before: 'Emergency Foster Home A (non-relative)',
-    after: 'Foster / Guardian Home — Foster Parent B (guardian)',
-    screen: 'Member 360 — Demographics', control: 'Lookup',
-    reasonCode: 'PLACEMENT-CHANGE-2 · prior placements retained in residence history',
-  }));
-  out.push(wBase({
-    timestamp: stamp(day(20), 0, 608), action: 'Field edited', field: 'Address-dependent workflows',
-    before: 'Foster Home A district', after: 'Re-matched — medical home, school district, correspondence mailing',
-    screen: 'Member 360 — Demographics', control: 'Lookup', reasonCode: 'ADDRESS-DEPENDENT-REMATCH',
-  }));
-  out.push(wBase({
-    timestamp: stamp(day(19), 0, 588), category: 'Clinical Decision', action: 'Care gap identified',
-    channel: 'System Rule', actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-    field: 'Immunization series', before: 'Due', after: 'OVERDUE — TDAP and Meningococcal',
-    reasonCode: 'EPSDT-IMMUNIZATION-CATCHUP', outcome: 'Denied',
-  }));
-  out.push(wBase({
-    timestamp: stamp(day(19), 0, 612), action: 'Same-day appointment scheduled', field: 'Appointment',
-    before: null, after: 'Well-child visit — Foster Care / Wraparound Medical Home, same day (hearing, vision, dental)',
-    screen: 'Provider Directory — Medical Home Search', control: 'Lookup', reasonCode: 'SAME-DAY-MEDICAL-HOME',
-  }));
-  ['Meal assistance', 'Clothing closet', 'School supplies and enrollment support'].forEach((svcName, k) => {
-    out.push(wBase({
-      timestamp: stamp(day(19), 0, 616 + k * 2), action: 'Co-located service referral logged',
-      field: 'Linked intervention', before: null, after: `${svcName} — co-located at medical home`,
-      screen: 'Provider Directory — Medical Home Search', control: 'Checkbox', reasonCode: 'SDOH-COLOCATED-REFERRAL',
-    }));
-  });
-  // ---- external programme linkage -------------------------------------------------------------
+
+  // ---- external programme linkage --------------------------------------------------------------
   // FosterConnect is a community organisation, not a plan programme: the plan refers and tracks,
-  // FosterConnect decides and delivers. Logged as a linkage so the Programs view can show it
-  // without it polluting plan enrolment counts.
+  // FosterConnect decides and delivers.
   out.push(wBase({
-    timestamp: stamp(day(19), 0, 624), action: 'External program linked',
+    timestamp: stamp(onDay('2026-09-08'), 0, 612), action: 'External program linked',
     field: 'External program', before: null,
     after: 'FosterConnect (community-based organization) — clothing, food assistance, respite care',
     screen: 'Care Management — Programs', control: 'Lookup',
     reasonCode: 'EXT-PROGRAM-REFERRAL · plan refers and tracks; organisation delivers',
   }));
   out.push(wBase({
-    timestamp: stamp(day(19), 0, 627), action: 'Care team member added',
+    timestamp: stamp(onDay('2026-09-08'), 0, 615), action: 'Care team member added',
     field: 'Care Team', before: null,
     after: 'Fred Flint, SW — FosterConnect · 123-456-7777 · External program contact',
-    screen: 'Care Management — Care Team', control: 'Free text',
-    reasonCode: 'CARE-TEAM-EXTERNAL-CONTACT',
-  }));
-  out.push(wBase({
-    timestamp: stamp(day(11), 0, 590), action: 'External program service confirmed',
-    field: 'FosterConnect', before: 'Referred', after: 'Engaged — clothing and food assistance delivered; respite scheduled',
-    screen: 'Care Management — Programs', control: 'Dropdown',
-    reasonCode: 'EXT-PROGRAM-CLOSED-LOOP · organisation reports back',
+    screen: 'Care Management — Care Team', control: 'Free text', reasonCode: 'CARE-TEAM-EXTERNAL-CONTACT',
   }));
 
-  // Still outstanding, and shown as outstanding. A demo timeline where every item is complete is a
-  // timeline nobody believes, and "what is still open on this child" is the question the oversight
-  // act exists to answer.
+  // ---- the care plan the tenant actually holds --------------------------------------------------
+  // Foster Care: Trauma-Informed Care Plan — Active, two problems, three goals, four interventions.
+  ([['Problem', 'History of Abuse / Trauma — documented in source; follow trauma-informed interventions'],
+    ['Problem', 'Nutritional Deficit — documented nutrition deficit; monitor growth and connect to services'],
+    ['Goal', 'Engage in trauma-focused counselling and demonstrate age-appropriate coping'],
+    ['Goal', 'Measurable improvement in growth and nutrition indicators at next well-child visit'],
+    ['Goal', 'Complete overdue immunization series'],
+    ['Intervention', 'Refer to trauma-focused behavioural health, choice-based approach'],
+    ['Intervention', 'Refer to registered dietitian and connect to co-located meal assistance'],
+    ['Intervention', 'Complete immunization catch-up schedule'],
+    ['Intervention', 'Coordinate with school liaison and monitor school adjustment']] as [string, string][])
+    .forEach(([kind, text], k) => {
+      out.push(wBase({
+        timestamp: stamp(onDay('2026-09-05'), 0, 540 + k), action: 'Care plan item activated',
+        field: kind, before: 'Proposed', after: `${text} — Active · SMART`,
+        screen: 'Care Plan — Foster Care: Trauma-Informed Care Plan', control: 'Checkbox',
+        reasonCode: 'CAREPLAN-ACTIVE',
+      }));
+    });
+  // One AI-suggested problem still awaiting accept or reject, exactly as the tenant shows it.
   out.push(wBase({
-    timestamp: stamp(day(17), 0, 530), action: 'Suggested action pending',
-    field: 'Child Welfare Screening', before: null,
-    after: 'Standardized child welfare / safety screening — to be scheduled',
-    screen: 'Care Management — Suggested Actions', control: 'Checkbox',
-    reasonCode: 'CHILD-WELFARE-SCREENING-DUE', outcome: 'Denied',
+    timestamp: stamp(onDay('2026-09-03'), 0, 620), category: 'Clinical Decision',
+    action: 'AI care plan item suggested', channel: 'System Rule',
+    actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+    field: 'Problem 00146', before: null,
+    after: 'Care Manager will coordinate comprehensive pediatric assessment and stabilization by 2026-09-10, using existing foster care support services, to address acute welfare custody risks and prevent further developmental delay — AI-Suggested, pending accept or reject',
+    reasonCode: 'CAREPLAN-AI-ASSIST · SMART · target 2026-09-10 · source: welfare custody risk, developmental delay',
   }));
 
+  // ---- what is still open ----------------------------------------------------------------------
+  ([['Schedule Annual Wellness Visit', 'Insufficient care plan detail · underimmunization status noted', '2026-10-09', 'Low'],
+    ['Review Immunization Status', 'Underimmunization status noted', '2026-09-23', 'Low']] as [string, string, string, string][])
+    .forEach(([title, detail, due, sev], k) => {
+      out.push(wBase({
+        timestamp: stamp(onDay('2026-09-09'), 0, 560 + k * 2), category: 'Clinical Decision',
+        action: 'Suggested action pending', channel: 'System Rule',
+        actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
+        field: title, before: null, after: `${detail} — due ${due}`,
+        reasonCode: `CARE-GAP-${sev.toUpperCase()} · awaiting care manager disposition`,
+      }));
+    });
   out.push(wBase({
-    timestamp: stamp(day(18), 0, 545), action: 'Case note recorded', field: 'Trauma-Informed Care note',
-    before: null, after: 'Safety confirmed · age-appropriate explanation given · child and caregiver offered scheduling choice · strengths-based language',
-    screen: 'Case Notes — Trauma-Informed Template', control: 'Free text',
-    reasonCode: 'TRAUMA-INFORMED-TEMPLATE · Trauma History Considered: Yes',
+    timestamp: stamp(onDay('2026-09-03'), 0, 630), action: 'To-do overdue',
+    field: 'Outreach To-Do', before: 'Due 2026-09-03', after: 'OVERDUE — outreach not yet completed',
+    screen: 'Care Management — To-Do Worklist', control: 'Checkbox',
+    reasonCode: 'TODO-OVERDUE', outcome: 'Denied',
   }));
   out.push(wBase({
-    timestamp: stamp(day(14), 0, 570), action: 'ICT meeting convened', field: 'ICT Meeting #1',
-    before: null,
-    after: 'Attendees: Medical Director, Social Worker, RN Care Manager, Foster Parent B, School Liaison — placement stability, same-day visit outcome, immunization plan, nutrition concern; dietitian referral assigned',
-    screen: 'Care Management — ICT Meetings', control: 'Free text', reasonCode: 'ICT-MEETING-DOCUMENTED',
-  }));
-  const wSuggestions: [string, string, string][] = [
-    ['Problem', 'History of abuse / trauma — risk for psychological and emotional distress', 'documented birth-parent abuse history'],
-    ['Problem', 'Nutritional deficit — risk for impaired growth and development', 'documented inadequate nutrition history'],
-    ['Goal', 'Engage in trauma-focused counselling and demonstrate age-appropriate coping within 90 days', 'trauma history'],
-    ['Intervention', 'Refer to trauma-focused behavioural health (TF-CBT), choice-based approach', 'trauma history'],
-    ['Intervention', 'Refer to registered dietitian; connect family to co-located meal assistance', 'nutrition deficit'],
-    ['Intervention', 'Complete immunization catch-up schedule and close the identified care gap', 'immunization care gap'],
-  ];
-  wSuggestions.forEach(([kind, text, source], k) => {
-    out.push(wBase({
-      timestamp: stamp(day(13), 0, 520 + k * 2), category: 'Clinical Decision',
-      action: 'AI care plan item suggested', channel: 'System Rule',
-      actor: svc.name, actorId: svc.userId, actorRole: svc.role, sourceIp: '172.19.4.11',
-      field: kind, before: null, after: `${text} — AI-Suggested, pending review`,
-      // The specification asks that a suggestion name the data that drove it; without that a
-      // reviewer is asked to accept clinical content on trust.
-      reasonCode: `CAREPLAN-AI-ASSIST · source: ${source}`,
-    }));
-  });
-  out.push(wBase({
-    timestamp: stamp(day(12), 0, 534), action: 'AI care plan item accepted',
-    field: 'Problem', before: 'AI-Suggested — pending review',
-    after: 'Accepted — History of abuse / trauma; risk for psychological and emotional distress',
-    screen: 'Care Plan — Activity Feed', control: 'Dropdown', reasonCode: 'CAREPLAN-ACCEPTED',
-  }));
-  out.push(wBase({
-    timestamp: stamp(day(12), 0, 537), action: 'AI care plan item edited',
-    field: 'Intervention', before: 'AI-Suggested — refer to registered dietitian',
-    after: 'Edited — refer to registered dietitian AND enrol in WIC; caregiver requested both',
-    screen: 'Care Plan — Activity Feed', control: 'Free text', reasonCode: 'CAREPLAN-EDITED',
-  }));
-  out.push(wBase({
-    timestamp: stamp(day(7), 0, 566), action: 'ICT meeting scheduled', field: 'ICT Meeting #2',
-    before: null,
-    after: 'Scheduled — Social Worker, RN Care Manager, Foster Parent B, Guardian ad Litem, Behavioral Health Clinician; counselling engagement, school adjustment, growth monitoring',
-    screen: 'Care Management — ICT Meetings', control: 'Free text', reasonCode: 'ICT-MEETING-DOCUMENTED',
+    timestamp: stamp(onDay('2026-09-09'), 0, 570), action: 'To-do created',
+    field: 'ICT Meeting: Follow Up', before: null, after: 'Scheduled — due 2026-11-04',
+    screen: 'Care Management — To-Do Worklist', control: 'Date', reasonCode: 'ICT-FOLLOW-UP-SCHEDULED',
   }));
 
   return out;
@@ -1243,25 +1268,23 @@ function scenarioEvents(): Draft[] {
 (function registerScenarioTeams() {
   const teamDate = (() => { const d = new Date(TODAY); d.setDate(d.getDate() - 21); return d.toISOString().slice(0, 10); })();
   const linkDate = (() => { const d = new Date(TODAY); d.setDate(d.getDate() - 19); return d.toISOString().slice(0, 10); })();
+  // Four members, as the tenant's panel shows — including the duplicated K Malone account. Kept
+  // rather than tidied: a person appearing twice on a care team under two accounts is a real
+  // data-quality finding, and an oversight tool that silently de-duplicates it has hidden exactly
+  // the thing it exists to surface.
   const willisTeam: CareTeamMember[] = [
-    { memberId: SCEN_WILLIS, name: 'K. Malone, LCSW', relation: 'Primary case owner',
-      organization: 'Zyter TruCare — Care Management', phone: '214-555-0121', internal: true, addedDate: teamDate },
+    { memberId: SCEN_WILLIS, name: 'K Malone', relation: 'Primary case owner',
+      organization: 'Zyter TruCare — Care Management', phone: '214-555-0121', internal: true, addedDate: '2026-09-08' },
+    { memberId: SCEN_WILLIS, name: 'K Malone (kmalone_cm)', relation: 'Primary case owner',
+      organization: 'Zyter TruCare — Care Management', phone: '214-555-0121', internal: true, addedDate: '2026-09-08' },
     { memberId: SCEN_WILLIS, name: 'Jessica Mendez, RN', relation: 'Secondary care manager',
-      organization: 'Zyter TruCare — Care Management', phone: '214-555-0134', internal: true, addedDate: teamDate },
+      organization: 'Zyter TruCare — Care Management', phone: '214-555-0134', internal: true, addedDate: '2026-09-08' },
     { memberId: SCEN_WILLIS, name: 'Fred Flint, SW', relation: 'External program contact',
-      organization: 'FosterConnect', phone: '123-456-7777', internal: false, addedDate: linkDate },
-    { memberId: SCEN_WILLIS, name: 'Foster Parent B', relation: 'Guardian / caregiver',
-      organization: 'Foster / Guardian Home', phone: '214-555-0188', internal: false, addedDate: teamDate },
-    { memberId: SCEN_WILLIS, name: 'Dr. Owen Hartley', relation: 'Primary care provider',
-      organization: 'Foster Care / Wraparound Medical Home', phone: '214-555-0143', internal: false, addedDate: linkDate },
-    { memberId: SCEN_WILLIS, name: 'M. Okonjo', relation: 'School liaison',
-      organization: 'Independent School District', phone: '214-555-0155', internal: false, addedDate: teamDate },
-    { memberId: SCEN_WILLIS, name: 'C. Barrett, Esq.', relation: 'Guardian ad Litem',
-      organization: 'Court Appointed Special Advocates', phone: '214-555-0166', internal: false, addedDate: teamDate },
+      organization: 'FosterConnect', phone: '123-456-7777', internal: false, addedDate: '2026-09-08' },
   ];
   const willisLinks: ExternalProgramLink[] = [{
-    memberId: SCEN_WILLIS, programId: 'EXT-FOSTERCONNECT', referredDate: linkDate,
-    referredBy: 'K. Malone, LCSW', status: 'Engaged',
+    memberId: SCEN_WILLIS, programId: 'EXT-FOSTERCONNECT', referredDate: '2026-09-08',
+    referredBy: 'K Malone', status: 'Engaged',
     lastConfirmed: (() => { const d = new Date(TODAY); d.setDate(d.getDate() - 11); return d.toISOString().slice(0, 10); })(),
   }];
   registerScenarioCareTeam(SCEN_WILLIS, willisTeam, willisLinks);
@@ -1278,7 +1301,10 @@ function scenarioEvents(): Draft[] {
 function buildEvents(): AuditEvent[] {
   const drafts: Draft[] = [
     ...CASE_POOL.flatMap((c, i) => umEventsFor(c, i)),
-    ...CM_CASE_POOL.map((_, i) => cmEventsFor(i)).flat(),
+    // The two specification members carry a hand-written chain from scenarioEvents(); letting the
+    // generator also emit one for them produced a second, contradictory care-management thread on
+    // the same case — different dates, different actors, same member.
+    ...CM_CASE_POOL.map((c, i) => (c.memberId === SCENARIO_JADE_ID || c.memberId === SCENARIO_WILLIS_ID ? [] : cmEventsFor(i))).flat(),
     ...operationalEvents(),
     ...scenarioEvents(),
   ].sort((a, b) => a.timestamp.localeCompare(b.timestamp) || a.entityId.localeCompare(b.entityId));

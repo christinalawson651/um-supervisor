@@ -24,7 +24,7 @@ export const CARE_MANAGERS: CareManagerMeta[] = [
  *  audit trail and every care-management surface resolve the same member rather than each deriving
  *  their own id and quietly disagreeing. */
 export const SCENARIO_JADE_ID = 'DOC26-0100001';
-export const SCENARIO_WILLIS_ID = 'M8315A35D';
+export const SCENARIO_WILLIS_ID = 'DOC26-0100002';
 
 // Case lifecycle stage — the member's overall journey (owned by the Intake & Assessment SLA and
 // Care Plan & Outcomes tabs, not Workforce & Caseload). Kept here as shared infra for when those
@@ -271,7 +271,7 @@ function withScenarioMembers(pool: CmCaseRec[]): CmCaseRec[] {
   stamp('Jessica Mendez, RN', SCENARIO_JADE_ID, 'Pinket, Jade',
     'Asthma, moderate persistent · RSV exposure risk', 'Complex Case', 2);
   stamp('K. Malone, LCSW', SCENARIO_WILLIS_ID, 'Williams, Willis',
-    'Z62.810 — Personal history of abuse in childhood', 'Complex Case', 11);
+    'History of abuse / trauma · nutritional deficit · underimmunization', 'Complex Case', 11);
   return pool;
 }
 
