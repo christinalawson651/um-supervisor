@@ -1,0 +1,317 @@
+<title>Caseload &amp; Capacity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F4F2ED;
+    --surface:    #FFFFFF;
+    --surface-2:  #EAE7E0;
+    --ink:        #191A1C;
+    --ink-soft:   #43474E;
+    --muted:      #6E7480;
+    --rule:       #D8D4CC;
+    --rule-soft:  #E7E3DB;
+    --accent:     #2E4374;
+    --accent-ink: #22345C;
+    --accent-wash:#E2E6F0;
+    --ok:         #2F6B4F;
+    --warn:       #9A6112;
+    --over:       #A33A2E;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #16181B; --surface: #1E2126; --surface-2: #262A31;
+      --ink: #EDEAE4; --ink-soft: #C3C6CC; --muted: #8E949F;
+      --rule: #333840; --rule-soft: #282D34;
+      --accent: #8FA6DC; --accent-ink: #B3C3E8; --accent-wash: #232C3F;
+      --ok: #6FBF95; --warn: #DFA959; --over: #E4837A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #16181B; --surface: #1E2126; --surface-2: #262A31;
+    --ink: #EDEAE4; --ink-soft: #C3C6CC; --muted: #8E949F;
+    --rule: #333840; --rule-soft: #282D34;
+    --accent: #8FA6DC; --accent-ink: #B3C3E8; --accent-wash: #232C3F;
+    --ok: #6FBF95; --warn: #DFA959; --over: #E4837A;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: "Libre Franklin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .sheet { max-width: 900px; margin: 0 auto; padding-block: 0 72px; padding-left: 24px; padding-right: 24px; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+  /* ---------- masthead ---------- */
+  .masthead { display: grid; gap: 12px; padding-block: 48px 20px; border-bottom: 2px solid var(--ink); }
+  .kicker {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+  }
+  h1 {
+    font-family: "Fraunces", Georgia, serif; font-weight: 600;
+    font-size: clamp(32px, 5vw, 50px); line-height: 1.04; letter-spacing: -.02em;
+    margin: 0; text-wrap: balance;
+  }
+  .standfirst {
+    font-size: clamp(15px, 1.8vw, 17.5px); line-height: 1.55; color: var(--ink-soft);
+    max-width: 62ch; margin: 0;
+  }
+
+  /* ---------- sections ---------- */
+  section { padding-block: 30px 6px; }
+  section + section { border-top: 1px solid var(--rule-soft); }
+  /* The eyebrow is the product path — where this actually lives, not decoration. */
+  .path {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+  }
+  .path b { color: var(--accent); font-weight: 500; }
+  h2 {
+    font-family: "Fraunces", Georgia, serif; font-weight: 600;
+    font-size: 24px; line-height: 1.18; letter-spacing: -.015em; margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  p { margin: 0 0 12px; max-width: 68ch; }
+  .lede { color: var(--ink-soft); }
+
+  /* ---------- capacity strip: the page's core instrument ---------- */
+  .roster { display: grid; gap: 2px; margin: 18px 0 8px; }
+  .rrow {
+    display: grid; grid-template-columns: minmax(130px, 1.3fr) minmax(90px, 2fr) auto;
+    gap: 14px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--rule-soft);
+  }
+  .rrow:last-child { border-bottom: 0; }
+  .rname { font-size: 13px; font-weight: 600; }
+  .rname span { display: block; font-size: 10.5px; font-weight: 400; color: var(--muted); }
+  .track { height: 8px; background: var(--surface-2); border-radius: 1px; overflow: hidden; }
+  .track > i { display: block; height: 100%; background: var(--accent); }
+  .track > i[data-load="high"] { background: var(--over); }
+  .track > i[data-load="light"] { background: var(--ok); }
+  .rpct { font-family: "IBM Plex Mono", monospace; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 78px; text-align: right; color: var(--ink-soft); }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; margin: 14px 0 6px; }
+  table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 13px; }
+  th {
+    text-align: left; font-family: "IBM Plex Mono", monospace; font-weight: 500;
+    font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted);
+    padding: 0 14px 7px 0; border-bottom: 1px solid var(--ink); white-space: nowrap;
+  }
+  td { padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; line-height: 1.5; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 12px; }
+
+  /* ---------- the one lifted element ---------- */
+  .rule-box {
+    background: var(--surface); border-left: 3px solid var(--accent);
+    padding: 16px 20px; margin: 18px 0 10px;
+  }
+  .rule-box h3 {
+    font-family: "Fraunces", Georgia, serif; font-size: 17px; font-weight: 600; margin: 0 0 6px;
+  }
+  .rule-box p:last-child { margin-bottom: 0; }
+
+  .tag {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 9.5px;
+    font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 2px; background: var(--accent-wash); color: var(--accent-ink);
+    white-space: nowrap;
+  }
+  .tag.warn { background: transparent; color: var(--warn); border: 1px solid var(--warn); }
+
+  ul.tight { margin: 0 0 12px; padding-left: 18px; display: grid; gap: 6px; max-width: 68ch; }
+  ul.tight li::marker { color: var(--accent); }
+
+  .foot {
+    margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--rule);
+    display: flex; flex-wrap: wrap; gap: 6px 24px; align-items: baseline;
+    font-size: 12px; color: var(--muted);
+  }
+  .foot b { color: var(--ink); font-weight: 600; }
+
+  @media (max-width: 520px) {
+    .rrow { grid-template-columns: 1fr auto; }
+    .rrow .track { grid-column: 1 / -1; }
+  }
+  @media print {
+    body { background: #fff; color: #111; font-size: 10.5pt; }
+    .sheet { max-width: none; padding: 0; }
+    section { padding-block: 16px 2px; break-inside: avoid; }
+    .rule-box, .roster { break-inside: avoid; }
+    .masthead { padding-top: 0; }
+    h1 { font-size: 28pt; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="kicker">Capability brief &nbsp;·&nbsp; Zyter TruCare Pulse &nbsp;·&nbsp; September 2026</div>
+    <h1>Caseload &amp; Capacity</h1>
+    <p class="standfirst">How work is distributed, covered and forecast across utilization management and care management — and what a supervisor can actually change from the screen.</p>
+  </header>
+
+  <section>
+    <div class="path">Three questions</div>
+    <h2>A supervisor asks the same three things every morning</h2>
+    <p class="lede">Who is carrying what. Who is actually here. What is coming. Almost every workforce screen in the product answers one of those three, and the ones that answer none were cut.</p>
+    <p>The distinction that organises all of it: <b>work is either sitting unclaimed in a queue, or it belongs to one person — never both.</b> A queue is the pool you pull from; the moment someone owns a case it is no longer pullable. Anything counted in both places is counted twice in every workload, utilization and queue-depth figure downstream, and the two halves of the dashboard stop reconciling.</p>
+    <div class="rule-box">
+      <h3>Queued or owned, enforced in the data</h3>
+      <p>Assigning a case pulls it out of its queue. Returning one to a queue releases whoever held it. Both moves go through a single pair of functions rather than being re-derived at each screen, so the rule holds wherever a reassignment starts — the bulk panel, a row action, a drill-down, a balance run.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="path"><b>UM</b> › Workforce &amp; Queue Management &nbsp;·&nbsp; <b>CM</b> › Workforce &amp; Caseload</div>
+    <h2>Who is carrying what</h2>
+    <p class="lede">Utilization per reviewer against a named capacity, grouped by team, with every number drillable to the cases behind it. Care management runs to a capacity of 32 active cases per care manager; utilization management runs to queue throughput and active authorizations.</p>
+
+    <div class="roster" role="table" aria-label="Care management caseload and utilization">
+      <div class="rrow">
+        <div class="rname">Sara Nguyen, RN <span>Complex Care</span></div>
+        <div class="track"><i data-load="high" style="width:88%"></i></div>
+        <div class="rpct">28 · 88%</div>
+      </div>
+      <div class="rrow">
+        <div class="rname">David Patel, MSW <span>Behavioral Health</span></div>
+        <div class="track"><i style="width:72%"></i></div>
+        <div class="rpct">23 · 72%</div>
+      </div>
+      <div class="rrow">
+        <div class="rname">Maria Torres, RN <span>Transitional Care</span></div>
+        <div class="track"><i style="width:72%"></i></div>
+        <div class="rpct">23 · 72%</div>
+      </div>
+      <div class="rrow">
+        <div class="rname">Angela Ruiz, RN <span>Complex Care</span></div>
+        <div class="track"><i style="width:66%"></i></div>
+        <div class="rpct">21 · 66%</div>
+      </div>
+      <div class="rrow">
+        <div class="rname">James Wong <span>Medication Mgmt</span></div>
+        <div class="track"><i style="width:56%"></i></div>
+        <div class="rpct">18 · 56%</div>
+      </div>
+      <div class="rrow">
+        <div class="rname">Kevin Brooks, RN <span>Transitional Care</span></div>
+        <div class="track"><i style="width:53%"></i></div>
+        <div class="rpct">17 · 53%</div>
+      </div>
+      <div class="rrow">
+        <div class="rname">Jessica Mendez, RN <span>Pediatric EPSDT</span></div>
+        <div class="track"><i data-load="light" style="width:47%"></i></div>
+        <div class="rpct">15 · 47%</div>
+      </div>
+      <div class="rrow">
+        <div class="rname">K. Malone, LCSW <span>Foster Care</span></div>
+        <div class="track"><i data-load="light" style="width:38%"></i></div>
+        <div class="rpct">12 · 38%</div>
+      </div>
+    </div>
+    <p class="sub">Specialised caseloads run deliberately lighter than general care management, and the two at the foot of the list are the specialist programmes — a foster-care social worker and a paediatric EPSDT nurse. Reading them as under-utilised is the mistake the grouping exists to prevent.</p>
+  </section>
+
+  <section>
+    <div class="path">Rebalancing</div>
+    <h2>Moving work, with the move on the record</h2>
+    <p class="lede">Four strategies, chosen rather than automatic, each previewed before anything commits.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Strategy</th><th>What it does</th><th>Used when</th></tr></thead>
+        <tbody>
+          <tr><td><b>Light</b></td><td class="sub">Moves one item from the busiest person</td><td class="sub">A single hotspot, mid-shift</td></tr>
+          <tr><td><b>Standard</b></td><td class="sub">Rebalances three</td><td class="sub">Routine morning levelling</td></tr>
+          <tr><td><b>Aggressive</b></td><td class="sub">Rebalances six</td><td class="sub">After an absence or a volume spike</td></tr>
+          <tr><td><b>Even out</b></td><td class="sub">Levels everyone toward the team average</td><td class="sub">Start of week, or after a roster change</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Every strategy shows the plan first — who loses what, who gains it, and what each person's utilization becomes — and nothing moves until it is confirmed. Reassignment can also be done by hand from any caseload row or any drill-down, scoped to one person's work, with a recommended target marked and over-capacity targets flagged before you pick them.</p>
+    <p>Each move is written to <b>assignment history</b> with who moved it, from whom, to whom, and which members were affected. A rebalance that leaves no trace is indistinguishable from a caseload that drifted.</p>
+  </section>
+
+  <section>
+    <div class="path"><b>UM</b> › Scheduling &amp; Adherence &nbsp;·&nbsp; <b>CM</b> › Scheduling &amp; Adherence</div>
+    <h2>Who is actually here</h2>
+    <p class="lede">Scheduled shift against worked shift, per person, with five exception types rather than a present/absent flag.</p>
+    <p><span class="tag">On time</span> <span class="tag warn">Late start</span> <span class="tag warn">Early leave</span> <span class="tag warn">Absence</span> <span class="tag warn">Overtime</span></p>
+    <p>Overtime sits in the same list as the shortfalls on purpose. A team hitting its numbers on sustained overtime is a staffing finding, not a success, and separating it into a different view is how it gets missed.</p>
+    <p>Adherence is reported by person and by exception type across daily, weekly, monthly and rolling four-week periods, alongside PTO balances — accrued, taken, scheduled, remaining — so cover can be planned against what people actually have left rather than against who volunteers.</p>
+
+    <div class="rule-box">
+      <h3>Planned absence redistributes within the team</h3>
+      <p>The PTO flow empties a person's caseload completely for the dates they are away, to teammates on their own team only — never across teams. Cross-team redistribution looks efficient on a utilization chart and is usually wrong: the receiving reviewer does not hold the clinical proficiency, the market, or the programme the work belongs to. Targets can be narrowed further by hand where only certain colleagues should take it.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="path"><b>UM</b> › Demand &amp; Forecasting &nbsp;·&nbsp; <b>CM</b> › Demand &amp; Forecasting</div>
+    <h2>What is coming</h2>
+    <p class="lede">Eight weeks of actual submission and referral volume, bucketed from each item's own received date, with a projection for next week and a comparison against capacity.</p>
+    <p>The projection is a <b>trailing four-complete-week average</b>. The current week is shown on the trend line but excluded from the basis, because a partial week always reads as a collapse in volume and would drag every forecast down.</p>
+    <div class="rule-box">
+      <h3>This is a planning heuristic, not a statistical forecast</h3>
+      <p>It is deliberately simple, and it is labelled as simple on the screen. A supervisor deciding whether next week needs cover is well served by a trailing average against remaining capacity; presenting that as a model would invite a confidence it has not earned. Where the projection exceeds capacity the screen says so plainly and names the gap.</p>
+      <p>"Capacity" means two different things by scope, and the screen distinguishes them: overall it is intake-processing capacity; per team it is that team's remaining active-caseload headroom, since intake coordinators serve every team and have no per-team capacity of their own.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="path">Escalation</div>
+    <h2>When the answer is not redistribution</h2>
+    <p class="lede">Some work does not need a different owner — it needs a different level of review.</p>
+    <ul class="tight">
+      <li>A named Medical Director, for clinical questions a nurse reviewer cannot resolve</li>
+      <li>The peer-to-peer review queue, where the requesting provider needs a clinician conversation</li>
+      <li>The supervisor, for anything that is an operational rather than a clinical problem</li>
+    </ul>
+    <p>Escalation is a distinct action from reassignment and lands in the same history. The distinction matters at review time: a case that went to a Medical Director because the criteria were genuinely ambiguous tells you something different from a case that was moved three times because nobody had capacity.</p>
+  </section>
+
+  <section>
+    <div class="path">Configured to you</div>
+    <h2>What is a setting rather than a rebuild</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Surface</th><th>Ships as</th><th>Set to</th></tr></thead>
+        <tbody>
+          <tr><td><b>Caseload capacity</b></td><td class="sub">32 active cases per care manager</td><td>Your ratio, per specialty and per programme</td></tr>
+          <tr><td><b>Teams and specialties</b></td><td class="sub">Four teams across seven disciplines</td><td>Your org structure and clinical proficiencies</td></tr>
+          <tr><td><b>Work queues</b></td><td class="sub">Seven UM queues, six CM queues</td><td>Your intake and review model</td></tr>
+          <tr><td><b>Balance strategies</b></td><td class="sub">Four, from one item to full levelling</td><td>How aggressively you move work, and who may</td></tr>
+          <tr><td><b>Adherence exceptions</b></td><td class="sub">Five types including overtime</td><td>Your workforce-management definitions</td></tr>
+          <tr><td><b>Forecast basis</b></td><td class="sub">Trailing four complete weeks</td><td>Your planning horizon and seasonality</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">The figures in the middle column are what the demonstration environment happens to ship with. None of them is a fixed position.</p>
+  </section>
+
+  <section>
+    <div class="path">Next phase</div>
+    <h2>Where this goes</h2>
+    <p class="lede">Three things the current model does not do, stated because a workforce conversation that omits them is not worth having.</p>
+    <ul class="tight">
+      <li><b>Skill-based routing beyond discipline.</b> Work is matched to a team and a discipline today. Language, licensure by state, and member-specific continuity are not yet routing inputs — they are the ones a real assignment engine needs next.</li>
+      <li><b>Forecasting by seasonality.</b> A trailing average cannot see an open-enrolment spike or a flu season coming. Doing that properly needs history the demonstration environment does not carry.</li>
+      <li><b>Cost of cover.</b> Overtime is measured as an adherence exception, not priced. Connecting it to the financial view is a small piece of work and turns a staffing observation into a budget conversation.</li>
+    </ul>
+  </section>
+
+  <div class="foot">
+    <span><b>Live environment</b> um-supervisor.onrender.com</span>
+    <span><b>Companion</b> Audit &amp; Traceability capability sheet</span>
+    <span>Figures from the demonstration dataset — realistic in shape, not client data</span>
+  </div>
+
+</div>
