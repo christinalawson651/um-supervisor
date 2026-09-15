@@ -1,0 +1,33 @@
+# AWS Amplify Hosting build spec — the closest equivalent to the existing Render setup:
+# connect the GitHub repo, Amplify builds on every push to the tracked branch.
+#
+# Mirrors render.yaml exactly: same install, same build, same publish directory.
+#
+# TWO THINGS AMPLIFY CANNOT TAKE FROM THIS FILE, both set in the console (or via CFN/CDK):
+#
+#   1. SPA rewrite. Add a redirect rule:
+#          source  </^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff2?|ttf|map|json)$)([^.]+$)/>
+#          target  /index.html
+#          type    200 (Rewrite)
+#      Without it every deep link 404s, exactly as it would on Render without its rewrite.
+#
+#   2. Node version. This project has no `engines` field and Angular 22 needs Node 20+.
+#      Set the build image to a Node 20 image, or add a `nvm use 20` line to preBuild.
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - nvm use 20 || true
+        - node -v
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: dist/um-supervisor/browser
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*

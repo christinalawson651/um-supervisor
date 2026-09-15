@@ -1,0 +1,21 @@
+# Response headers for AWS Amplify Hosting. Carries across the one header render.yaml sets, plus
+# the cache split a fingerprinted Angular build wants: hashed assets are immutable and can be
+# cached for a year, index.html never can — it is the file that points at the new hashes, so
+# caching it is how a deploy silently fails to reach anyone.
+customHeaders:
+  - pattern: '**'
+    headers:
+      - key: X-Frame-Options
+        value: SAMEORIGIN
+      - key: X-Content-Type-Options
+        value: nosniff
+      - key: Referrer-Policy
+        value: strict-origin-when-cross-origin
+  - pattern: '/index.html'
+    headers:
+      - key: Cache-Control
+        value: 'no-cache, no-store, must-revalidate'
+  - pattern: '/*.@(js|css|woff2|ico|png|svg)'
+    headers:
+      - key: Cache-Control
+        value: 'public, max-age=31536000, immutable'
