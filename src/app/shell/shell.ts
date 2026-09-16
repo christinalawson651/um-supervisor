@@ -88,7 +88,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   um: { title: 'UM Supervisor Dashboard', sub: "Your team is performing well — here's your operational overview", role: 'UM Supervisor' },
   cm: { title: 'CM Supervisor Dashboard', sub: 'Care management worklist and referral intake', role: 'CM Supervisor' },
   appeals: { title: 'Appeals Supervisor Dashboard', sub: 'Appeals & grievances worklist, prioritized by deadline', role: 'Appeals Supervisor' },
-  reports: { title: 'Reports', sub: 'Printable, exportable reports across UM, CM & Appeals — smart-filtered by date range and LOB', role: 'Operations Supervisor' },
+  reports: { title: 'Reports', sub: 'Printable, exportable reports — smart-filtered by date range and LOB. UM and the audit set ship today; UM Appeals, CM and A&G follow', role: 'Operations Supervisor' },
   audit: { title: 'Audit & Traceability', sub: 'Audit trail, user activity monitoring, access governance and compliance evidence across every module', role: 'Compliance & Oversight' },
 };
 

@@ -50,7 +50,10 @@ const PERIODS = [
               }
             </div>
           }
-          <div class="grp-note">CM and Appeals reports are next up — this pass ships UM's full granular set.</div>
+          <!-- Scope is stated where the empty modules are, not only in the strapline. UM Appeals is
+               pilot scope alongside UM, so it is named separately from the CM/A&G fast-follows —
+               its reports are blocked on an appeals case pool, not on writing the definitions. -->
+          <div class="grp-note">UM and the audit set ship in this pass. UM Appeals is next, then CM and A&amp;G.</div>
         }
       </aside>
 
