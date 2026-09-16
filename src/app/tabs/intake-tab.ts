@@ -496,8 +496,13 @@ export class IntakeTab {
       .filter((r) => r.count > 0)
       .sort((a, b) => b.count - a.count);
   });
+  /** Drills from the SAME population the row counted — pending *and* incompleteDoc — not from
+   *  pendingScoped() alone. The two agreed only by accident: missingInfoCategoryOf() returns 'None'
+   *  for anything without the tag, so the four real categories could never pick up an untagged case.
+   *  That made the asymmetry invisible rather than absent, and a 'None' row would have drilled into
+   *  every pending case with nothing missing — the whole book of business behind a row reading 1. */
   drillMissingInfo(category: MissingInfoCategory) {
-    const cs = this.pendingScoped().filter((c) => missingInfoCategoryOf(c) === category);
+    const cs = this.pendingScoped().filter((c) => c.tags.includes('incompleteDoc') && missingInfoCategoryOf(c) === category);
     this.openCases(category, cs, `missing-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
   }
   exportMissingInfo() {
