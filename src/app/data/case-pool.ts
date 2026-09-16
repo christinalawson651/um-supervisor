@@ -23,6 +23,17 @@ export interface CaseRec {
 
 // same roster used on the Provider & Network Insights tab, so a case's provider
 // always matches a name a supervisor would recognize from that tab
+/** Spreads a boolean attribute across the pool without tying it to the index that also decides
+ *  decision, TAT bucket and queue. Same reason the notification module salts its hashes: attributes
+ *  seeded off one monotonic counter end up perfectly correlated, which quietly removes whole
+ *  combinations from the data — and it is always the interesting combinations that vanish. */
+function hashPick(n: number, salt: string, mod: number): number {
+  let x = 2166136261;
+  const str = `${salt}:${n}`;
+  for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); }
+  return (x >>> 0) % mod;
+}
+
 export const PROVIDERS = [
   'Dr. Sarah Mitchell', 'Dr. James Parker', 'Dr. Emily Chen',
   'Memorial Orthopedic Group', 'Regional Heart Center', 'Coastal Neurology Associates',
@@ -236,8 +247,13 @@ function buildDecided(): CaseRec[] {
     else if (j < 244) tags.push('atRisk');
     else { tags.push('breached'); }
 
-    // review priority: 34 expedited / 213 standard
-    tags.push(j < 34 ? 'expedited' : 'standard');
+    // Review priority — roughly 34 expedited / 213 standard, but selected by hash rather than by
+    // `j < 34`. The index-threshold version put every expedited case inside the approved band
+    // (approvals run j < 153, denials start at 153), so the pool could not contain a single
+    // EXPEDITED DENIAL — the most scrutinised category there is, and the one where a late oral
+    // member notice is the highest-risk notice failure a plan can have. Surfaced by the new
+    // Notification Compliance report, whose oral-obligation row could only ever show peer-to-peer.
+    tags.push(hashPick(j, 'expedited', 100) < 14 ? 'expedited' : 'standard');
 
     if (j % 9 === 0) tags.push('incompleteDoc'); // ~27 incomplete docs
 

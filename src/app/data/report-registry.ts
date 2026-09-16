@@ -30,6 +30,10 @@ import {
 } from './case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { IRR_TARGET_PCT } from './um-irr';
+import {
+  UM_NOTICES, UmNotice, NOTICE_TYPES, NOTICE_RECIPIENTS, NOTICE_METHODS, NOTICE_STATUSES, NOTICE_FORMS,
+  noticeScope, rollup, rollupRow, ROLLUP_COLUMNS, NOTICE_COLUMNS, noticeRow, noticeSummary, noticeRuleFor,
+} from './um-notifications';
 import { CM_FILE_AUDITS, CM_AUDIT_PASS_PCT, cmRegCompliance } from './cm-audit';
 import { CM_CASE_POOL } from './cm-case-pool';
 import { UM_NURSE_ROSTER, UM_ROLLING_4_WEEKS, UM_MONTHLY_WEEKS, UM_PTO_BALANCES, UM_UPCOMING_WEEKS, UM_TODAY_ISO } from './um-schedule';
@@ -322,7 +326,7 @@ export const UM_REPORTS: ReportDef[] = [
     description: 'Turnaround-time buckets, by-LOB and by-Service-Category compliance, urgency/pause detail, regulatory-clock and notification compliance, and inpatient concurrent-review aggregates — same breakdown as the TAT Compliance tab.',
     dimension: { label: 'Auth Type', options: [ALL, 'IP', 'OP', 'RX'] },
     dimension2: { label: 'Service Category', options: [ALL, ...SERVICE_CATEGORIES] },
-    staticNote: 'Notification Compliance late/on-time flags are a deterministic seeded pattern, not real notice-delivery timestamps — see the field guide.',
+    staticNote: 'Notification figures here are a signpost — the Notification Compliance, Late/Missing Notices and Notice Register reports carry the filterable detail.',
     tables: (ctx) => {
       const authType = !ctx.dimension || ctx.dimension === ALL ? undefined : ctx.dimension;
       const svcCat = !ctx.dimension2 || ctx.dimension2 === ALL ? undefined : ctx.dimension2;
@@ -361,11 +365,10 @@ export const UM_REPORTS: ReportDef[] = [
         return [g.name, g.clock, grp.length, onTime, atRisk, breached, pct(onTime, t)];
       });
 
-      const adverse = decided.filter((c) => c.tags.includes('appeal'));
-      const memberLateCount = adverse.filter((_, i) => i % 31 === 0).length;
-      const providerLateCount = decided.filter((_, i) => i % 55 === 0).length;
-      const memberPct = adverse.length ? pct(adverse.length - memberLateCount, adverse.length) : 0;
-      const providerPct = decided.length ? pct(decided.length - providerLateCount, decided.length) : 0;
+      // Reads the real notice model now, rather than the index-modulo placeholders and hardcoded
+      // 0.7-day average this block used to carry. Full detail lives in the three Notification
+      // Compliance reports; this stays a signpost so TAT and notice figures cannot disagree.
+      const notices = noticeSummary(noticeScope({ lob: ctx.lob, withinDays: ctx.days }));
 
       const concRows = liveConcurrentRows(ctx.lob, ctx.days);
       const cn = concRows.length || 1;
@@ -383,7 +386,14 @@ export const UM_REPORTS: ReportDef[] = [
         { title: 'TAT Compliance by Service Category', columns: ['Service Category', 'Total Decisions', 'On Track', 'At Risk', 'Breached', 'Compliance %'], rows: svcRows },
         { title: 'Urgency & Pause Detail', columns: ['Metric', 'Value'], rows: liveTatStats(ctx.lob, ctx.days).map((s) => [s.label, s.value]) },
         { title: 'Regulatory TAT by Urgency', columns: ['Urgency', 'Clock', 'Total', 'On Time', 'At Risk', 'Breached', 'Compliance %'], rows: regGroups },
-        { title: 'Notification Compliance', columns: ['Metric', 'Value'], rows: [['Member Notice On-Time %', `${memberPct}%`], ['Provider Notice On-Time %', `${providerPct}%`], ['Avg Time to Notice (d)', 0.7], ['Late Notices', memberLateCount + providerLateCount]] },
+        { title: 'Notification Compliance', columns: ['Metric', 'Value'], rows: [
+          ['Member / representative notice on-time %', `${notices.memberPct}%`],
+          ['Provider / facility notice on-time %', `${notices.providerPct}%`],
+          ['Avg hours to send', notices.avgHoursToSend],
+          ['Sent late', notices.late],
+          ['Not sent (past due)', notices.notSent],
+          ['Undeliverable', notices.undeliverable],
+        ] },
         { title: 'Inpatient Concurrent Review', columns: ['Metric', 'Value'], rows: [['Active Reviews', concurrentActive], ['Overstay Risk', overstay], ['Days Approved', daysApproved], ['Days Requested', daysRequested], ['Avg LOS (d)', avgLos], ['Avg Expected LOS (d)', avgExp]] },
       ];
     },
@@ -695,6 +705,89 @@ export const UM_REPORTS: ReportDef[] = [
       });
       const rows = [...byCode.entries()].map(([code, v]) => [code, v.description, v.count]).sort((a, b) => (b[2] as number) - (a[2] as number));
       return [{ title: 'Top Admission Diagnoses', columns: ['Diagnosis Code', 'Description', 'Admissions'], rows }];
+    },
+  },
+  // ---- Notification / notice compliance -------------------------------------------------------
+  // A notice is its own obligation with its own clock, so these are separate reports rather than a
+  // block inside TAT Compliance. Both dimension dropdowns are independent, so a supervisor can ask
+  // "member adverse-determination notices" or "everything that went out by fax" without a new report.
+  {
+    id: 'um-notice-compliance', module: 'um', group: 'Audit & Compliance', title: 'Notification Compliance',
+    description: 'Notice compliance by type, recipient, method, line of business and urgency — every cut of the same population. Filter to a notice type and a recipient independently; both default to All.',
+    dimension: { label: 'Notice Type', options: ['All', ...NOTICE_TYPES] },
+    dimension2: { label: 'Recipient', options: ['All', ...NOTICE_RECIPIENTS] },
+    tables: (ctx) => {
+      const rows = noticeScope({ lob: ctx.lob, withinDays: ctx.days, type: ctx.dimension, recipient: ctx.dimension2 });
+      const sum = noticeSummary(rows);
+      const by = (keyOf: (n: UmNotice) => string, order?: string[]) => rollup(rows, keyOf, order).map(rollupRow);
+      return [
+        { title: 'Summary', columns: ['Metric', 'Value'], rows: [
+          ['Notices in scope', sum.total],
+          ['Overall compliance %', `${sum.overallPct}%`],
+          ['Member / representative notice on-time %', `${sum.memberPct}%`],
+          ['Provider / facility notice on-time %', `${sum.providerPct}%`],
+          ['Average hours to send', sum.avgHoursToSend],
+          ['Sent late', sum.late],
+          ['Not sent (past due)', sum.notSent],
+          ['Undeliverable', sum.undeliverable],
+          ['Still within window', sum.pending],
+        ] },
+        { title: 'By Notice Type', columns: ['Notice Type', ...ROLLUP_COLUMNS], rows: by((n) => n.type, [...NOTICE_TYPES]) },
+        { title: 'By Recipient', columns: ['Recipient', ...ROLLUP_COLUMNS], rows: by((n) => n.recipient, [...NOTICE_RECIPIENTS]) },
+        // Oral and written are separate obligations on the same expedited decision — a plan can meet
+        // one and miss the other, which no decision-level report can show.
+        { title: 'Oral vs Written Obligation', columns: ['Form', ...ROLLUP_COLUMNS], rows: by((n) => n.form, [...NOTICE_FORMS]) },
+        { title: 'By Delivery Method', columns: ['Method', ...ROLLUP_COLUMNS], rows: by((n) => n.method, [...NOTICE_METHODS]) },
+        { title: 'By Line of Business', columns: ['LOB', ...ROLLUP_COLUMNS], rows: by((n) => n.lob, [...LOBS]) },
+        { title: 'By Urgency', columns: ['Urgency', ...ROLLUP_COLUMNS], rows: by((n) => n.urgency, ['Expedited', 'Standard']) },
+      ];
+    },
+  },
+  {
+    id: 'um-notice-exceptions', module: 'um', group: 'Audit & Compliance', title: 'Late, Missing & Undelivered Notices',
+    description: 'Every notice that was late, never sent, or sent but not delivered — worst first, at notice level. Search by member or authorization ID; filter by status and by notice type.',
+    memberSearchable: true,
+    dimension: { label: 'Status', options: ['All', 'Sent late', 'Not sent', 'Undeliverable'] },
+    dimension2: { label: 'Notice Type', options: ['All', ...NOTICE_TYPES] },
+    tables: (ctx) => {
+      const base = noticeScope({ lob: ctx.lob, withinDays: ctx.days, type: ctx.dimension2, memberSearch: ctx.memberSearch });
+      const failing = base.filter((n) => n.status === 'Sent late' || n.status === 'Not sent' || n.status === 'Undeliverable');
+      const rows = (ctx.dimension && ctx.dimension !== 'All' ? failing.filter((n) => n.status === ctx.dimension) : failing)
+        .sort((a, b) => b.hoursLate - a.hoursLate);
+      // Never-sent notices past their deadline are the ones with live exposure — a member who has
+      // not been told cannot appeal — so they get their own table rather than a row in a status mix.
+      const notSent = rows.filter((n) => n.status === 'Not sent');
+      return [
+        { title: 'Exception Mix', columns: ['Status', 'Notices', '% of Exceptions'], rows:
+          (['Sent late', 'Not sent', 'Undeliverable'] as const).map((st) => {
+            const n = failing.filter((x) => x.status === st).length;
+            return [st, n, `${pct(n, failing.length)}%`];
+          }) },
+        { title: 'Never Sent, Past Deadline', columns: NOTICE_COLUMNS, rows: notSent.map(noticeRow) },
+        { title: 'All Exceptions — Worst First', columns: NOTICE_COLUMNS, rows: rows.map(noticeRow) },
+      ];
+    },
+  },
+  {
+    id: 'um-notice-register', module: 'um', group: 'Audit & Compliance', title: 'Notice Register',
+    description: 'Every notice generated in the scope, at full detail, with the deadline rule and citation that applied to it. The record an auditor asks for when they want to see a specific notice rather than a rate.',
+    memberSearchable: true,
+    dimension: { label: 'Recipient', options: ['All', ...NOTICE_RECIPIENTS] },
+    dimension2: { label: 'Delivery Method', options: ['All', ...NOTICE_METHODS] },
+    tables: (ctx) => {
+      const rows = noticeScope({ lob: ctx.lob, withinDays: ctx.days, recipient: ctx.dimension, method: ctx.dimension2, memberSearch: ctx.memberSearch })
+        .sort((a, b) => (a.dueAt < b.dueAt ? 1 : -1));
+      const activeLobs = Array.isArray(ctx.lob) && ctx.lob.length ? ctx.lob : (typeof ctx.lob === 'string' && ctx.lob !== 'all' ? [ctx.lob] : LOBS);
+      return [
+        // The rule table travels with the register so a reviewer can see what each notice was
+        // measured against without opening a policy document.
+        { title: 'Deadline Rules Applied', columns: ['LOB', 'Notice Type', 'Standard (hrs)', 'Expedited (hrs)', 'Oral (hrs)', 'Citation'],
+          rows: activeLobs.flatMap((lob) => NOTICE_TYPES.map((t) => {
+            const r = noticeRuleFor(lob, t);
+            return [lob, t, r.standardHours, r.expeditedHours, r.oralHours ?? '—', r.citation];
+          })) },
+        { title: 'Notice Register', columns: NOTICE_COLUMNS, rows: rows.map(noticeRow) },
+      ];
     },
   },
 ];
