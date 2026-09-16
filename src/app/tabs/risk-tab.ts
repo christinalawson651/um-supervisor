@@ -54,7 +54,11 @@ const RISK_WIDGETS = [
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
         <h3 class="panel-title"><z-icon name="alert" [size]="14"></z-icon> Authorizations Requiring Attention</h3>
-        <span class="note">Prioritized by risk score</span>
+        <!-- The numeric risk score was removed deliberately (PLS-104 BR-1) and replaced by the
+             TAT band. This caption still named the score for months afterwards — copy referencing
+             a field that no longer exists is the kind of leftover that makes a reviewer doubt
+             everything else on the panel. -->
+        <span class="note">Prioritized by turnaround band — breached first, then at risk</span>
         <z-widget-actions (exportClick)="exportTable()" (removeClick)="hide('table')"></z-widget-actions>
       </div>
       <table class="z-table">
