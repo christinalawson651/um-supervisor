@@ -1,7 +1,8 @@
 # Spec — Rebalance transparency, assignment-history references, resizable drawers
 
 **Jira project:** NGEN · **Sizing:** T-shirt · **Date:** 21 September 2026
-**Reference build:** TruCare Pulse (`um-supervisor`), commits `8224270`, `ee2bdec`, `e18ba68`
+**Reference build:** TruCare Pulse (`um-supervisor`), commits `8224270`, `ee2bdec`, `e18ba68`, `d929cf9`
+**Revision:** 2 — adds HIST-4 (module scoping), HIST-5 (search/sort/export), DATA-2 (seeded history)
 **Author:** Christina Lawson
 
 > Engineering implements against the reference build. Every behaviour below is implemented and
@@ -34,7 +35,8 @@ reference to the right record · persist drawer width per viewer.
 
 **Edge cases in scope**
 Nothing to move · every row declined · a nurse who is busiest but has no movable work · a reference
-that no longer resolves · empty history · CM work with no case number yet.
+that no longer resolves · empty history · CM work with no case number yet · a module with no activity ·
+a history surface opened before any action has been taken in the session.
 
 ---
 
@@ -337,6 +339,9 @@ Then I see only entries for work I own
   four: the Workforce tab, every Case Explorer drilldown, the CM dashboard, and the Reassignment &
   Assignment History report. A shared builder and a shared resolver are used so a fix to one cannot
   leave the others behind — which is exactly what happened when the report alone was updated.
+- A reference beginning `AP-` (appeal) navigates to the Appeals module and names the appeal rather
+  than opening a panel. **This is a stated limitation, not a defect** — appeal records are not in a
+  shared pool in the reference build. See Open Question 7.
 - Opening a record from inside a drawer closes that drawer first, so the new panel is not layered
   behind it.
 - References print as plain text — a printed report has nothing to click.
@@ -391,6 +396,112 @@ data model).
 
 ---
 
+### HIST-4 — Scope Assignment History to the module it is opened from
+
+**Story**
+As a **UM Supervisor**, I want Assignment History opened from UM to show UM activity, so that I am
+auditing my own module rather than reading three teams' reassignments at once.
+
+**Acceptance Criteria**
+
+```
+Given assignment activity exists in UM, CM and Appeals
+When I open Assignment History from a UM surface
+Then only UM entries are listed
+And the panel title and count name the module
+```
+
+```
+Given the same conditions
+When I open Assignment History from a CM surface
+Then only CM entries are listed
+```
+
+```
+Given the list is displayed
+When I read a row
+Then the module is shown as a column, so a cross-module view remains readable where one is offered
+```
+
+```
+Given a module has no assignment activity
+When I open Assignment History from that module
+Then an empty state names the module and states that nothing has been reassigned, balanced or
+    redistributed in it
+And no table is rendered
+```
+
+**Business rules**
+- Every history entry carries its module. Entries written without one default to UM — a missed call
+  site should mislabel one row, not fail to record the activity.
+- Scoping is by module, not by actor. A supervisor sees their module's activity regardless of who
+  performed it.
+
+**[ASSUMPTION: Appeals has no Assignment History entry point of its own in the reference build.
+Appeals entries are reachable only through the cross-module report. See Open Question 7.]**
+
+**Out of scope** — a combined all-module view with a module picker (the report already spans all
+three).
+
+**Size:** S
+
+---
+
+### HIST-5 — Search, sort and export Assignment History
+
+**Story**
+As a **UM Supervisor**, I want to search, sort and export assignment history, so that I can answer a
+specific question — who moved this member's work, and when — without reading the whole list.
+
+**Acceptance Criteria**
+
+```
+Given Assignment History is open
+When I type into the search box
+Then the list narrows to rows matching the text in any column
+And the visible record count updates
+```
+
+```
+Given Assignment History is open
+When I apply a sort
+Then the rows reorder accordingly and the sort remains applied while I page
+```
+
+```
+Given I have searched or sorted
+When I export
+Then the export contains the rows currently visible, not the unfiltered list
+And the export is stamped with who generated it, when, and the filters applied
+```
+
+```
+Given a search matches nothing
+When the results render
+Then an empty state states that no records match, and the search text remains so it can be edited
+```
+
+```
+Given the list is longer than one page
+When it renders
+Then paging controls are available and the record count reflects the filtered total
+```
+
+**Business rules**
+- Assignment History uses the platform's standard list surface, so search, sort, column
+  customisation, paging and export behave identically to every other list. **Do not build a
+  bespoke table for it.**
+- Export provenance is required, not optional — this is an audit surface.
+
+**[COMPLIANCE NOTE]** An exported assignment history is a record of who accessed and reassigned
+which members' work. It carries PHI and follows the platform's export and minimum-necessary rules.
+
+**Out of scope** — saved searches; scheduled delivery of this export.
+
+**Size:** S
+
+---
+
 ### DATA-1 — Case identifier on the care-management record
 
 **Story**
@@ -423,6 +534,44 @@ not a UI one — see Open Question 3.]**
 **Out of scope** — case numbering scheme across tenants; migration sequencing.
 
 **Size:** M
+
+---
+
+### DATA-2 — Assignment History must not open empty on a first visit
+
+**Story**
+As a **UM Supervisor** opening Assignment History for the first time, I want to see the
+reassignments that produced the current caseload, so that I can tell the surface is working and
+have something to audit.
+
+**Acceptance Criteria**
+
+```
+Given no reassignment has been performed in the current session
+When I open Assignment History
+Then prior assignment activity is listed
+And every member, authorization, case and referral in it resolves when opened
+```
+
+```
+Given prior activity genuinely does not exist for a module
+When I open Assignment History for it
+Then the empty state is shown rather than placeholder rows
+```
+
+**Business rules**
+- **Every seeded or historical reference must resolve.** A reference that opens nothing is worse
+  than no reference at all, because it teaches the user the links are unreliable.
+- In the reference build this was a real defect: the only pre-existing history entries were
+  auto-return events, which the assignment view deliberately excludes — so the surface opened empty
+  and every link added to it was invisible.
+
+**[ASSUMPTION: in production this is historical data rather than seed data. The requirement is that
+the surface is populated from real history on first visit, not that data is fabricated.]**
+
+**Out of scope** — how far back history is retained (platform retention policy).
+
+**Size:** S
 
 ---
 
@@ -520,6 +669,8 @@ replaced rather than amended.
 | 4 | Should the rebalance candidate ordering (standard before expedited, un-breached before breached) be configurable per client, or fixed? It is a clinical judgement, currently fixed. | PM | Clinical | Before WFM-1 build |
 | 5 | Is the tolerance for "Even out" (8 points) a client-configurable value alongside the per-move delta? | PM | Product | Before WFM-4 build |
 | 6 | Does a referral that becomes a case need a link to that case, for history entries written pre-acceptance? | PM | Clinical / Data | Post-release |
+| 7 | Appeals: should the Appeals dashboard get its own Assignment History entry point, and should `AP-` references open an appeal rather than navigate? Both depend on appeal records moving out of the component into a shared data layer. **Deferred by PM 21 Sep 2026 — appeals refinement is a later workstream.** | PM | Product / Eng | Deferred |
+| 8 | Should Assignment History offer an all-module view with a module picker, or is the cross-module report sufficient? | PM | Product | Before HIST-4 build |
 
 ---
 
@@ -529,6 +680,8 @@ replaced rather than amended.
 |---|---|---|
 | Assignment history entry | Add `refs: string[]` | Identifiers of items moved. Prefix-typed: `AUTH-`, `CM-`, `REF-`. Replaces the earlier authorization-only field. |
 | Assignment history entry | `members: string[]` now populated by all reassign paths | Previously written by the balance flow only. |
+| Assignment history entry | Add `module: 'UM' \| 'CM' \| 'Appeals'` | Required. Defaults to UM when a call site omits it. Drives HIST-4 scoping and is displayed as a column. |
 | Care-management case | Add `caseNumber` | Stable, unique, distinct from member ID. See DATA-1. |
 | Confirm dialog contract | Add optional itemised picks | `{ id, ref, label, from, to, note, selected }`; confirm returns the selected ids. Reusable by any action that reassigns work. |
 | Report / drawer table contract | Add optional cell links | `{ column, run, enabled?, splitOn? }`. Identical shape in both so behaviour does not diverge. |
+| List surface contract | Add per-value cell links | `{ column, splitOn, runValue, enabledValue }` alongside the existing row-level link, so a cell holding five references offers five links. Same shape as the report and drawer contracts above. |
