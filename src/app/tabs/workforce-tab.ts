@@ -593,15 +593,8 @@ export class WorkforceTab {
 
   /** All reassign/balance activity this session — same view as the Case Explorer's, scoped separately here for convenience. */
   openAssignmentHistory() {
-    const rows = this.data.assignmentHistory();
-    this.ix.openDrawer({
-      title: 'Assignment History',
-      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'}, balance, & PTO event${rows.length === 1 ? '' : 's'} this session`,
-      table: this.data.assignmentHistoryTable(
-        (n) => this.refs.openMember(n),
-        (r) => this.refs.open(r)),
-      note: rows.length ? undefined : 'No authorizations have been reassigned, balanced, or redistributed for PTO yet this session.',
-    });
+    this.ix.openExplorer(this.data.assignmentHistoryExplorer(
+      'UM', (n) => this.refs.openMember(n), (r) => this.refs.open(r)) as any);
   }
 
 

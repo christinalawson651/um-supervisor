@@ -2031,17 +2031,8 @@ export class CmDashboard {
    *  session log, so a reassign/balance/PTO move made from either module shows up here with a real
    *  "N → target" detail, not just a count. */
   openAssignmentHistory() {
-    const rows = this.data.assignmentHistory();
-    this.ix.openDrawer({
-      title: 'Assignment History',
-      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'}, balance, & PTO event${rows.length === 1 ? '' : 's'} this session`,
-      // CM rows now carry case numbers, and referral IDs where a member has been referred but has
-      // no case yet — the resolver routes each by its prefix.
-      table: this.data.assignmentHistoryTable(
-        (n) => this.refs.openMember(n),
-        (r) => this.refs.open(r)),
-      note: rows.length ? undefined : 'No members have been reassigned, balanced, or redistributed for PTO yet this session.',
-    });
+    this.ix.openExplorer(this.data.assignmentHistoryExplorer(
+      'CM', (n) => this.refs.openMember(n), (r) => this.refs.open(r)) as any);
   }
 
   /** Bulk Escalate for case(0)'s toolbar — distinct from the per-member `escalate()` used in the Risk & Escalation tab. */

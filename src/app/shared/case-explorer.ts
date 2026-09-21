@@ -2,6 +2,7 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Interaction } from './interaction';
 import { Members } from './members';
+import type { ExplorerData } from './interaction';
 import { HistoryRefs } from './history-refs';
 import { Reassign, ReassignCase } from './reassign';
 import { Escalate, ESCALATE_TARGETS } from './escalate';
@@ -114,7 +115,17 @@ const QUICK_SORTS: { id: QuickSort; label: string; col: (cols: string[]) => numb
                     }
                     @for (vc of visibleCols(); track vc.i) {
                       @if (linkFor(e, vc.i); as lk) {
-                        <td>@if (linkActive(lk, row, row[vc.i])) { <a class="mlink" (click)="lk.run(row)">{{ row[vc.i] }}</a> } @else { <span class="sub">{{ row[vc.i] }}</span> }</td>
+                        @if (lk.runValue) {
+                          <!-- Cell holding several entries: each part links on its own, so a row that
+                               moved five authorizations offers five links rather than one. -->
+                          <td>@for (part of valueParts(lk, row, row[vc.i]); track part.text; let last = $last) {
+                            @if (part.open) { <a class="mlink" (click)="part.open!()">{{ part.text }}</a> }
+                            @else { <span class="sub">{{ part.text }}</span> }
+                            @if (!last) { <span class="sub"> · </span> }
+                          }</td>
+                        } @else {
+                          <td>@if (linkActive(lk, row, row[vc.i])) { <a class="mlink" (click)="lk.run!(row)">{{ row[vc.i] }}</a> } @else { <span class="sub">{{ row[vc.i] }}</span> }</td>
+                        }
                       } @else if (vc.i === 0 && isReferralList()) {
                         <td><a class="mlink" (click)="openReferralDetail(row, e)">{{ row[vc.i] }}</a></td>
                       } @else if (vc.i === e.memberColumn) {
@@ -265,7 +276,7 @@ export class CaseExplorer {
 
   /** Which columns act as links on this list. An em-dash cell is never linked — offering a click
    *  that opens nothing is worse than a plain cell. */
-  linkFor(e: { rowLinks?: { column: number; run: (row: (string | number)[]) => void; enabled?: (row: (string | number)[]) => boolean }[] }, i: number) {
+  linkFor(e: { rowLinks?: NonNullable<ExplorerData['rowLinks']> }, i: number) {
     return e.rowLinks?.find((l) => l.column === i) ?? null;
   }
   linkActive(lk: { enabled?: (row: (string | number)[]) => boolean }, row: (string | number)[], v: string | number) {
@@ -727,16 +738,19 @@ export class CaseExplorer {
   }
 
   /** All reassign/balance activity this session — separate from the fuller Activity History (which also has escalations). */
-  openAssignmentHistory() {
-    const rows = this.data.assignmentHistory();
-    this.ix.openDrawer({
-      title: 'Assignment History',
-      subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'} & balance event${rows.length === 1 ? '' : 's'} this session`,
-      table: this.data.assignmentHistoryTable(
-        (n) => this.refs.openMember(n),
-        (r) => this.refs.open(r)),
-      note: rows.length ? undefined : 'Nothing has been reassigned or balanced yet this session.',
+  /** Splits a multi-value cell into individually linkable parts. */
+  valueParts(lk: NonNullable<ExplorerData['rowLinks']>[number], row: (string | number)[], cell: string | number) {
+    const raw = String(cell);
+    const parts = lk.splitOn ? raw.split(lk.splitOn).map((x) => x.trim()).filter(Boolean) : [raw];
+    return parts.map((text) => {
+      const ok = lk.enabledValue ? lk.enabledValue(text, row) : true;
+      return ok ? { text, open: () => lk.runValue!(text, row) } : { text };
     });
+  }
+
+  openAssignmentHistory() {
+    this.ix.openExplorer(this.data.assignmentHistoryExplorer(
+      'UM', (n) => this.refs.openMember(n), (r) => this.refs.open(r)) as any);
   }
 
 

@@ -6,6 +6,10 @@ import {
   RegComplianceRow,
 } from './dashboard.models';
 import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_PROVIDER } from './case-pool';
+// Seeded assignment history spans all three modules, so the CM pools are read here to keep every
+// seeded case number and referral resolvable. Data-to-data import only — no service dependency.
+import { CM_CASE_POOL, CM_UNASSIGNED } from './cm-case-pool';
+import { CM_REFERRAL_INTAKE } from './cm-intake';
 import { ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf, providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf, isDuplicateOf, duplicateResolvedOf, LOBS, TODAY_LONG } from './case-fields';
 import { IrrReviewRecord, UM_IRR_REVIEWS, DISCREPANCY_REASONS, DiscrepancyReason, MIN_SAMPLE_PER_REVIEWER } from './um-irr';
 
@@ -145,6 +149,10 @@ export interface HistoryEntry {
   fromStaff?: string; // not every entry type populates every field (e.g. PTO redistribution has no
   toStaff?: string;   // single fromStaff/toStaff pair), so all are optional.
   members?: string[];
+  /** Which module the activity belongs to. One history list serves UM, CM and Appeals, and a
+   *  supervisor opening Assignment History from UM does not want CM's reassignments mixed in — so
+   *  every surface scopes to its own module and the column stays available for the cross-module view. */
+  module: 'UM' | 'CM' | 'Appeals';
   /** What moved, not who: authorization IDs in UM, case numbers in CM, and referral IDs
    *  where a member has been referred but has no case yet. Members answer "whose care was
    *  affected"; these answer "which piece of work", and a supervisor auditing a
@@ -168,7 +176,7 @@ function seedReturnHistory(): HistoryEntry[] {
     return {
       time: `${hh}:${mm < 10 ? '0' : ''}${mm} AM`,
       date: TODAY.toISOString().slice(0, 10),
-      icon: 'inbox',
+      icon: 'inbox', module: 'UM',
       action: auto ? 'Auto-returned to queue' : 'Returned to queue',
       detail: auto
         ? `${c.authId} (${c.member}) — not worked within the SLA window; returned from ${prevOwner}`
@@ -176,6 +184,76 @@ function seedReturnHistory(): HistoryEntry[] {
       actor: auto ? 'System' : prevOwner,
     } as HistoryEntry;
   });
+}
+
+/** Assignment activity from before this session, across all three modules.
+ *
+ *  Without this, Assignment History opens empty on a fresh load: seedReturnHistory() writes 'inbox'
+ *  entries and assignmentHistory() deliberately excludes those, so the panel had nothing in it and
+ *  nothing to click. A supervisor arriving at a blank audit surface cannot tell whether it is
+ *  working or whether nothing has happened — and the reassignments that produced today's caseload
+ *  really did happen.
+ *
+ *  Every member, authorization, case and referral below is drawn from the live pools, so each one
+ *  resolves when opened. Seeding names that do not resolve would be worse than seeding nothing. */
+function seedAssignmentHistory(): HistoryEntry[] {
+  const day = (back: number) => { const d = new Date(TODAY); d.setDate(d.getDate() - back); return d.toISOString().slice(0, 10); };
+  const pending = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse !== '—');
+  const take = (n: number, step: number) => pending.filter((_, i) => i % step === 0).slice(0, n);
+  const balanced = take(4, 17), reassigned = take(3, 29), ptoCases = take(5, 11);
+
+  const cmCases = CM_CASE_POOL.filter((c) => c.careManager !== CM_UNASSIGNED).filter((_, i) => i % 23 === 0).slice(0, 3);
+  const cmQueued = CM_CASE_POOL.filter((_, i) => i % 41 === 0).slice(0, 2);
+  const referrals = CM_REFERRAL_INTAKE.filter((r) => r.status === 'Pending').slice(0, 2);
+
+  return [
+    // ---- UM ----
+    { date: day(1), time: '4:12 PM', icon: 'balance', module: 'UM', actor: 'Christina Lawson',
+      action: 'Workload balanced',
+      detail: `Standard (across the team) · ${balanced.length} → Rachel Foster, RN`,
+      toStaff: 'Rachel Foster, RN',
+      members: [...new Set(balanced.map((c) => c.member))], refs: balanced.map((c) => c.authId) },
+    { date: day(2), time: '9:48 AM', icon: 'swap', module: 'UM', actor: 'Christina Lawson',
+      action: 'Authorizations reassigned',
+      detail: `${reassigned.length} authorization(s) → Emily Chen, RN`,
+      fromStaff: 'Andrew Mitchell, RN', toStaff: 'Emily Chen, RN', team: 'Complex & Concurrent',
+      members: [...new Set(reassigned.map((c) => c.member))], refs: reassigned.map((c) => c.authId) },
+    { date: day(3), time: '7:35 AM', icon: 'calendar', module: 'UM', actor: 'Christina Lawson',
+      action: 'PTO caseload redistributed',
+      detail: `Sarah Mitchell, RN (Outpatient Review): ${ptoCases.length} → Jessica Williams, RN`,
+      fromStaff: 'Sarah Mitchell, RN', toStaff: 'Jessica Williams, RN', team: 'Outpatient Review',
+      members: [...new Set(ptoCases.map((c) => c.member))], refs: ptoCases.map((c) => c.authId) },
+
+    // ---- CM ----
+    { date: day(1), time: '2:20 PM', icon: 'swap', module: 'CM', actor: 'Christina Lawson',
+      action: 'CM cases reassigned',
+      detail: `${cmCases.length} case(s) → K. Malone, LCSW`,
+      toStaff: 'K. Malone, LCSW',
+      members: [...new Set(cmCases.map((c) => c.member))], refs: cmCases.map((c) => c.caseNumber) },
+    { date: day(4), time: '11:05 AM', icon: 'swap', module: 'CM', actor: 'Priya Shah',
+      action: 'Referrals assigned',
+      detail: `${referrals.length} referral(s) → Connor Blake`,
+      toStaff: 'Connor Blake',
+      members: [...new Set(referrals.map((r) => r.member))], refs: referrals.map((r) => r.id) },
+    { date: day(5), time: '3:44 PM', icon: 'swap', module: 'CM', actor: 'Christina Lawson',
+      action: 'CM cases moved to queue',
+      detail: `${cmQueued.length} case(s) → Reassessment Queue`,
+      toStaff: 'Reassessment Queue',
+      members: [...new Set(cmQueued.map((c) => c.member))], refs: cmQueued.map((c) => c.caseNumber) },
+
+    // ---- Appeals. Appeal records live in the Appeals module rather than a shared pool, so these
+    // references navigate there rather than opening a drawer — stated plainly instead of faked.
+    { date: day(2), time: '1:15 PM', icon: 'swap', module: 'Appeals', actor: 'Christina Lawson',
+      action: 'Appeals reassigned',
+      detail: '2 appeal(s) → T. Rivera, Appeals RN',
+      fromStaff: 'C. Lawson', toStaff: 'T. Rivera',
+      members: ['Maria Benitez', 'Shannon Wright'], refs: ['AP-2026-0112', 'AP-2026-0088'] },
+    { date: day(6), time: '8:52 AM', icon: 'balance', module: 'Appeals', actor: 'Christina Lawson',
+      action: 'Appeal workload balanced',
+      detail: 'Light · 1 → T. Rivera, Appeals RN',
+      toStaff: 'T. Rivera',
+      members: ['Sheryl Leonard'], refs: ['AP-2025-0891'] },
+  ];
 }
 
 const STORAGE_KEY = 'zyter-um-demo-v3';
@@ -291,34 +369,55 @@ export class DashboardData {
   ]);
 
   // ---------- activity / reassignment history ----------
-  readonly history = signal<HistoryEntry[]>(seedReturnHistory());
+  readonly history = signal<HistoryEntry[]>([...seedAssignmentHistory(), ...seedReturnHistory()]);
 
-  /** Just the assignment-moving entries (reassign + balance) — the full activity log also includes escalations, etc. */
+  /** Just the assignment-moving entries (reassign + balance + PTO) — the full activity log also
+   *  includes escalations, AI actions and archive events. */
   readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance' || h.icon === 'calendar'));
-
-  /** The Assignment History drawer, built once and used by every surface that offers it — the
-   *  Workforce tab, the Case Explorer and CM. Previously each built its own three-column table, so
-   *  making one of them useful left the others behind, which is exactly what happened. */
-  assignmentHistoryTable(openMember: (n: string) => void, openRef: (r: string) => void) {
+  /** Scoped to one module. Passing undefined returns everything, which is what the cross-module
+   *  report wants. */
+  assignmentHistoryFor(module?: 'UM' | 'CM' | 'Appeals') {
     const rows = this.assignmentHistory();
-    if (!rows.length) return undefined;
-    const COL_MEMBERS = 3, COL_REFS = 4;
+    return module ? rows.filter((h) => h.module === module) : rows;
+  }
+
+  /** Assignment History as an explorer rather than a drawer table.
+   *
+   *  The drawer could only print rows. Routed through the explorer the same list gets the search
+   *  box, quick sorts, column customisation, paging and the provenance-stamped export that every
+   *  other list in the app already has — none of which was worth rebuilding inside a panel. */
+  assignmentHistoryExplorer(
+    module: 'UM' | 'CM' | 'Appeals' | undefined,
+    openMember: (n: string) => void,
+    openRef: (r: string) => void,
+  ) {
+    const rows = this.assignmentHistoryFor(module);
+    const COL_MEMBERS = 7, COL_REFS = 8;
     return {
-      columns: ['Time', 'Action', 'Detail', 'Members', 'Reference'],
-      rows: rows.map((h) => [h.time, h.action, h.detail,
-        (h.members ?? []).join(' · ') || '—', (h.refs ?? []).join(' · ') || '—']),
-      links: [
-        { column: COL_MEMBERS, splitOn: ' · ', enabled: (v: string) => v !== '—', run: (v: string) => openMember(v) },
-        { column: COL_REFS, splitOn: ' · ', enabled: (v: string) => v !== '—', run: (v: string) => openRef(v) },
+      title: module ? `${module} Assignment History` : 'Assignment History',
+      context: rows.length
+        ? `${rows.length} reassignment, balance and PTO event${rows.length === 1 ? '' : 's'}${module ? ` in ${module}` : ' across all modules'} this session`
+        : `No reassignments, balances or PTO redistributions recorded${module ? ` in ${module}` : ''} yet.`,
+      columns: ['Date', 'Time', 'Module', 'Action', 'Detail', 'From', 'To', 'Members', 'Reference', 'By'],
+      rows: rows.map((h) => [h.date, h.time, h.module, h.action, h.detail,
+        h.fromStaff ?? '—', h.toStaff ?? '—',
+        (h.members ?? []).join(' · ') || '—', (h.refs ?? []).join(' · ') || '—', h.actor]),
+      exportName: `assignment-history${module ? '-' + module.toLowerCase() : ''}`,
+      rowLinks: [
+        { column: COL_MEMBERS, splitOn: ' · ', enabledValue: (v: string) => v !== '—', runValue: (v: string) => openMember(v) },
+        { column: COL_REFS, splitOn: ' · ', enabledValue: (v: string) => v !== '—', runValue: (v: string) => openRef(v) },
       ],
     };
   }
 
-  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[]; refs?: string[] }) {
+  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[]; refs?: string[]; module?: 'UM' | 'CM' | 'Appeals' }) {
     const now = new Date();
     const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const date = now.toISOString().slice(0, 10);
-    this.history.update((h) => [{ time, date, icon, action, detail, actor, ...meta }, ...h]);
+    // UM is the default because it is the module that existed first and most callers are UM; CM and
+    // Appeals pass theirs explicitly. Defaulting silently is safer than a required field here — a
+    // missed call site mislabels one row rather than failing to record the activity at all.
+    this.history.update((h) => [{ time, date, icon, action, detail, actor, module: 'UM' as const, ...meta }, ...h]);
   }
 
   // ---------- persistence (localStorage) ----------

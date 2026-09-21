@@ -91,10 +91,19 @@ export interface ExplorerData {
   /** Override for lists that are a navigation surface rather than a clinical case list: makes one
    *  column a link that runs this, instead of opening the member's clinical drawer. The audit
    *  pivots use it to hand off from one view to the other. */
-  rowLinks?: { column: number; run: (row: (string | number)[]) => void;
-                /** Optional: suppress the link on rows where the cell is a stated reason rather than
-                 *  a thing to open. A link that opens nothing is worse than plain text. */
-                enabled?: (row: (string | number)[]) => boolean }[];
+  rowLinks?: {
+    column: number;
+    /** Row-level link: the whole cell opens one thing. */
+    run?: (row: (string | number)[]) => void;
+    /** Optional: suppress the link on rows where the cell is a stated reason rather than
+     *  a thing to open. A link that opens nothing is worse than plain text. */
+    enabled?: (row: (string | number)[]) => boolean;
+    /** Value-level link, for cells holding several entries: the cell is split and each part links
+     *  on its own. Never split on a comma — member names are stored "Last, First". */
+    splitOn?: string;
+    runValue?: (value: string, row: (string | number)[]) => void;
+    enabledValue?: (value: string, row: (string | number)[]) => boolean;
+  }[];
 }
 
 @Injectable({ providedIn: 'root' })

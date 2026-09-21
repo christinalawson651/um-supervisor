@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { Interaction } from './interaction';
 import { Members } from './members';
+import { Nav } from './nav';
 import { CASE_POOL } from '../data/case-pool';
 import { CM_CASE_POOL } from '../data/cm-case-pool';
 import { CM_REFERRAL_INTAKE } from '../data/cm-intake';
@@ -23,6 +24,7 @@ import { COLUMNS, toRow } from './metrics';
 export class HistoryRefs {
   private ix = inject(Interaction);
   private members = inject(Members);
+  private nav = inject(Nav);
 
   /** @param closeDrawerFirst set when called from inside a drawer, so the drawer does not sit over
    *  whatever is opened next. */
@@ -31,6 +33,7 @@ export class HistoryRefs {
     if (ref.startsWith('AUTH-')) return this.openAuth(ref);
     if (ref.startsWith('CM-')) return this.openCmCase(ref);
     if (ref.startsWith('REF-')) return this.openReferral(ref);
+    if (ref.startsWith('AP-')) return this.openAppeal(ref);
     this.ix.toast(`${ref} is not a reference this view can open.`, 'info');
   }
 
@@ -98,6 +101,14 @@ export class HistoryRefs {
         : 'This referral has not been accepted, so no care-management case exists for it yet. That is why history recorded the referral rather than a case number.',
       actions: [{ label: 'Open member chart', tone: 'teal', run: () => this.members.openByName(r.member) }],
     });
+  }
+
+  /** Appeal records live inside the Appeals module rather than in a shared pool, so there is nothing
+   *  to open a drawer over. Navigating there and naming the appeal is the honest action — better than
+   *  a drawer built from a reference we cannot resolve. */
+  private openAppeal(appealId: string) {
+    this.nav.go('appeals');
+    this.ix.toast(`Opened Appeals — find ${appealId} in the worklist.`, 'info');
   }
 
   private notFound(ref: string) {
