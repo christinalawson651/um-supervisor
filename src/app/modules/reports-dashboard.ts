@@ -7,6 +7,7 @@ import { DashboardData } from '../data/dashboard-data';
 import { daysAgo, TODAY, TODAY_ISO } from '../data/case-fields';
 import { UM_REPORTS, CM_REPORTS, APPEALS_REPORTS, GENERIC_REPORTS, UM_QUEUE_NAMES, UM_TEAMS, ReportDef, ReportContext, ReportTable } from '../data/report-registry';
 import { Members } from '../shared/members';
+import { HistoryRefs } from '../shared/history-refs';
 import { Interaction } from '../shared/interaction';
 import { CASE_POOL } from '../data/case-pool';
 import { COLUMNS, toRow } from '../shared/metrics';
@@ -453,6 +454,7 @@ export class ReportsDashboard {
   // generating never changes what's on screen until you generate again. ----
   readonly generated = signal(false);
   private members = inject(Members);
+  private refs = inject(HistoryRefs);
   private ix = inject(Interaction);
   private appliedCtx = signal<ReportContext | null>(null);
 
@@ -470,20 +472,6 @@ export class ReportsDashboard {
     });
   }
 
-  /** Opens one authorization from a report cell. Shows the case as the rest of the app shows it —
-   *  the shared drilldown columns — rather than inventing a second presentation of the same record. */
-  private openAuth(authId: string) {
-    const c = CASE_POOL.find((x) => x.authId === authId);
-    if (!c) { this.ix.toast(`${authId} is not in the current data set.`, 'info'); return; }
-    this.ix.openExplorer({
-      title: authId,
-      context: `${c.member} · ${c.procedure} · ${c.status}`,
-      columns: COLUMNS,
-      rows: [toRow(c)],
-      exportName: `auth-${authId}`,
-      memberColumn: COLUMNS.indexOf('Member'),
-    });
-  }
   private appliedScope = signal('');
   readonly generatedAt = signal('');
   readonly generatedByLabel = 'Christina Lawson'; // the signed-in supervisor shown in the app's own topbar
@@ -528,8 +516,8 @@ export class ReportsDashboard {
       historyStaff: this.current()?.historyFilterable ? this.historyStaff() : undefined,
       historyActor: this.current()?.historyFilterable ? this.historyActor() : undefined,
       data: this.data,
-      openMember: (name) => this.members.openByName(name),
-      openAuth: (authId) => this.openAuth(authId),
+      openMember: (name: string) => this.refs.openMember(name, false),
+      openRef: (ref: string) => this.refs.open(ref, false),
     });
     this.appliedScope.set(this.buildScopeLabel());
     this.generatedAt.set(new Date().toLocaleString());

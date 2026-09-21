@@ -74,7 +74,15 @@ import { Interaction, DrawerAction, DrawerTable, ConfirmPick, ConfirmRequest } f
     <!-- Detail drawer -->
     @if (ix.drawer(); as d) {
       <div class="scrim right" (click)="ix.closeDrawer()">
-        <aside class="drawer" (click)="$event.stopPropagation()">
+        <aside class="drawer" [style.width.px]="drawerWidth()" (click)="$event.stopPropagation()">
+          <!-- Drag the leading edge to widen. Drawers carry tables now — the Assignment History
+               reference column especially — and 420px forces those into a horizontal scroll the
+               reader has to fight. Keyboard users get the same range via arrow keys. -->
+          <div class="dgrip" role="separator" aria-orientation="vertical" tabindex="0"
+               aria-label="Resize panel" [attr.aria-valuenow]="drawerWidth()"
+               [attr.aria-valuemin]="MIN_DRAWER" [attr.aria-valuemax]="maxDrawer()"
+               (pointerdown)="startResize($event)" (keydown)="resizeKey($event)"
+               (dblclick)="resetDrawerWidth()" title="Drag to resize · double-click to reset"></div>
           <div class="dhead">
             <div>
               <h3>{{ d.title }}</h3>
@@ -149,9 +157,19 @@ import { Interaction, DrawerAction, DrawerTable, ConfirmPick, ConfirmRequest } f
       display: flex; align-items: center; justify-content: center; z-index: 200; }
     .scrim.right { justify-content: flex-end; align-items: stretch; }
 
-    .drawer { width: 420px; max-width: 92vw; background:#fff; height:100%; overflow-y:auto;
+    .drawer { width: 420px; max-width: 96vw; background:#fff; height:100%; overflow-y:auto;
       padding: 22px 24px; box-shadow: -12px 0 30px rgba(0,0,0,.15);
-      animation: slidein-r .2s ease-out; }
+      animation: slidein-r .2s ease-out; position:relative; }
+    /* Sits in the padding gutter so it never overlaps content; widened hit area without a wide
+       visible bar, which is the usual trade-off with edge handles. */
+    .dgrip { position:absolute; top:0; left:0; width:12px; height:100%; cursor:col-resize;
+      z-index:2; touch-action:none; }
+    .dgrip::after { content:''; position:absolute; top:0; left:5px; width:2px; height:100%;
+      background:var(--gray-200); transition:background .12s; }
+    .dgrip:hover::after, .dgrip:focus-visible::after { background:var(--teal-600); }
+    .dgrip:focus-visible { outline:none; }
+    /* While dragging, stop the pointer selecting text across the whole app. */
+    :host-context(body.resizing) * { user-select:none !important; }
     @keyframes slidein-r { from { transform: translateX(30px); opacity:.6; } to { transform:none; opacity:1; } }
     .dhead { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 14px; }
     .dhead h3 { margin:0; font-size:16px; color:var(--ink); }
@@ -294,6 +312,59 @@ export class Overlays {
       return ok ? { text, open: () => link.run(text, row) } : { text };
     });
   }
+
+  // ---------- drawer resizing ----------
+  /** Narrower than this and the two-column field list collapses into something unreadable. */
+  readonly MIN_DRAWER = 380;
+  private readonly DEFAULT_DRAWER = 420;
+  private readonly WIDTH_KEY = 'pulse.drawerWidth';
+  readonly drawerWidth = signal(this.loadWidth());
+  /** Always leave a strip of the page behind the drawer: a panel that covers everything is a modal,
+   *  and this one is meant to be read against what is underneath it. */
+  maxDrawer() { return Math.round(window.innerWidth * 0.9); }
+
+  private loadWidth(): number {
+    try {
+      const raw = localStorage.getItem(this.WIDTH_KEY);
+      const n = raw ? Number(raw) : NaN;
+      if (Number.isFinite(n) && n >= this.MIN_DRAWER) return Math.min(n, Math.round(window.innerWidth * 0.9));
+    } catch {}
+    return this.DEFAULT_DRAWER;
+  }
+  private saveWidth(w: number) { try { localStorage.setItem(this.WIDTH_KEY, String(w)); } catch {} }
+  private setWidth(w: number) {
+    const clamped = Math.max(this.MIN_DRAWER, Math.min(Math.round(w), this.maxDrawer()));
+    this.drawerWidth.set(clamped);
+    return clamped;
+  }
+
+  startResize(ev: PointerEvent) {
+    ev.preventDefault();
+    const grip = ev.target as HTMLElement;
+    grip.setPointerCapture(ev.pointerId);
+    document.body.classList.add('resizing');
+    // The drawer is anchored right, so width is the distance from the pointer to the right edge.
+    const move = (e: PointerEvent) => this.setWidth(window.innerWidth - e.clientX);
+    const up = () => {
+      grip.releasePointerCapture(ev.pointerId);
+      document.body.classList.remove('resizing');
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      this.saveWidth(this.drawerWidth());
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  }
+
+  /** Arrow keys resize in steps, Home resets — the handle is focusable, so it has to work without a
+   *  pointer. */
+  resizeKey(ev: KeyboardEvent) {
+    const step = ev.shiftKey ? 80 : 20;
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); this.saveWidth(this.setWidth(this.drawerWidth() + step)); }
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); this.saveWidth(this.setWidth(this.drawerWidth() - step)); }
+    else if (ev.key === 'Home') { ev.preventDefault(); this.resetDrawerWidth(); }
+  }
+  resetDrawerWidth() { this.saveWidth(this.setWidth(this.DEFAULT_DRAWER)); }
 
   runDrawer(a: DrawerAction) { this.ix.closeDrawer(); a.run(); }
 }

@@ -72,6 +72,11 @@ export type AssignmentMethod = 'Queue Draw' | 'Direct — Smart' | 'Direct — M
 
 export interface CmCaseRec {
   memberId: string;
+  /** The case, not the person. A member can hold more than one case over time — a discharge
+   *  follow-up that closes, then a complex-care episode months later — so reassignment and audit
+   *  need to name the episode, not just the human it belongs to. Until now CM had only a member
+   *  identifier, which is why CM history could say who moved but never what moved. */
+  caseNumber: string;
   member: string;
   dx: string;
   /** Age drives programme eligibility. Without it a paediatric programme fills with whoever the
@@ -243,6 +248,7 @@ function buildActive(): CmCaseRec[] {
       const smartLanguageCompliant = (i * 31 + 17) % 100 >= 24;
       out.push({
         memberId: `MBR${(100000 + i * 7).toString().slice(0, 6)}`,
+        caseNumber: `CM-26-${(10000 + i * 3).toString().slice(0, 5)}`,
         member: `${FIRST[i % FIRST.length]} ${LAST[(i * 7 + 3) % LAST.length]}`,
         dx: pediatric ? PEDS_DX_POOL[(i * 5 + 2) % PEDS_DX_POOL.length] : DX_POOL[(i * 5 + 2) % DX_POOL.length],
         age, pediatric,
@@ -271,6 +277,7 @@ function withScenarioMembers(pool: CmCaseRec[]): CmCaseRec[] {
     if (i < 0) return;
     pool[i] = {
       ...pool[i], memberId, member, dx, lob: 'Medicaid', caseType,
+      caseNumber: `CM-26-${memberId.slice(-5)}`,
       riskLevel: 'Moderate', acuity: 'Medium', age, pediatric: true,
       // The care plan is stamped too, not just identity. Both members carry an ACTIVE plan in the
       // tenant, and leaving the generated fields underneath had Willis failing the documentation

@@ -145,10 +145,12 @@ export interface HistoryEntry {
   fromStaff?: string; // not every entry type populates every field (e.g. PTO redistribution has no
   toStaff?: string;   // single fromStaff/toStaff pair), so all are optional.
   members?: string[];
-  /** The authorizations this entry moved. Members answer "whose care was affected";
-   *  authorizations answer "which piece of work" — a supervisor auditing a reassignment
-   *  needs the second to open anything. */
-  auths?: string[];
+  /** What moved, not who: authorization IDs in UM, case numbers in CM, and referral IDs
+   *  where a member has been referred but has no case yet. Members answer "whose care was
+   *  affected"; these answer "which piece of work", and a supervisor auditing a
+   *  reassignment needs the second to open anything. Each value is self-identifying by
+   *  prefix (AUTH- / CM- / REF-), which is how one shared history list can carry all three. */
+  refs?: string[];
 }
 
 /**
@@ -297,22 +299,22 @@ export class DashboardData {
   /** The Assignment History drawer, built once and used by every surface that offers it — the
    *  Workforce tab, the Case Explorer and CM. Previously each built its own three-column table, so
    *  making one of them useful left the others behind, which is exactly what happened. */
-  assignmentHistoryTable(openMember: (n: string) => void, openAuth: (a: string) => void) {
+  assignmentHistoryTable(openMember: (n: string) => void, openRef: (r: string) => void) {
     const rows = this.assignmentHistory();
     if (!rows.length) return undefined;
     const COL_MEMBERS = 3, COL_REFS = 4;
     return {
-      columns: ['Time', 'Action', 'Detail', 'Members', 'Authorizations'],
+      columns: ['Time', 'Action', 'Detail', 'Members', 'Reference'],
       rows: rows.map((h) => [h.time, h.action, h.detail,
-        (h.members ?? []).join(' · ') || '—', (h.auths ?? []).join(' · ') || '—']),
+        (h.members ?? []).join(' · ') || '—', (h.refs ?? []).join(' · ') || '—']),
       links: [
         { column: COL_MEMBERS, splitOn: ' · ', enabled: (v: string) => v !== '—', run: (v: string) => openMember(v) },
-        { column: COL_REFS, splitOn: ' · ', enabled: (v: string) => v !== '—', run: (v: string) => openAuth(v) },
+        { column: COL_REFS, splitOn: ' · ', enabled: (v: string) => v !== '—', run: (v: string) => openRef(v) },
       ],
     };
   }
 
-  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[]; auths?: string[] }) {
+  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[]; refs?: string[] }) {
     const now = new Date();
     const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const date = now.toISOString().slice(0, 10);

@@ -91,7 +91,7 @@ export class Balance {
               undefined,
               {
                 members: [...new Set(chosen.map((p) => p.label))],
-                auths: chosen.map((p) => p.ref),
+                refs: chosen.map((p) => p.ref),
                 // Only meaningful when every move came off the same nurse; otherwise the history row
                 // would claim a single source that did not exist.
                 fromStaff: new Set(chosen.map((p) => p.from)).size === 1 ? chosen[0].from : undefined,

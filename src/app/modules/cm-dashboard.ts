@@ -5,6 +5,8 @@ import { KpiStrip, KpiItem } from '../shared/kpi-strip';
 import { Ring } from '../shared/ring';
 import { Donut, Segment, Trend } from '../shared/charts';
 import { Members } from '../shared/members';
+import { HistoryRefs } from '../shared/history-refs';
+import { CM_REFERRAL_INTAKE } from '../data/cm-intake';
 import { Interaction, ConfirmBreakdownRow } from '../shared/interaction';
 import { Nav } from '../shared/nav';
 import { DashboardData } from '../data/dashboard-data';
@@ -1065,6 +1067,7 @@ const TAB_DEFS: TabDef[] = [
 export class CmDashboard {
   private navSvc = inject(Nav);
   members = inject(Members);
+  private refs = inject(HistoryRefs);
   private ix = inject(Interaction);
   private data = inject(DashboardData);
   private exporter = inject(Exporter);
@@ -1378,9 +1381,13 @@ export class CmDashboard {
       title: 'Assign referrals', noun: 'referral', cases, nurses: assignees, queueTargets: [],
       apply: (ids, target, mode) => {
         if (mode === 'queue') { this.ix.toast('Referrals are assigned directly, not by queue.', 'info'); return; }
+        const before = ids.map((id) => CM_REFERRAL_INTAKE.find((r) => r.id === id)).filter((r): r is NonNullable<typeof r> => !!r);
         ids.forEach((id) => this.cmData.assignIntakeCoordinator(id, target));
         this.ix.toast(`${ids.length} referral(s) assigned to ${target}.`);
-        this.data.addHistory('swap', 'Referrals assigned', `${ids.length} referral(s) → ${target}`);
+        // A referral has no case number because no case exists yet — the referral ID IS the
+        // reference, and losing it would leave only a member name for work that was really moved.
+        this.data.addHistory('swap', 'Referrals assigned', `${ids.length} referral(s) → ${target}`,
+          undefined, { refs: ids, members: [...new Set(before.map((r) => r.member))], toStaff: target });
       },
     });
   }
@@ -1810,9 +1817,10 @@ export class CmDashboard {
           breakdown: this.summarizeBalance(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
-            const moves = plan.map(() => this.cmData.reassignBusiestCase(scope)).filter((m): m is { member: string; from: string; to: string } => !!m);
+            const moves = plan.map(() => this.cmData.reassignBusiestCase(scope)).filter((m): m is NonNullable<typeof m> => !!m);
             this.ix.toast(`${t.name} balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} member${moves.length > 1 ? 's' : ''} moved).`);
-            this.data.addHistory('balance', 'CM team balanced', `${t.name} · ${opt.split(' — ')[0]} · ${this.summarizeMoves(moves)}`);
+            this.data.addHistory('balance', 'CM team balanced', `${t.name} · ${opt.split(' — ')[0]} · ${this.summarizeMoves(moves)}`,
+              undefined, { refs: moves.map((m) => m.caseNumber), members: [...new Set(moves.map((m) => m.member))] });
           },
         });
       },
@@ -1926,9 +1934,18 @@ export class CmDashboard {
     this.rx.open({
       title: 'Reassign care management cases', noun: 'case', cases, nurses, queueTargets,
       apply: (ids, target, mode) => {
+        // Capture identity BEFORE the move — reassignQueue() clears the owner, so reading the case
+        // afterwards would lose the nurse it came from.
+        const moved = ids.map((id) => this.cmData.cases().find((c) => c.memberId === id)).filter((c): c is NonNullable<typeof c> => !!c);
         ids.forEach((id) => mode === 'queue' ? this.cmData.reassignQueue(id, target) : this.cmData.reassignCase(id, target));
         this.ix.toast(`${ids.length} case(s) ${mode === 'queue' ? 'moved to ' + target : 'reassigned to ' + target}.`);
-        this.data.addHistory('swap', mode === 'queue' ? 'CM cases moved to queue' : 'CM cases reassigned', `${ids.length} case(s) → ${target}`);
+        this.data.addHistory('swap', mode === 'queue' ? 'CM cases moved to queue' : 'CM cases reassigned', `${ids.length} case(s) → ${target}`,
+          undefined, {
+            refs: moved.map((c) => c.caseNumber),
+            members: [...new Set(moved.map((c) => c.member))],
+            fromStaff: new Set(moved.map((c) => c.careManager)).size === 1 ? moved[0]?.careManager : undefined,
+            toStaff: target,
+          });
       },
     });
   }
@@ -1962,9 +1979,10 @@ export class CmDashboard {
           breakdown: this.summarizeBalance(plan),
           confirmLabel: 'Balance', tone: 'teal',
           onConfirm: () => {
-            const moves = plan.map(() => this.cmData.reassignBusiestCase()).filter((m): m is { member: string; from: string; to: string } => !!m);
+            const moves = plan.map(() => this.cmData.reassignBusiestCase()).filter((m): m is NonNullable<typeof m> => !!m);
             this.ix.toast(`Workload balanced — ${opt.split(' — ')[0].toLowerCase()} (${moves.length} member${moves.length > 1 ? 's' : ''} moved).`);
-            this.data.addHistory('balance', 'CM caseload balanced', `${opt.split(' — ')[0]} · ${this.summarizeMoves(moves)}`);
+            this.data.addHistory('balance', 'CM caseload balanced', `${opt.split(' — ')[0]} · ${this.summarizeMoves(moves)}`,
+              undefined, { refs: moves.map((m) => m.caseNumber), members: [...new Set(moves.map((m) => m.member))] });
           },
         });
       },
@@ -2017,11 +2035,11 @@ export class CmDashboard {
     this.ix.openDrawer({
       title: 'Assignment History',
       subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'}, balance, & PTO event${rows.length === 1 ? '' : 's'} this session`,
-      // CM entries carry members but no authorization IDs — CM work is a case, not an auth — so the
-      // Authorizations column simply stays empty rather than being faked with case numbers.
+      // CM rows now carry case numbers, and referral IDs where a member has been referred but has
+      // no case yet — the resolver routes each by its prefix.
       table: this.data.assignmentHistoryTable(
-        (n) => { this.ix.closeDrawer(); this.members.openByName(n); },
-        () => this.ix.toast('CM activity is recorded against members, not authorizations.', 'info')),
+        (n) => this.refs.openMember(n),
+        (r) => this.refs.open(r)),
       note: rows.length ? undefined : 'No members have been reassigned, balanced, or redistributed for PTO yet this session.',
     });
   }

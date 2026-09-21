@@ -430,7 +430,7 @@ export class CmData {
    *  "recommend the least-utilized target" logic as UM's Balance, just single-move so the caller
    *  can call it N times for an "N members rebalanced" toast. Pass `scope` to restrict candidates
    *  to one team (mirrors UM's Balance.run(scopeNote, nurseScope?)). Returns null once balanced. */
-  reassignBusiestCase(scope?: Set<string>): { member: string; from: string; to: string } | null {
+  reassignBusiestCase(scope?: Set<string>): { member: string; memberId: string; caseNumber: string; from: string; to: string } | null {
     const stats = this.managerStats().filter((m) => !scope || scope.has(m.name));
     if (stats.length < 2) return null;
     const from = stats.reduce((a, b) => (b.utilization > a.utilization ? b : a));
@@ -439,7 +439,7 @@ export class CmData {
     const candidate = this.cases().find((c) => c.careManager === from.name);
     if (!candidate) return null;
     this.reassignCase(candidate.memberId, to.name);
-    return { member: candidate.member, from: from.name, to: to.name };
+    return { member: candidate.member, memberId: candidate.memberId, caseNumber: candidate.caseNumber, from: from.name, to: to.name };
   }
 
   // ---- referral intake funnel — only Pending referrals (future work, not yet triaged) are ever

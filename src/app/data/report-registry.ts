@@ -103,7 +103,7 @@ export interface ReportContext {
   /** Supplied by the Reports module so a report can make a member or authorization openable. Reports
    *  that do not link anything ignore both. */
   openMember?: (name: string) => void;
-  openAuth?: (authId: string) => void;
+  openRef?: (ref: string) => void;
 }
 
 export interface ReportDef {
@@ -198,20 +198,20 @@ export const UM_REPORTS: ReportDef[] = [
         && (!ctx.historyStaff || ctx.historyStaff === ALL || h.fromStaff === ctx.historyStaff || h.toStaff === ctx.historyStaff)
         && (!ctx.historyActor || ctx.historyActor === ALL || h.actor === ctx.historyActor)
         && (!search || (h.members ?? []).some((m) => m.toLowerCase().includes(search))));
-      const COL_MEMBERS = 7, COL_AUTHS = 8;
+      const COL_MEMBERS = 7, COL_REFS = 8;
       return [{
         title: 'Assignment History',
-        columns: ['Date', 'Time', 'Action', 'Detail', 'Team', 'From', 'To', 'Members', 'Authorizations', 'By'],
+        columns: ['Date', 'Time', 'Action', 'Detail', 'Team', 'From', 'To', 'Members', 'Reference', 'By'],
         // Members are joined with a middle dot, not a comma: names are stored "Last, First", so a
         // comma-split turns "Kim, Robert" into two links that each open nothing. The separator has
         // to be one the values cannot contain.
         rows: rows.map((h) => [h.date, h.time, h.action, h.detail, h.team ?? '—', h.fromStaff ?? '—', h.toStaff ?? '—',
-          (h.members ?? []).join(' · ') || '—', (h.auths ?? []).join(' · ') || '—', h.actor]),
+          (h.members ?? []).join(' · ') || '—', (h.refs ?? []).join(' · ') || '—', h.actor]),
         // One entry can move several authorizations for several members, so each cell splits and
         // every part links on its own — a single link over the whole list would open the wrong one.
         links: [
           { column: COL_MEMBERS, splitOn: ' · ', enabled: (v) => v !== '—', run: (v) => ctx.openMember?.(v) },
-          { column: COL_AUTHS, splitOn: ' · ', enabled: (v) => v !== '—', run: (v) => ctx.openAuth?.(v) },
+          { column: COL_REFS, splitOn: ' · ', enabled: (v) => v !== '—', run: (v) => ctx.openRef?.(v) },
         ],
       }];
     },
