@@ -7,15 +7,38 @@ export interface Toast {
 }
 
 export interface ConfirmBreakdownRow { count: number; label: string; target: string; }
+
+/** One concrete change the user is about to make, listed individually and switched off individually.
+ *  A summary ("3 authorizations → Sarah Mitchell") tells a supervisor how MUCH is moving; it does not
+ *  tell them WHICH work is moving, and it leaves them no way to keep one case where it is. Anything
+ *  that reassigns clinical work should be able to name it. */
+export interface ConfirmPick {
+  id: string;
+  /** The thing being moved — an authorization ID, a case number. */
+  ref: string;
+  /** Who it concerns, shown beside the ref so the supervisor recognises it. */
+  label: string;
+  from: string;
+  to: string;
+  /** Why this one was chosen. A plan that cannot explain its selection invites "cancel the lot". */
+  note?: string;
+  selected: boolean;
+}
+
 export interface ConfirmRequest {
   title: string;
   body: string;
   /** Optional clean list of what's about to happen (e.g. "2 authorizations → Sarah Mitchell, RN"),
    *  rendered instead of cramming counts into the body sentence. */
   breakdown?: ConfirmBreakdownRow[];
+  /** Itemised, individually deselectable changes. When present, the dialog lists every one of them
+   *  and hands the surviving ids to onConfirm — so what gets applied is what was left ticked, never
+   *  a plan recomputed after the fact. */
+  picks?: ConfirmPick[];
   confirmLabel: string;
   tone: 'teal' | 'red' | 'amber';
-  onConfirm: () => void;
+  /** `selectedIds` is populated only when `picks` was supplied. */
+  onConfirm: (selectedIds?: string[]) => void;
 }
 
 export interface ChooserRequest {
@@ -90,10 +113,10 @@ export class Interaction {
     this.confirm.set(req);
   }
 
-  resolve(ok: boolean) {
+  resolve(ok: boolean, selectedIds?: string[]) {
     const req = this.confirm();
     this.confirm.set(null);
-    if (ok && req) req.onConfirm();
+    if (ok && req) req.onConfirm(selectedIds);
   }
 
   choose(req: ChooserRequest) {

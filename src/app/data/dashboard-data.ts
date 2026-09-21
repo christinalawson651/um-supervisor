@@ -145,6 +145,10 @@ export interface HistoryEntry {
   fromStaff?: string; // not every entry type populates every field (e.g. PTO redistribution has no
   toStaff?: string;   // single fromStaff/toStaff pair), so all are optional.
   members?: string[];
+  /** The authorizations this entry moved. Members answer "whose care was affected";
+   *  authorizations answer "which piece of work" — a supervisor auditing a reassignment
+   *  needs the second to open anything. */
+  auths?: string[];
 }
 
 /**
@@ -290,7 +294,7 @@ export class DashboardData {
   /** Just the assignment-moving entries (reassign + balance) — the full activity log also includes escalations, etc. */
   readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance' || h.icon === 'calendar'));
 
-  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[] }) {
+  addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[]; auths?: string[] }) {
     const now = new Date();
     const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const date = now.toISOString().slice(0, 10);

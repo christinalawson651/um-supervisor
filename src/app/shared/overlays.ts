@@ -1,6 +1,6 @@
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Interaction, DrawerAction } from './interaction';
+import { Interaction, DrawerAction, ConfirmPick, ConfirmRequest } from './interaction';
 
 @Component({
   selector: 'app-overlays',
@@ -10,7 +10,7 @@ import { Interaction, DrawerAction } from './interaction';
     <!-- Confirm modal -->
     @if (ix.confirm(); as c) {
       <div class="scrim" (click)="ix.resolve(false)">
-        <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal" [class.wide]="!!c.picks?.length" (click)="$event.stopPropagation()">
           <h3>{{ c.title }}</h3>
           <p>{{ c.body }}</p>
           @if (c.breakdown?.length) {
@@ -20,10 +20,33 @@ import { Interaction, DrawerAction } from './interaction';
               }
             </ul>
           }
+          @if (c.picks?.length) {
+            <div class="pick-head">
+              <span class="pick-count">{{ chosen().length }} of {{ c.picks!.length }} selected</span>
+              <button type="button" class="pick-link" (click)="allPicks(true)">Select all</button>
+              <button type="button" class="pick-link" (click)="allPicks(false)">Clear</button>
+            </div>
+            <ul class="picks">
+              @for (pk of c.picks; track pk.id) {
+                <li [class.off]="!pk.selected">
+                  <label>
+                    <input type="checkbox" [checked]="pk.selected" (change)="togglePick(pk)" />
+                    <span class="pk-main">
+                      <span class="pk-ref">{{ pk.ref }}</span>
+                      <span class="pk-label">{{ pk.label }}</span>
+                    </span>
+                    <span class="pk-move">{{ pk.from }} <span class="barrow">→</span> <b>{{ pk.to }}</b></span>
+                  </label>
+                  @if (pk.note) { <span class="pk-note">{{ pk.note }}</span> }
+                </li>
+              }
+            </ul>
+          }
           <div class="actions">
             <button class="btn outline" (click)="ix.resolve(false)">Cancel</button>
             <button class="btn primary" [attr.data-tone]="c.tone"
-              (click)="ix.resolve(true)">{{ c.confirmLabel }}</button>
+              [disabled]="!!c.picks?.length && !chosen().length"
+              (click)="ix.resolve(true, c.picks ? chosen() : undefined)">{{ confirmLabel(c) }}</button>
           </div>
         </div>
       </div>
@@ -150,8 +173,30 @@ import { Interaction, DrawerAction } from './interaction';
     .dactions .btn { justify-content:center; }
     .modal { background:#fff; border-radius: 12px; width: 420px; max-width: 92vw;
       padding: 22px 24px; box-shadow: 0 20px 40px rgba(0,0,0,.2); }
+    /* A pick list needs room for a reference, a name and a from/to on one line — at 420px those
+       wrap into mush, which defeats the point of showing them individually. */
+    .modal.wide { width: 620px; }
     .modal h3 { margin: 0 0 8px; font-size: 16px; color: var(--ink); }
     .modal p { margin: 0 0 20px; font-size: 13px; color: var(--gray-500); line-height: 1.55; }
+    .pick-head { display:flex; align-items:center; gap:14px; margin:-8px 0 8px; }
+    .pick-count { font-size:11px; font-weight:700; color:var(--gray-500); text-transform:uppercase;
+      letter-spacing:.04em; margin-right:auto; }
+    .pick-link { background:none; border:none; padding:0; cursor:pointer; font-size:12px;
+      font-weight:600; color:var(--teal-700); }
+    .pick-link:hover { text-decoration:underline; }
+    .picks { list-style:none; margin:0 0 20px; padding:0; display:flex; flex-direction:column; gap:4px;
+      max-height:44vh; overflow-y:auto; }
+    .picks li { background:var(--gray-50); border-radius:8px; padding:9px 12px; }
+    .picks li.off { opacity:.45; }
+    .picks label { display:flex; align-items:center; gap:10px; cursor:pointer; }
+    .picks input { width:15px; height:15px; accent-color:var(--teal-600); flex:none; cursor:pointer; }
+    .pk-main { display:flex; flex-direction:column; min-width:0; }
+    .pk-ref { font-size:12.5px; font-weight:700; color:var(--ink); }
+    .pk-label { font-size:12px; color:var(--gray-500); }
+    .pk-move { margin-left:auto; font-size:12px; color:var(--gray-500); white-space:nowrap; }
+    .pk-move b { color:var(--ink); font-weight:600; }
+    .pk-note { display:block; margin:5px 0 0 25px; font-size:11.5px; color:var(--gray-400); }
+    .btn[disabled] { opacity:.45; cursor:not-allowed; }
     .breakdown { list-style:none; margin:-8px 0 20px; padding:0; display:flex; flex-direction:column; gap:6px; }
     .breakdown li { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft);
       background:var(--gray-50); border-radius:8px; padding:9px 12px; }
@@ -196,6 +241,31 @@ export class Overlays {
       const c = this.ix.chooser();
       if (c && c.options.length) this.choice.set(c.options[0]);
     });
+  }
+
+  /** Ticking a box mutates the ConfirmPick in place. The dialog owns the selection while it is open
+   *  and hands the surviving ids back on confirm — so nothing recomputes between preview and apply,
+   *  which is the whole reason the list is trustworthy. */
+  togglePick(pk: ConfirmPick) {
+    pk.selected = !pk.selected;
+    this.pickTick.update((n) => n + 1);
+  }
+  allPicks(on: boolean) {
+    this.ix.confirm()?.picks?.forEach((p) => (p.selected = on));
+    this.pickTick.update((n) => n + 1);
+  }
+  /** Mutating the pick objects does not touch a signal, so the count and the button state would not
+   *  re-render on their own. This bumps on every change to make the view follow. */
+  private readonly pickTick = signal(0);
+  readonly chosen = computed(() => {
+    this.pickTick();
+    return (this.ix.confirm()?.picks ?? []).filter((p) => p.selected).map((p) => p.id);
+  });
+  /** "Balance 3" rather than a fixed label, so the button says what it will actually do after the
+   *  supervisor has switched some rows off. */
+  confirmLabel(c: ConfirmRequest): string {
+    if (!c.picks?.length) return c.confirmLabel;
+    return `${c.confirmLabel} ${this.chosen().length}`;
   }
 
   runDrawer(a: DrawerAction) { this.ix.closeDrawer(); a.run(); }

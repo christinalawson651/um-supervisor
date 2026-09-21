@@ -67,7 +67,25 @@ function workloadFor(n: { name: string; active: number; pending: number; complet
   return ctx.data.nurseStatsForLob(n.name, ctx.lob, ctx.days);
 }
 
-export interface ReportTable { title: string; columns: string[]; rows: (string | number)[][]; }
+/** A cell the reader can open. Reports are read to find something specific and then act on it, so a
+ *  member or an authorization printed as plain text is a dead end — the supervisor has to go and
+ *  search for it by hand in another module. */
+export interface ReportCellLink {
+  /** Column index the link applies to. */
+  column: number;
+  /** What to open. Called with the raw cell value, which may hold several comma-separated entries. */
+  run: (value: string, row: (string | number)[]) => void;
+  /** Cells that are placeholders ("—") or aggregates should not pretend to be openable. */
+  enabled?: (value: string, row: (string | number)[]) => boolean;
+  /** When set, the cell is split on this and each part becomes its own link. */
+  splitOn?: string;
+}
+export interface ReportTable {
+  title: string;
+  columns: string[];
+  rows: (string | number)[][];
+  links?: ReportCellLink[];
+}
 export interface ReportDimensionFilter { label: string; options: string[]; }
 
 export interface ReportContext {
@@ -82,6 +100,10 @@ export interface ReportContext {
   historyStaff?: string;
   historyActor?: string;
   data: DashboardData; // for the handful of reports that need session-mutable signals (nurses(), riskCases(), auditFlags())
+  /** Supplied by the Reports module so a report can make a member or authorization openable. Reports
+   *  that do not link anything ignore both. */
+  openMember?: (name: string) => void;
+  openAuth?: (authId: string) => void;
 }
 
 export interface ReportDef {
@@ -176,8 +198,22 @@ export const UM_REPORTS: ReportDef[] = [
         && (!ctx.historyStaff || ctx.historyStaff === ALL || h.fromStaff === ctx.historyStaff || h.toStaff === ctx.historyStaff)
         && (!ctx.historyActor || ctx.historyActor === ALL || h.actor === ctx.historyActor)
         && (!search || (h.members ?? []).some((m) => m.toLowerCase().includes(search))));
-      return [{ title: 'Assignment History', columns: ['Date', 'Time', 'Action', 'Detail', 'Team', 'From', 'To', 'Members', 'By'],
-        rows: rows.map((h) => [h.date, h.time, h.action, h.detail, h.team ?? '—', h.fromStaff ?? '—', h.toStaff ?? '—', (h.members ?? []).join(', ') || '—', h.actor]) }];
+      const COL_MEMBERS = 7, COL_AUTHS = 8;
+      return [{
+        title: 'Assignment History',
+        columns: ['Date', 'Time', 'Action', 'Detail', 'Team', 'From', 'To', 'Members', 'Authorizations', 'By'],
+        // Members are joined with a middle dot, not a comma: names are stored "Last, First", so a
+        // comma-split turns "Kim, Robert" into two links that each open nothing. The separator has
+        // to be one the values cannot contain.
+        rows: rows.map((h) => [h.date, h.time, h.action, h.detail, h.team ?? '—', h.fromStaff ?? '—', h.toStaff ?? '—',
+          (h.members ?? []).join(' · ') || '—', (h.auths ?? []).join(' · ') || '—', h.actor]),
+        // One entry can move several authorizations for several members, so each cell splits and
+        // every part links on its own — a single link over the whole list would open the wrong one.
+        links: [
+          { column: COL_MEMBERS, splitOn: ' · ', enabled: (v) => v !== '—', run: (v) => ctx.openMember?.(v) },
+          { column: COL_AUTHS, splitOn: ' · ', enabled: (v) => v !== '—', run: (v) => ctx.openAuth?.(v) },
+        ],
+      }];
     },
   },
 

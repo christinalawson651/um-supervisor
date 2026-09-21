@@ -5,7 +5,11 @@ import { Nav, BizModule } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
 import { DashboardData } from '../data/dashboard-data';
 import { daysAgo, TODAY, TODAY_ISO } from '../data/case-fields';
-import { UM_REPORTS, CM_REPORTS, APPEALS_REPORTS, GENERIC_REPORTS, UM_QUEUE_NAMES, UM_TEAMS, ReportDef, ReportContext } from '../data/report-registry';
+import { UM_REPORTS, CM_REPORTS, APPEALS_REPORTS, GENERIC_REPORTS, UM_QUEUE_NAMES, UM_TEAMS, ReportDef, ReportContext, ReportTable } from '../data/report-registry';
+import { Members } from '../shared/members';
+import { Interaction } from '../shared/interaction';
+import { CASE_POOL } from '../data/case-pool';
+import { COLUMNS, toRow } from '../shared/metrics';
 import { NURSES } from '../data/case-pool';
 
 type Group = BizModule | 'generic';
@@ -211,7 +215,16 @@ const PERIODS = [
                   <thead><tr>@for (c of t.columns; track c) { <th>{{ c }}</th> }</tr></thead>
                   <tbody>
                     @for (row of t.rows; track $index) {
-                      <tr>@for (cell of row; track $index) { <td>{{ cell }}</td> }</tr>
+                      <tr>@for (cell of row; track $index; let ci = $index) {
+                        @if (linkParts(t, ci, cell, row); as parts) {
+                          <td>@for (part of parts; track part.text; let last = $last) {
+                            @if (part.open) {
+                              <button type="button" class="cell-link" (click)="part.open!()">{{ part.text }}</button>
+                            } @else { <span>{{ part.text }}</span> }
+                            @if (!last) { <span class="cell-sep"> · </span> }
+                          }</td>
+                        } @else { <td>{{ cell }}</td> }
+                      }</tr>
                     } @empty { <tr><td [attr.colspan]="t.columns.length" class="empty">No records met this report's criteria in the applied scope.</td></tr> }
                   </tbody>
                 </table>
@@ -306,6 +319,12 @@ const PERIODS = [
 
     .pt { font-size: 14px; font-weight: 600; color: var(--ink); margin: 0; }
     .empty { text-align: center; color: var(--gray-500); padding: 20px; }
+    .cell-link { background:none; border:none; padding:0; font:inherit; cursor:pointer;
+      color:var(--teal-700); font-weight:600; text-align:left; }
+    .cell-link:hover { text-decoration:underline; }
+    .cell-sep { color:var(--gray-400); }
+    /* A printed report has nothing to click, so links print as ordinary text. */
+    @media print { .cell-link { color:inherit; font-weight:inherit; text-decoration:none; } }
 
     @media print {
       .no-print { display: none !important; }
@@ -433,7 +452,38 @@ export class ReportsDashboard {
   // nothing in the output section reads the live filter signals directly, so editing filters after
   // generating never changes what's on screen until you generate again. ----
   readonly generated = signal(false);
+  private members = inject(Members);
+  private ix = inject(Interaction);
   private appliedCtx = signal<ReportContext | null>(null);
+
+  /** Splits a cell into linkable parts for the template. Returns null when the column carries no
+   *  link, so the common case still renders as a plain cell with no wrapper elements. */
+  linkParts(t: ReportTable, col: number, cell: string | number, row: (string | number)[]):
+      { text: string; open?: () => void }[] | null {
+    const link = t.links?.find((l) => l.column === col);
+    if (!link) return null;
+    const raw = String(cell);
+    const parts = link.splitOn ? raw.split(link.splitOn).map((x) => x.trim()).filter(Boolean) : [raw];
+    return parts.map((text) => {
+      const ok = link.enabled ? link.enabled(text, row) : true;
+      return ok ? { text, open: () => link.run(text, row) } : { text };
+    });
+  }
+
+  /** Opens one authorization from a report cell. Shows the case as the rest of the app shows it —
+   *  the shared drilldown columns — rather than inventing a second presentation of the same record. */
+  private openAuth(authId: string) {
+    const c = CASE_POOL.find((x) => x.authId === authId);
+    if (!c) { this.ix.toast(`${authId} is not in the current data set.`, 'info'); return; }
+    this.ix.openExplorer({
+      title: authId,
+      context: `${c.member} · ${c.procedure} · ${c.status}`,
+      columns: COLUMNS,
+      rows: [toRow(c)],
+      exportName: `auth-${authId}`,
+      memberColumn: COLUMNS.indexOf('Member'),
+    });
+  }
   private appliedScope = signal('');
   readonly generatedAt = signal('');
   readonly generatedByLabel = 'Christina Lawson'; // the signed-in supervisor shown in the app's own topbar
@@ -478,6 +528,8 @@ export class ReportsDashboard {
       historyStaff: this.current()?.historyFilterable ? this.historyStaff() : undefined,
       historyActor: this.current()?.historyFilterable ? this.historyActor() : undefined,
       data: this.data,
+      openMember: (name) => this.members.openByName(name),
+      openAuth: (authId) => this.openAuth(authId),
     });
     this.appliedScope.set(this.buildScopeLabel());
     this.generatedAt.set(new Date().toLocaleString());
