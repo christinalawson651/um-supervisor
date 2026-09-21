@@ -53,7 +53,23 @@ export interface ChooserRequest {
 
 export interface DrawerField { label: string; value: string; tone?: 'green' | 'amber' | 'red' | 'blue' | 'teal'; }
 export interface DrawerAction { label: string; tone: 'teal' | 'red' | 'amber'; run: () => void; }
-export interface DrawerTable { columns: string[]; rows: (string | number)[][]; caption?: string; }
+/** A cell inside a drawer table that opens something. Same idea as the Reports module's cell links:
+ *  a member or an authorization printed as text is a dead end, and the drawer is where a supervisor
+ *  most often lands. */
+export interface DrawerCellLink {
+  column: number;
+  run: (value: string, row: (string | number)[]) => void;
+  enabled?: (value: string, row: (string | number)[]) => boolean;
+  /** When set, the cell is split on this and each part links on its own. Never a comma — member
+   *  names are stored "Last, First". */
+  splitOn?: string;
+}
+export interface DrawerTable {
+  columns: string[];
+  rows: (string | number)[][];
+  caption?: string;
+  links?: DrawerCellLink[];
+}
 export interface DrawerData {
   title: string;
   subtitle?: string;

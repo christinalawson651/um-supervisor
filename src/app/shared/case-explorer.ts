@@ -13,7 +13,7 @@ import { ReferralIntakeRec } from '../data/cm-intake';
 import { CmData } from './cm-data';
 import { lobOf, serviceCategoryOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { nbaFor } from '../data/um-status';
-import { pendReason } from './metrics';
+import { pendReason, COLUMNS, toRow } from './metrics';
 
 const PAGE = 12;
 
@@ -401,14 +401,25 @@ export class CaseExplorer {
             if (cs) this.data.releaseToQueue(cs.queue, cs.owner, target);
           });
           this.ix.toast(`${assignedIds.length} authorization(s) moved to ${target}.`);
-          this.data.addHistory('swap', 'Authorizations moved to queue', `${assignedIds.length} authorization(s) → ${target}`);
+          // Record which authorizations moved, not only how many — a count cannot be opened, and
+          // "3 authorization(s) → MD Review" is unauditable a week later.
+          this.data.addHistory('swap', 'Authorizations moved to queue', `${assignedIds.length} authorization(s) → ${target}`,
+            undefined, { auths: assignedIds, members: [...new Set(assignedIds.map((aid) => cases.find((x) => x.authId === aid)?.member).filter((m): m is string => !!m))], toStaff: target });
         } else {
           assignedIds.forEach((aid) => {
             const cs = cases.find((x) => x.authId === aid);
             this.data.claimToNurse(cs?.queue ?? null, cs?.owner ?? null, target);
           });
           this.ix.toast(`${assignedIds.length} authorization(s) reassigned to ${target}.`);
-          this.data.addHistory('swap', 'Authorizations reassigned', `${assignedIds.length} authorization(s) → ${target}`);
+          const moved = assignedIds.map((aid) => cases.find((x) => x.authId === aid)).filter((c): c is NonNullable<typeof c> => !!c);
+          this.data.addHistory('swap', 'Authorizations reassigned', `${assignedIds.length} authorization(s) → ${target}`,
+            undefined, {
+              auths: assignedIds,
+              members: [...new Set(moved.map((c) => c.member))],
+              // Only claim a single source when there genuinely was one.
+              fromStaff: new Set(moved.map((c) => c.owner)).size === 1 ? moved[0]?.owner : undefined,
+              toStaff: target,
+            });
         }
         this.selected.set(new Set());
       },
@@ -718,8 +729,24 @@ export class CaseExplorer {
     this.ix.openDrawer({
       title: 'Assignment History',
       subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'} & balance event${rows.length === 1 ? '' : 's'} this session`,
-      table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
+      table: this.data.assignmentHistoryTable(
+        (n) => { this.ix.closeDrawer(); this.members.openByName(n); },
+        (a) => this.openAuthFromHistory(a)),
       note: rows.length ? undefined : 'Nothing has been reassigned or balanced yet this session.',
     });
   }
+
+  /** Opens one authorization from a history row, in the same drilldown the rest of the app uses. */
+  private openAuthFromHistory(authId: string) {
+    const c = CASE_POOL.find((x) => x.authId === authId);
+    if (!c) { this.ix.toast(`${authId} is not in the current data set.`, 'info'); return; }
+    this.ix.closeDrawer();
+    this.ix.openExplorer({
+      title: authId,
+      context: `${c.member} · ${c.procedure} · ${c.status}`,
+      columns: COLUMNS, rows: [toRow(c)],
+      exportName: `auth-${authId}`, memberColumn: COLUMNS.indexOf('Member'),
+    });
+  }
+
 }

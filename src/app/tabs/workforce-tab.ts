@@ -7,6 +7,7 @@ import { Escalate, ESCALATE_TARGETS } from '../shared/escalate';
 import { Balance } from '../shared/balance';
 import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
+import { Members } from '../shared/members';
 import { urgencyOf, lobOf, LOBS, ageH, bandOf, daysAgo, TODAY_ISO } from '../data/case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { LobFilter } from '../shared/lob-filter';
@@ -248,6 +249,7 @@ const WORKFORCE_WIDGETS = [
   `],
 })
 export class WorkforceTab {
+  private members = inject(Members);
   data = inject(DashboardData);
   private ix = inject(Interaction);
   private rx = inject(Reassign);
@@ -593,10 +595,26 @@ export class WorkforceTab {
     this.ix.openDrawer({
       title: 'Assignment History',
       subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'}, balance, & PTO event${rows.length === 1 ? '' : 's'} this session`,
-      table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
+      table: this.data.assignmentHistoryTable(
+        (n) => { this.ix.closeDrawer(); this.members.openByName(n); },
+        (a) => this.openAuthFromHistory(a)),
       note: rows.length ? undefined : 'No authorizations have been reassigned, balanced, or redistributed for PTO yet this session.',
     });
   }
+
+  /** Opens one authorization from a history row, in the same drilldown the rest of the app uses. */
+  private openAuthFromHistory(authId: string) {
+    const c = CASE_POOL.find((x) => x.authId === authId);
+    if (!c) { this.ix.toast(`${authId} is not in the current data set.`, 'info'); return; }
+    this.ix.closeDrawer();
+    this.ix.openExplorer({
+      title: authId,
+      context: `${c.member} · ${c.procedure} · ${c.status}`,
+      columns: COLUMNS, rows: [toRow(c)],
+      exportName: `auth-${authId}`, memberColumn: COLUMNS.indexOf('Member'),
+    });
+  }
+
 
   /** Going-on-PTO handoff — unlike Reassign/Balance this always empties the nurse out completely,
    *  to teammates on their own team only (never across teams), matching CM's own PTO flow. */

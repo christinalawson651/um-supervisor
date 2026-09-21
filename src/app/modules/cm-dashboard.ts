@@ -2017,7 +2017,11 @@ export class CmDashboard {
     this.ix.openDrawer({
       title: 'Assignment History',
       subtitle: `${rows.length} reassignment${rows.length === 1 ? '' : 's'}, balance, & PTO event${rows.length === 1 ? '' : 's'} this session`,
-      table: rows.length ? { columns: ['Time', 'Action', 'Detail'], rows: rows.map((h) => [h.time, h.action, h.detail]) } : undefined,
+      // CM entries carry members but no authorization IDs — CM work is a case, not an auth — so the
+      // Authorizations column simply stays empty rather than being faked with case numbers.
+      table: this.data.assignmentHistoryTable(
+        (n) => { this.ix.closeDrawer(); this.members.openByName(n); },
+        () => this.ix.toast('CM activity is recorded against members, not authorizations.', 'info')),
       note: rows.length ? undefined : 'No members have been reassigned, balanced, or redistributed for PTO yet this session.',
     });
   }

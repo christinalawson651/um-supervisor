@@ -294,6 +294,24 @@ export class DashboardData {
   /** Just the assignment-moving entries (reassign + balance) — the full activity log also includes escalations, etc. */
   readonly assignmentHistory = computed(() => this.history().filter((h) => h.icon === 'swap' || h.icon === 'balance' || h.icon === 'calendar'));
 
+  /** The Assignment History drawer, built once and used by every surface that offers it — the
+   *  Workforce tab, the Case Explorer and CM. Previously each built its own three-column table, so
+   *  making one of them useful left the others behind, which is exactly what happened. */
+  assignmentHistoryTable(openMember: (n: string) => void, openAuth: (a: string) => void) {
+    const rows = this.assignmentHistory();
+    if (!rows.length) return undefined;
+    const COL_MEMBERS = 3, COL_REFS = 4;
+    return {
+      columns: ['Time', 'Action', 'Detail', 'Members', 'Authorizations'],
+      rows: rows.map((h) => [h.time, h.action, h.detail,
+        (h.members ?? []).join(' · ') || '—', (h.auths ?? []).join(' · ') || '—']),
+      links: [
+        { column: COL_MEMBERS, splitOn: ' · ', enabled: (v: string) => v !== '—', run: (v: string) => openMember(v) },
+        { column: COL_REFS, splitOn: ' · ', enabled: (v: string) => v !== '—', run: (v: string) => openAuth(v) },
+      ],
+    };
+  }
+
   addHistory(icon: string, action: string, detail: string, actor = 'Christina Lawson', meta?: { team?: string; fromStaff?: string; toStaff?: string; members?: string[]; auths?: string[] }) {
     const now = new Date();
     const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

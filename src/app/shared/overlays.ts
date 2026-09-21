@@ -1,6 +1,6 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Interaction, DrawerAction, ConfirmPick, ConfirmRequest } from './interaction';
+import { Interaction, DrawerAction, DrawerTable, ConfirmPick, ConfirmRequest } from './interaction';
 
 @Component({
   selector: 'app-overlays',
@@ -105,7 +105,16 @@ import { Interaction, DrawerAction, ConfirmPick, ConfirmRequest } from './intera
                 <thead><tr>@for (c of d.table.columns; track c) { <th>{{ c }}</th> }</tr></thead>
                 <tbody>
                   @for (row of d.table.rows; track $index) {
-                    <tr>@for (cell of row; track $index) { <td>{{ cell }}</td> }</tr>
+                    <tr>@for (cell of row; track $index; let ci = $index) {
+                      @if (drawerParts(d.table!, ci, cell, row); as parts) {
+                        <td>@for (part of parts; track part.text; let last = $last) {
+                          @if (part.open) {
+                            <button type="button" class="cell-link" (click)="part.open!()">{{ part.text }}</button>
+                          } @else { <span>{{ part.text }}</span> }
+                          @if (!last) { <span class="cell-sep"> · </span> }
+                        }</td>
+                      } @else { <td>{{ cell }}</td> }
+                    }</tr>
                   }
                 </tbody>
               </table>
@@ -159,6 +168,10 @@ import { Interaction, DrawerAction, ConfirmPick, ConfirmRequest } from './intera
       background:var(--teal-50); border:1px solid var(--teal-100); border-radius:8px; padding:12px 14px; }
     .tcap { margin:16px 0 8px; font-size:11px; letter-spacing:.05em; text-transform:uppercase;
       color:var(--gray-500); font-weight:600; }
+    .cell-link { background:none; border:none; padding:0; font:inherit; cursor:pointer;
+      color:var(--teal-700); font-weight:600; text-align:left; }
+    .cell-link:hover { text-decoration:underline; }
+    .cell-sep { color:var(--gray-400); }
     .dtable-wrap { overflow-x:auto; border:1px solid var(--gray-100); border-radius:8px; }
     .dtable { width:100%; border-collapse:collapse; font-size:12px; }
     .dtable thead th { text-align:left; padding:8px 10px; background:var(--gray-50);
@@ -266,6 +279,20 @@ export class Overlays {
   confirmLabel(c: ConfirmRequest): string {
     if (!c.picks?.length) return c.confirmLabel;
     return `${c.confirmLabel} ${this.chosen().length}`;
+  }
+
+  /** Same splitting rule as the Reports module's cell links, kept here rather than shared because
+   *  the two render in different components; the shapes are deliberately identical. */
+  drawerParts(t: DrawerTable, col: number, cell: string | number, row: (string | number)[]):
+      { text: string; open?: () => void }[] | null {
+    const link = t.links?.find((l) => l.column === col);
+    if (!link) return null;
+    const raw = String(cell);
+    const parts = link.splitOn ? raw.split(link.splitOn).map((x) => x.trim()).filter(Boolean) : [raw];
+    return parts.map((text) => {
+      const ok = link.enabled ? link.enabled(text, row) : true;
+      return ok ? { text, open: () => link.run(text, row) } : { text };
+    });
   }
 
   runDrawer(a: DrawerAction) { this.ix.closeDrawer(); a.run(); }
