@@ -1,4 +1,16 @@
-# Spec — Workload balancing
+# Spec — Workload balancing (all modules)
+
+> **INTERNAL — NOT FOR DISTRIBUTION.**
+>
+> Share `Spec-Workload-Balancing-UM.md` instead. That one is UM-only and is the version cleared to go
+> out.
+>
+> This document carries the cross-module view: the CM and Intake balancing gaps, and the January
+> scoping. It is held back for two reasons. Appeals Pulse has not been built — the current UM Appeals
+> build has not yet been reviewed, so anything this document says about appeals balancing is
+> unfounded. And circulating the CM gap list commits to remediation dates that have not been agreed.
+>
+> Revisit once the real UM Appeals build has been shared and CM scope is confirmed.
 
 **Jira project:** NGEN · **Sizing:** T-shirt · **Date:** 29 September 2026
 **Reference build:** TruCare Pulse (`um-supervisor`) · UM balancing at `shared/balance.ts` (commit `8224270`)
