@@ -5,6 +5,16 @@
 **Author:** Christina Lawson
 **Related:** `Spec-Rebalance-History-Drawers.md` (the audit trail balancing writes to)
 
+**Release scope**
+- **Now — UM only.** BAL-1 to BAL-5, BAL-9 and BAL-10 are in the current implementation.
+- **Fast follow, target 27 January.** CM and Appeals: BAL-6, BAL-7, BAL-8, and the module
+  extensions of BAL-9 and BAL-10.
+
+> **BAL-9 is the story that decides what January costs.** Building the UM flow generically now —
+> one implementation, the domain passed in — is what makes CM and Appeals a configuration
+> exercise in January rather than a second and third build. Deferring it is the expensive choice,
+> and the cost lands on a fixed date.
+
 > **Why this spec exists as its own document.** Balancing takes clinical work off one clinician and
 > gives it to another. The supervisor pressing the button is accountable for the outcome of work they
 > will not personally do, and in CM they are also moving a member away from a clinician that member
@@ -18,31 +28,39 @@
 Five balancing entry points exist. **One of them meets this spec. The other four do not**, and they
 share the defect that was fixed in UM.
 
-| Flow | Where | Itemised preview | Deselect rows | Applies the reviewed plan | Levels to a target |
+| Flow | Release | Itemised preview | Deselect rows | Applies the reviewed plan | Levels to a target |
 |---|---|---|---|---|---|
-| UM workload balance | Workforce tab, Case Explorer | ✅ | ✅ | ✅ | ✅ |
-| CM caseload balance | CM dashboard | ❌ count only | ❌ | ❌ **recomputes at commit** | ❌ |
-| CM team balance | CM dashboard, per team | ❌ count only | ❌ | ❌ **recomputes at commit** | ❌ |
-| CM balance from a drilldown | Case Explorer | ❌ count only | ❌ | ❌ **recomputes at commit** | ❌ |
-| Intake Coordinator balance | CM dashboard | ❌ **no preview at all** | ❌ | ❌ loops N times | ❌ |
+| UM workload balance | **Now** | ✅ | ✅ | ✅ | ✅ |
+| CM caseload balance | Jan 27 | ❌ count only | ❌ | ❌ **recomputes at commit** | ❌ |
+| CM team balance | Jan 27 | ❌ count only | ❌ | ❌ **recomputes at commit** | ❌ |
+| CM balance from a drilldown | Jan 27 | ❌ count only | ❌ | ❌ **recomputes at commit** | ❌ |
+| Intake Coordinator balance | Jan 27 | ❌ **no preview at all** | ❌ | ❌ loops N times | ❌ |
 
 **"Recomputes at commit"** means the code re-derives the busiest person on each move as it applies
 them, rather than applying the plan that was shown. The moves that happen are therefore not
 guaranteed to be the moves that were previewed. This was a real defect in UM and was fixed there; it
 is still live in the other four.
 
-**BAL-6 through BAL-9 exist to close that gap.** They are not new features — they bring four flows up
-to the standard the fifth already meets.
+**BAL-6 through BAL-8 are not new features.** They bring the CM and Intake flows up to the standard
+the UM flow already meets, and they are scoped to the January release — not to the current one.
 
 ---
 
 ## Scope Summary
 
 **Personas**
-- **UM Supervisor** — balances authorization workload across nurses.
-- **CM Supervisor** — balances caseload across care managers, including within a single team.
-- **Intake Coordinator Lead** — balances unworked referrals across coordinators.
-- **UM Nurse / Care Manager** — subject of the rebalance; see permission ACs.
+
+There is no single "supervisor". Supervision is a **role held per module, with a scope**, and one
+person may hold several. That shapes BAL-10 and is worth stating before the stories.
+
+- **UM Supervisor** — balances authorization workload across nurses. *Current release.*
+- **CM Supervisor** — balances caseload across care managers, including within a single team. *January.*
+- **Appeals Supervisor** — balances appeal workload across appeal reviewers. *January.*
+- **Intake Coordinator Lead** — balances unworked referrals across coordinators. *January.*
+- **UM Nurse / Care Manager / Appeal Reviewer** — subject of the rebalance; see BAL-10.
+
+Scope is a separate axis from module: a supervisor may cover a team, a line of business, a delegated
+entity or a site, and two supervisors' scopes can overlap over the same population.
 
 **Key interactions**
 Choose a strategy · review the proposed moves · decline individual moves · commit · audit afterwards.
@@ -57,7 +75,7 @@ lightest · a spread so wide the plan would be enormous · a member recently rea
 
 ---
 
-## Epic: UM — Workload Balancing *(implemented; stated for parity and test coverage)*
+## Epic: UM — Workload Balancing *(current release; implemented — stated for parity and test coverage)*
 
 ### BAL-1 — Choose how aggressively to rebalance
 
@@ -241,7 +259,7 @@ parties, because turnaround accountability follows the work.
 
 ---
 
-## Epic: CM — Caseload Balancing *(gap — does not meet BAL-3, BAL-4 or BAL-5 today)*
+## Epic: CM & Appeals — Caseload Balancing *(fast follow, target 27 January)*
 
 ### BAL-6 — Bring CM balancing to the UM standard
 
@@ -391,42 +409,82 @@ Then every entry point receives it without a separate change
 - Domain differences belong in a selection strategy passed into the flow, not in duplicated flows.
 - The reference has already paid for this lesson twice: once when the Reports module's history links
   left three other surfaces behind, and once in balancing itself, where UM was fixed and CM was not.
+- **This story is in the current release even though only UM ships now.** Its value is realised in
+  January: if the UM flow is built generically, CM and Appeals balancing become a selection strategy
+  and a label set. If it is built UM-shaped, January pays for two more builds against a fixed date.
+
+```
+Given a new module needs balancing
+When it is added
+Then only its selection rule, its item vocabulary and its scope definition are new
+And no part of the strategy picker, preview, deselection, application or audit is rewritten
+```
 
 **Size:** M
 
 ---
 
-### BAL-10 — Restrict who can rebalance
+### BAL-10 — Scope rebalancing to the right supervisor
 
 **Story**
-As a **compliance owner**, I want rebalancing restricted to supervisors, so that clinicians cannot
-move work between themselves without oversight.
+As a **compliance owner**, I want rebalancing restricted to the supervisor of that module and scope,
+so that work is only moved by someone accountable for it.
 
 **Acceptance Criteria**
 
 ```
-Given I hold a non-supervisory role
-When I view a workload or caseload surface
+Given I hold no supervisory role for a module
+When I view a workload or caseload surface in it
 Then no balancing control is offered
 And if the action is invoked directly, it is rejected server-side and the attempt is logged
 ```
 
 ```
-Given I am a supervisor scoped to one team
+Given I supervise one team within a module
 When I balance
-Then only members of that team are eligible as source or target
+Then only people within my scope are offered as source or target
+And the plan cannot move work to someone outside it
+```
+
+```
+Given I hold supervisory roles in more than one module
+When I open balancing in each
+Then each module presents its own population and its own scope
+And the two are never merged into one pool
+```
+
+```
+Given two supervisors' scopes overlap over the same population
+When either of them balances
+Then the action is permitted
+And the audit entry names which supervisor performed it
+```
+
+```
+Given a move would hand work to someone outside my scope
+When the plan is built
+Then that move requires explicit confirmation naming the receiving supervisor
+And it is recorded as a cross-scope transfer
 ```
 
 **Business rules**
+- **There is no single supervisor persona.** Supervision is a role held per module, with a scope, and
+  one person may hold several. Any design that assumes one global supervisor will need reworking at
+  the first client whose UM and CM leadership differ — which is most of them.
+- Moving work **out** of your scope moves it out of your accountability. That is a different act from
+  rebalancing within a team, and it should feel different: named, confirmed and recorded.
 - Hiding the control is presentation. **Rejecting the action is the control.** Same principle as
   NGP-4391 — a filtered dropdown is not enforcement.
 
-**[COMPLIANCE NOTE]** Segregation of duties. Who may reassign clinical work is an access-control
-decision subject to audit.
+**[COMPLIANCE NOTE]** Segregation of duties. Who may reassign clinical work, and over which
+population, is an access-control decision subject to audit.
 
-**[ASSUMPTION: the reference build has a single supervisor persona and does not enforce this.]**
+**[ASSUMPTION: the reference build has one supervisor persona and does not enforce scope. The role
+and scope model is a platform capability this spec depends on rather than defines — see Open
+Question 7.]**
 
 **Size:** M
+
 
 ---
 
@@ -461,7 +519,9 @@ decision subject to audit.
 | 4 | If workload changes between preview and confirm, do we apply the stale plan, re-validate and warn, or rebuild? | PM | Eng / Clinical | Before BAL-5 build |
 | 5 | Should a balance be undoable as a single action, or is a reverse reassignment sufficient? | PM | Product | Post-release |
 | 6 | Does the member or their care manager get notified when a CM case is reassigned? | PM | Clinical / Compliance | Before BAL-7 build |
-| 7 | Which roles may rebalance, and at what scope — own team only, or any team? | PM | Security / Clinical | Before BAL-10 build |
+| 7 | What is the full supervisor role and scope model — which roles, scoped by team, LOB, delegated entity or site, and can one person hold several? BAL-10 depends on it. | PM | Security / Clinical | Before BAL-10 build |
+| 8 | Does "Appeals" in the January fast follow mean UM appeals, the Appeals & Grievances module, or both? Earlier scoping put UM appeals in the pilot; this document follows the later statement. | PM | Programme | Before January planning |
+| 9 | For a cross-scope transfer, does the receiving supervisor have to accept, or is naming them at the point of transfer sufficient? | PM | Clinical | Before BAL-10 build |
 
 ---
 

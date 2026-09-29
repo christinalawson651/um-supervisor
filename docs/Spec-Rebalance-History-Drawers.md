@@ -2,7 +2,11 @@
 
 **Jira project:** NGEN · **Sizing:** T-shirt · **Date:** 21 September 2026
 **Reference build:** TruCare Pulse (`um-supervisor`), commits `8224270`, `ee2bdec`, `e18ba68`, `d929cf9`
-**Revision:** 2 — adds HIST-4 (module scoping), HIST-5 (search/sort/export), DATA-2 (seeded history)
+**Revision:** 3 — adds HIST-4 (module scoping), HIST-5 (search/sort/export), DATA-2 (seeded history)
+
+**Release scope:** the current implementation is **UM only**. CM and Appeals are a fast follow
+targeting **27 January** — so the CM stories here (HIST-3, DATA-1) and the CM half of HIST-4 are
+January scope, not current. The UM stories are in the current release.
 **Author:** Christina Lawson
 
 > Engineering implements against the reference build. Every behaviour below is implemented and
@@ -346,8 +350,9 @@ Then I see only entries for work I own
   behind it.
 - References print as plain text — a printed report has nothing to click.
 
-**[ASSUMPTION: the permission AC above is stated as a requirement. The reference build has a single
-supervisor persona and does not enforce it.]**
+**[ASSUMPTION: the permission AC above is stated as a requirement. The reference build does not
+enforce it. Note there is no single supervisor persona — supervision is a role held per module with
+a scope, and one person may hold several; see BAL-10 in `Spec-Workload-Balancing.md`.]**
 
 **Out of scope** — editing a history entry; exporting the resolved records.
 
