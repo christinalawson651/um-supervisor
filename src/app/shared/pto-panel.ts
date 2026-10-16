@@ -15,7 +15,7 @@ function addDays(base: Date, days: number): Date { const d = new Date(base); d.s
       <div class="scrim" (click)="pto.close()">
         <div class="modal" (click)="$event.stopPropagation()">
           <div class="mh">
-            <div><h3>{{ c.title }}</h3><div class="sub">Choose who's going on PTO — their whole active caseload hands off to teammates with capacity on their own team.</div></div>
+            <div><h3>{{ c.title }}</h3></div>
             <button class="x" (click)="pto.close()">×</button>
           </div>
 
@@ -39,7 +39,6 @@ function addDays(base: Date, days: number): Date { const d = new Date(base); d.s
             <label class="flabel">Send caseload to</label>
             <button class="nrec" [class.on]="selectedTargets().size === 0" (click)="clearTargets()">
               <div class="nrow"><b>Automatic — whole team</b><span class="recbadge">★ Recommended</span></div>
-              <div class="nmeta">Distributes to teammates with the most capacity as each case moves — no single person absorbs it all.</div>
             </button>
             <div class="ovr">Or split across just:</div>
             <div class="nlist">
@@ -94,7 +93,6 @@ function addDays(base: Date, days: number): Date { const d = new Date(base); d.s
     .nrec { text-align:left; width:100%; border:2px solid var(--teal-600); background:#fff; border-radius:10px; padding:12px 14px; cursor:pointer; margin-bottom:12px; }
     .nrec.on { background:var(--teal-50); }
     .recbadge { font-size:10.5px; font-weight:700; color:var(--teal-700); background:var(--teal-100); padding:2px 8px; border-radius:999px; }
-    .nmeta { font-size:11.5px; color:var(--gray-500); margin-top:4px; line-height:1.4; }
     .ovr { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); font-weight:700; margin-bottom:8px; }
     .nlist { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
     .ni { text-align:left; width:100%; border:1px solid var(--gray-300); background:#fff; border-radius:10px; padding:10px 12px; cursor:pointer; }

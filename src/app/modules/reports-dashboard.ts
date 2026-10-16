@@ -55,34 +55,22 @@ const PERIODS = [
               }
             </div>
           }
-          <!-- Scope is stated where the empty modules are, not only in the strapline. UM Appeals is
-               pilot scope alongside UM, so it is named separately from the CM/A&G fast-follows —
-               its reports are blocked on an appeals case pool, not on writing the definitions. -->
-          <div class="grp-note">UM and the audit set ship in this pass. UM Appeals is next, then CM and A&amp;G.</div>
         }
       </aside>
 
       <!-- Report body -->
       <section class="body">
         @if (!current()) {
-          <div class="empty-state">{{ closed() ? 'No report open — choose one from the list on the left.' : 'No reports available for your current role.' }}</div>
+          <div class="empty-state">{{ closed() ? 'No report open.' : 'No reports available for your current role.' }}</div>
         } @else {
           <div class="report-head no-print">
             <div class="rh-main">
-              <button class="chevron-btn" [title]="headerCollapsed() ? 'Expand details' : 'Collapse details'" (click)="headerCollapsed.set(!headerCollapsed())">{{ headerCollapsed() ? '▸' : '▾' }}</button>
               <div class="rh-text">
                 <h2>{{ current()!.title }}</h2>
-                @if (!headerCollapsed()) {
-                  <p class="desc">{{ current()!.description }}</p>
-                }
               </div>
             </div>
             <button class="btn-close" title="Close this report" (click)="close()">×</button>
           </div>
-
-          @if (!headerCollapsed() && current()!.staticNote) {
-            <div class="static-note no-print">{{ current()!.staticNote }}</div>
-          }
 
           @if (!generated()) {
             <!-- Configure step: choose filters, nothing rendered yet -->
@@ -143,7 +131,7 @@ const PERIODS = [
                 </select>
               }
               @if (current()!.noLobDays && !current()!.dimension && !current()!.dimension2 && !current()!.schedulePeriod && !current()!.caseLevel && !current()!.memberSearchable) {
-                <span class="flab no-filters-note">No filters apply to this report — it always shows the full current data.</span>
+                <span class="flab no-filters-note">No filters apply to this report.</span>
               }
             </div>
             @if (current()!.caseLevel) {
@@ -255,21 +243,16 @@ const PERIODS = [
       font-size: 13px; color: var(--ink); cursor: pointer; margin-bottom: 2px; }
     .picker-item:hover { background: var(--gray-100); }
     .picker-item.active { background: var(--teal-50); color: var(--teal-700); font-weight: 600; }
-    .grp-note { font-size: 11px; color: var(--gray-500); font-style: italic; padding: 8px 10px; border-top: 1px solid var(--border); margin-top: 4px; }
 
     .body { min-width: 0; }
     .report-head { margin-bottom: 10px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
     .report-head h2 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--ink); }
     .rh-main { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
     .rh-text { min-width: 0; }
-    .chevron-btn { border: none; background: none; cursor: pointer; color: var(--gray-400); font-size: 11px; padding: 4px 2px; margin-top: 5px; flex-shrink: 0; }
-    .chevron-btn:hover { color: var(--ink); }
     .btn-close { border: none; background: none; font-size: 22px; line-height: 1; color: var(--gray-400); cursor: pointer; padding: 2px 6px; flex-shrink: 0; }
     .btn-close:hover { color: var(--ink); }
-    .desc { font-size: 12.5px; color: var(--gray-500); margin: 0; max-width: 640px; }
     .empty-state { padding: 60px 0; text-align: center; color: var(--gray-500); }
 
-    .static-note { font-size: 12px; background: var(--amber-bg); color: var(--amber-fg); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
 
     .filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid var(--border);
       border-radius: var(--radius); padding: 10px 14px; margin-bottom: 14px; }
@@ -377,9 +360,6 @@ export class ReportsDashboard {
   /** True once the user explicitly closes a report — distinct from `selectedId` being unset, which
    *  falls back to the first report so the picker never opens onto a blank page on first load. */
   readonly closed = signal(false);
-  /** Collapses the title/description (+ static note) so the tables get more vertical room without
-   *  fully closing the report. Resets to expanded whenever a new report is picked. */
-  readonly headerCollapsed = signal(false);
   /** Collapses the report picker down to a slim rail — same idea, for horizontal room on wide tables. */
   readonly sidebarCollapsed = signal(false);
   readonly current = computed<ReportDef | null>(() => {
@@ -391,7 +371,6 @@ export class ReportsDashboard {
   select(id: string) {
     this.selectedId.set(id);
     this.closed.set(false);
-    this.headerCollapsed.set(false);
     // Auto-open the group this report lives in (a nice-to-have when picking from a collapsed
     // group) — a one-time action, not a standing rule, so you can still collapse it afterward.
     const group = this.allVisibleReports().find((r) => r.id === id)?.group;

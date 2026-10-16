@@ -34,7 +34,6 @@ function toTableRow(r: ConcurrentRow): (string | number)[] {
   template: `
     <div class="tab-head">
       <h2>Concurrent Review Monitoring</h2>
-      <span class="section-note">Active inpatient authorizations under review</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
 

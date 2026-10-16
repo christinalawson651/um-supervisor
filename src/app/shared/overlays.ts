@@ -82,7 +82,7 @@ import { Interaction, DrawerAction, DrawerTable, ConfirmPick, ConfirmRequest } f
                aria-label="Resize panel" [attr.aria-valuenow]="drawerWidth()"
                [attr.aria-valuemin]="MIN_DRAWER" [attr.aria-valuemax]="maxDrawer()"
                (pointerdown)="startResize($event)" (keydown)="resizeKey($event)"
-               (dblclick)="resetDrawerWidth()" title="Drag to resize · double-click to reset"></div>
+               (dblclick)="resetDrawerWidth()"></div>
           <div class="dhead">
             <div>
               <h3>{{ d.title }}</h3>

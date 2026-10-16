@@ -41,7 +41,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   template: `
     <div class="tab-head">
       <h2>Cost &amp; Utilization Insights</h2>
-      <span class="section-note">Which active authorizations may create unusually high cost, payment exposure, or avoidable utilization — click a tile to drill in</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
     <z-widget-customize [vis]="vis"></z-widget-customize>
@@ -178,7 +177,7 @@ export class CostTab {
   hide(id: string) { this.vis.remove(id); }
   fmt = fmt;
 
-  private scopeArgs(): [string | undefined, number | undefined] {
+  private scopeArgs(): [string | string[] | undefined, number | undefined] {
     const lob = this.lobFilter.value();
     const period = this.lookback.period();
     return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];

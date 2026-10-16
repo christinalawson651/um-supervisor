@@ -17,7 +17,6 @@ import { Ring } from '../shared/ring';
           <span class="ai-spark"><z-icon name="sparkles" [size]="18"></z-icon></span>
           <div>
             <h2>AI / NextGen Intelligence</h2>
-            <p class="section-note">Predictive analytics and intelligent recommendations</p>
           </div>
         </div>
         <span class="ai-pill">AI-Powered</span>
@@ -137,18 +136,12 @@ export class AiTab {
   openConfidence(r: AiRecommendation) {
     this.ix.openDrawer({
       title: r.title,
-      subtitle: 'AI / NextGen recommendation',
       badge: { text: `${r.confidence}% confidence`, tone: r.confidence >= 90 ? 'green' : r.confidence >= 70 ? 'amber' : 'red' },
       fields: [
         { label: 'Recommendation', value: r.detail },
         { label: 'Suggested Action', value: r.action },
         { label: 'Confidence', value: `${r.confidence}%` },
       ],
-      note: r.confidence >= 90
-        ? 'High confidence — this recommendation is eligible for straight-through automation.'
-        : r.confidence >= 70
-        ? 'Medium confidence — a quick supervisor review is recommended before acting.'
-        : 'Low confidence — review carefully before acting on this recommendation.',
       actions: [{ label: r.action, tone: r.tone === 'red' ? 'red' : r.tone === 'amber' ? 'amber' : 'teal', run: () => this.act(r) }],
     });
   }

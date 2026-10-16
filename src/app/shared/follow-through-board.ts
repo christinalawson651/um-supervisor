@@ -26,7 +26,7 @@ const TYPE_COLORS: Record<string, string> = {
   imports: [Icon, Donut],
   template: `
     <div class="tab-head">
-      <div><h2>Follow-Through Board</h2><span class="section-note">Non-clinical follow-through — outreach calls, notifications &amp; letters pulled from UM and CM</span></div>
+      <div><h2>Follow-Through Board</h2></div>
       <button class="btn outline sm" (click)="exportBoard()"><z-icon name="download" [size]="13"></z-icon> Export</button>
     </div>
 
@@ -39,7 +39,6 @@ const TYPE_COLORS: Record<string, string> = {
           <button [class.on]="data.sourceScope() === 'CM'" (click)="data.sourceScope.set('CM')">CM</button>
         </div>
       </label>
-      <span class="ftb-cfg-note">Which modules feed this board is a client-level setting — shown here as a live toggle.</span>
     </div>
 
     <div class="ftb-kpis">
@@ -66,7 +65,6 @@ const TYPE_COLORS: Record<string, string> = {
         [clickable]="true" (segClick)="onDonutClick($event)"></z-donut>
       <div class="ftb-draw">
         <button class="draw-btn" (click)="drawNext()"><z-icon name="bolt" [size]="16"></z-icon> Draw Next</button>
-        <div class="ftb-draw-note">Pulls the highest-priority, oldest-due item from the queues above.</div>
       </div>
     </div>
 
@@ -101,7 +99,6 @@ const TYPE_COLORS: Record<string, string> = {
   styles: [`
     .ftb-cfg-row { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
     .sortsel { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--gray-500); font-weight:600; }
-    .ftb-cfg-note { font-size:11.5px; color:var(--gray-400); font-style:italic; }
     .seg-toggle { display:inline-flex; border:1px solid var(--gray-300); border-radius:8px; overflow:hidden; }
     .seg-toggle button { border:none; background:#fff; padding:7px 14px; font-size:12px; font-weight:600; color:var(--gray-500); cursor:pointer; }
     .seg-toggle button.on { background:var(--teal-700); color:#fff; }
@@ -125,7 +122,6 @@ const TYPE_COLORS: Record<string, string> = {
     .draw-btn { background:var(--teal-700); color:#fff; border:none; border-radius:8px; padding:11px 22px;
       font-weight:700; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:8px; width:fit-content; }
     .draw-btn:hover { background:var(--teal-900); }
-    .ftb-draw-note { font-size:11.5px; color:var(--gray-500); max-width:260px; }
 
     .tbl-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
     .sec-title { font-size:14px; font-weight:600; color:var(--ink); margin:0; }

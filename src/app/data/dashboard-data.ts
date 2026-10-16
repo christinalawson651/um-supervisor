@@ -10,7 +10,7 @@ import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_P
 // seeded case number and referral resolvable. Data-to-data import only — no service dependency.
 import { CM_CASE_POOL, CM_UNASSIGNED } from './cm-case-pool';
 import { CM_REFERRAL_INTAKE } from './cm-intake';
-import { ageH, bandOf, lobOf, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf, providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf, isDuplicateOf, duplicateResolvedOf, LOBS, TODAY_LONG } from './case-fields';
+import { ageH, bandOf, lobOf, inPlanScope, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf, providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf, isDuplicateOf, duplicateResolvedOf, LOBS, TODAY_LONG } from './case-fields';
 import { IrrReviewRecord, UM_IRR_REVIEWS, DISCREPANCY_REASONS, DiscrepancyReason, MIN_SAMPLE_PER_REVIEWER } from './um-irr';
 
 /**
@@ -620,8 +620,8 @@ export class DashboardData {
    * `kpis` signal's default values so switching lookback periods shows a real, consistent picture
    * instead of hand-picked flavor numbers.
    */
-  liveKpis(withinDays: number): Kpi[] {
-    const within = (c: CaseRec) => daysAgo(c.submitted) <= withinDays;
+  liveKpis(withinDays: number, plans?: string[]): Kpi[] {
+    const within = (c: CaseRec) => daysAgo(c.submitted) <= withinDays && inPlanScope(c.authId, plans);
     const pendingIn = CASE_POOL.filter((c) => c.phase === 'pending' && within(c));
     const decidedIn = CASE_POOL.filter((c) => c.phase === 'decided' && within(c));
     const onTrack = decidedIn.filter((c) => c.tags.includes('onTrack')).length;
@@ -655,10 +655,9 @@ export class DashboardData {
 
 // `lob` accepts either a single LOB (existing single-select callers, e.g. every dashboard tab) or
 // an array (Reports' multi-select LOB filter) — an empty array behaves like "all", same as undefined.
+// Values may be LOB names or BHP plan codes (the shell's plan filter); see inPlanScope().
 function lobMatches(authId: string, lob?: string | string[]): boolean {
-  if (!lob || lob === 'all') return true;
-  if (Array.isArray(lob)) return lob.length === 0 || lob.includes(lobOf(authId));
-  return lobOf(authId) === lob;
+  return inPlanScope(authId, lob);
 }
 export function inScope(c: CaseRec, lob?: string | string[], withinDays?: number): boolean {
   return lobMatches(c.authId, lob)
@@ -880,7 +879,7 @@ export function liveComplianceBars(lob?: string | string[], withinDays?: number)
 // review record itself (sample selection, independent redetermination, discrepancy reason,
 // corrective-action tier) is built once in um-irr.ts; everything here is just filtering/rollup. ----
 function irrInScope(r: IrrReviewRecord, lob?: string | string[], withinDays?: number): boolean {
-  return (!lob || lob === 'all' || lobOf(r.authId) === lob) && (withinDays === undefined || daysAgo(r.reviewDate) <= withinDays);
+  return inPlanScope(r.authId, lob) && (withinDays === undefined || daysAgo(r.reviewDate) <= withinDays);
 }
 export function liveIrrReviews(lob?: string | string[], withinDays?: number): IrrReviewRecord[] {
   return UM_IRR_REVIEWS.filter((r) => irrInScope(r, lob, withinDays));

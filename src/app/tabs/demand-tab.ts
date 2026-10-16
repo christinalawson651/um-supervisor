@@ -60,12 +60,6 @@ function mondayOf(d: Date): Date { const day = d.getDay(); return addDays(d, day
         <z-trend [points]="trendPoints()" [labels]="trendLabels()" color="#0d9488"></z-trend>
       </div>
     </div>
-
-    <div class="qhint mt-6">
-      Projection is a trailing 4-week average of completed weeks (excludes the current partial week), bucketed from each authorization's actual submission date.
-      @if (teamFilter() === 'all') { Total Nurse Capacity is the nominal active-authorization load all {{ UM_NURSE_ROSTER.length }} nurses can carry at once. }
-      @else { Caseload Headroom is how many more active authorizations {{ teamFilter() }} could take on right now (capacity minus current active). }
-    </div>
   `,
   styles: [`
     .tab-head { display:flex; align-items:center; justify-content:space-between; }
@@ -84,7 +78,6 @@ function mondayOf(d: Date): Date { const day = d.getDay(); return addDays(d, day
     .cp-body { flex:1; min-width:0; }
     .cp-val { font-size:22px; font-weight:700; color:var(--ink); line-height:1.15; }
     .cp-lab { font-size:11px; font-weight:600; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
-    .qhint { font-size:12px; color:var(--gray-500); background:var(--gray-50, #f9fafb); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
   `],
 })
 export class DemandTab {

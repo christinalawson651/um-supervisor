@@ -10,7 +10,6 @@ import { WidgetVisibility } from './widget-visibility';
       <div class="cz">
         <div class="cz-head">
           <b>Choose your widgets</b>
-          <span class="cz-hint">Toggle widgets to preview, then Save to keep your view.</span>
           @if (vis.dirty()) { <span class="cz-dirty">● Unsaved changes</span> }
           <span class="cz-actions">
             <button class="cz-reset" (click)="vis.resetDefault()">Reset to default</button>
@@ -32,7 +31,6 @@ import { WidgetVisibility } from './widget-visibility';
   styles: [`
     .cz { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }
     .cz-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-    .cz-hint { font-size:12px; color:var(--gray-500); }
     .cz-dirty { font-size:12px; color:var(--amber-fg); font-weight:600; }
     .cz-actions { margin-left:auto; display:flex; gap:8px; }
     .cz-reset, .cz-cancel { border:1px solid var(--border); background:#fff; color:var(--gray-600); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:8px; cursor:pointer; }

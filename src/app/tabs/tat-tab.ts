@@ -7,7 +7,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
-import { LOBS, SERVICE_CATEGORIES, lobOf, serviceCategoryOf, authTypeOf, tatStatus, urgencyOf, TODAY_ISO } from '../data/case-fields';
+import { LOBS, SERVICE_CATEGORIES, lobOf, inPlanScope, serviceCategoryOf, authTypeOf, tatStatus, urgencyOf, TODAY_ISO } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
@@ -26,7 +26,6 @@ const TAT_WIDGETS = [
   template: `
     <div class="tab-head">
       <h2>TAT Compliance</h2>
-      <span class="section-note">Strong compliance — your team is meeting targets</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
 
@@ -83,7 +82,6 @@ const TAT_WIDGETS = [
         <z-widget-actions (exportClick)="exportConcurrentPanel()" (removeClick)="hide('concurrent')"></z-widget-actions>
         <div class="pt-row">
           <h3 class="pt">Inpatient Concurrent Review</h3>
-          <span class="pt-sub">Continued-stay reviews &amp; length-of-stay management</span>
         </div>
         <div class="conc-stats">
           <div class="stat-box clk" (click)="drillConcurrent()">
@@ -169,7 +167,6 @@ const TAT_WIDGETS = [
         <z-widget-actions (exportClick)="exportNotification()" (removeClick)="hide('notification')"></z-widget-actions>
         <div class="pt-row">
           <h3 class="pt">Notification Compliance</h3>
-          <span class="pt-sub">Member &amp; provider notice within regulatory timeframes</span>
         </div>
         <div class="notif-stats">
           <div class="stat-box clk" (click)="drillNotice('member')">
@@ -202,7 +199,6 @@ const TAT_WIDGETS = [
         <z-widget-actions (exportClick)="exportRegulatory()" (removeClick)="hide('regulatory')"></z-widget-actions>
         <div class="pt-row">
           <h3 class="pt">Regulatory TAT by Urgency</h3>
-          <span class="pt-sub">Decisions rendered within the mandated clock</span>
         </div>
         <div class="urg-grid">
           @for (u of regTat(); track u.name) {
@@ -268,7 +264,6 @@ const TAT_WIDGETS = [
 
     /* notification compliance + regulatory tat */
     .pt-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
-    .pt-sub { font-size:12px; color:var(--gray-500); }
     .notif-stats { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .notif-stats .stat-box.warn { background:#fdf6e3; }
     .stat-box.clk:hover { box-shadow:0 0 0 2px var(--teal, #14b8a6) inset; }
@@ -367,7 +362,7 @@ export class TatTab {
 
   private passes(c: CaseRec, skip: { lob?: boolean; serviceCategory?: boolean; auth?: boolean } = {}) {
     if (!skip.auth && this.authType() !== 'all' && authTypeOf(c) !== this.authType()) return false;
-    if (!skip.lob && this.lob() !== 'all' && lobOf(c.authId) !== this.lob()) return false;
+    if (!skip.lob && !inPlanScope(c.authId, this.lob())) return false;
     if (!skip.serviceCategory && this.serviceCategory() !== 'all' && serviceCategoryOf(c) !== this.serviceCategory()) return false;
     if (this.lookback.period() !== '30d' && !this.lookback.includes(c.submitted)) return false;
     return true;
@@ -459,7 +454,7 @@ export class TatTab {
   readonly showConcurrent = computed(() =>
     (this.authType() === 'all' || this.authType() === 'IP') && (this.serviceCategory() === 'all' || this.serviceCategory() === 'Inpatient'));
   private concurrentActive = computed(() =>
-    this.pending.filter((c) => c.tags.includes('concurrent') && (this.lob() === 'all' || lobOf(c.authId) === this.lob())
+    this.pending.filter((c) => c.tags.includes('concurrent') && inPlanScope(c.authId, this.lob())
       && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted))));
   /** Same scope (LOB + Lookback) as concurrentActive — real rows derived from the case pool. */
   private liveConcurrent(): ReturnType<typeof liveConcurrentRows> {

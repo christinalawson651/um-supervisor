@@ -2,8 +2,73 @@
 // (single source of truth so "LOB", "Service Category", and "Urgency" mean the same thing everywhere).
 import { CaseRec, DX_BY_PROCEDURE, DiagnosisCode } from './case-pool';
 
-export const LOBS = ['Medicaid', 'Medicare Advantage', 'Commercial PPO', 'ACA Exchange'];
-export function lobOf(authId: string): string { return LOBS[Number(authId.slice(-2)) % LOBS.length]; }
+// BHP — Florida and Arizona pilot scope (FINAL BHP FOR PILOT, sheet "FL_AZ_Pilot only_FINAL").
+// Every path sits under Centene > HealthPlan. States are branches; products and risk populations
+// below them. A case belongs to one leaf plan; its LOB is derived from that plan, so the plan
+// filter and every "by LOB" view always agree.
+export type BhpLevel = 'state' | 'product' | 'risk';
+export interface BhpNode { id: string; name: string; parent: string | null; level: BhpLevel; lob?: string; }
+export const BHP: BhpNode[] = [
+  { id: 'BW', name: 'Arizona', parent: null, level: 'state' },
+  { id: 'BWMP', name: 'Market Place', parent: 'BW', level: 'product', lob: 'ACA Exchange' },
+  { id: 'BWMPHM', name: 'HMO', parent: 'BWMP', level: 'risk' },
+  { id: 'BWMD', name: 'Medicaid', parent: 'BW', level: 'product', lob: 'Medicaid' },
+  { id: 'BWMDAZ', name: 'RBHA Only', parent: 'BWMD', level: 'risk' },
+  { id: 'BWMDSM', name: 'SMI Integrated', parent: 'BWMD', level: 'risk' },
+  { id: 'BWMDN9', name: 'State Only', parent: 'BWMD', level: 'risk' },
+  { id: 'BWMH', name: 'Medicaid AHCCCS Complete Care', parent: 'BW', level: 'product', lob: 'Medicaid' },
+  { id: 'BWALTD', name: 'Medicaid Duals', parent: 'BW', level: 'product', lob: 'Medicaid' },
+  { id: 'FL', name: 'Florida', parent: null, level: 'state' },
+  { id: 'FLCW', name: 'Child Welfare', parent: 'FL', level: 'product', lob: 'Medicaid' },
+  { id: 'FLHK', name: 'Healthy Kids', parent: 'FL', level: 'product', lob: 'Medicaid' },
+  { id: 'FLHI', name: 'HIV AIDS', parent: 'FL', level: 'product', lob: 'Medicaid' },
+  { id: 'FLLF', name: 'LTC-LF', parent: 'FL', level: 'product', lob: 'Medicaid' },
+  ...[10, 11, 9].map((i) => ({ id: `FLLFH${i}`, name: `Little Havana R${i}`, parent: 'FLLF', level: 'risk' as BhpLevel })),
+  ...[1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => ({ id: `FLLFR${i}`, name: `Region ${i}`, parent: 'FLLF', level: 'risk' as BhpLevel })),
+  { id: 'FLMP', name: 'Market Place', parent: 'FL', level: 'product', lob: 'ACA Exchange' },
+  { id: 'FLMD', name: 'Medicaid', parent: 'FL', level: 'product', lob: 'Medicaid' },
+  { id: 'FLSMFC', name: 'SMI Foster Care', parent: 'FL', level: 'product', lob: 'Medicaid' },
+  { id: 'FLSMMD', name: 'SMI Medicaid', parent: 'FL', level: 'product', lob: 'Medicaid' },
+  { id: 'FLSI', name: 'SSI', parent: 'FL', level: 'product', lob: 'Medicaid' },
+];
+export const BHP_BY: Record<string, BhpNode> = Object.fromEntries(BHP.map((n) => [n.id, n]));
+export const bhpChildren = (id: string | null) => BHP.filter((n) => n.parent === id);
+export const bhpIsLeaf = (id: string) => !BHP.some((n) => n.parent === id);
+export const BHP_LEAVES = BHP.filter((n) => bhpIsLeaf(n.id)).map((n) => n.id);
+/** Leaf plans under (or equal to) a node. */
+export const bhpLeavesUnder = (id: string): string[] => bhpIsLeaf(id) ? [id] : bhpChildren(id).flatMap((c) => bhpLeavesUnder(c.id));
+export const bhpStateOf = (id: string): string => { let n = BHP_BY[id]; while (n.parent) n = BHP_BY[n.parent]; return n.name; };
+/** Path below the state, e.g. "LTC-LF › Region 3". */
+export const bhpRelPath = (id: string): string => { const p: string[] = []; let n: BhpNode | undefined = BHP_BY[id]; while (n && n.parent) { p.unshift(n.name); n = BHP_BY[n.parent]; } return p.join(' › '); };
+export const bhpPath = (id: string): string => `Centene › HealthPlan › ${bhpStateOf(id)} › ${bhpRelPath(id)}`;
+/** LOB of a plan: the nearest ancestor product that carries one. */
+export const lobOfPlan = (id: string): string => { let n: BhpNode | undefined = BHP_BY[id]; while (n && !n.lob) n = n.parent ? BHP_BY[n.parent] : undefined; return n?.lob ?? 'Medicaid'; };
+// Weighted so the big Medicaid products carry most of the volume, as they do in the pilot.
+const PLAN_WEIGHT: Record<string, number> = { FLMD: 10, BWMH: 7, BWMDAZ: 5, FLMP: 5, FLSI: 4, BWALTD: 4, BWMDSM: 3, FLSMMD: 3, FLHK: 3, BWMPHM: 3, BWMDN9: 2, FLCW: 2, FLSMFC: 2, FLHI: 2 };
+const PLAN_POOL = BHP_LEAVES.flatMap((id) => Array(PLAN_WEIGHT[id] ?? 1).fill(id) as string[]);
+/** The pilot plan an authorization belongs to — deterministic per authId. */
+export function bhpOf(authId: string): string {
+  const n = Number(authId.replace(/\D/g, '')) || 0;
+  return PLAN_POOL[(n * 37 + Math.floor(n / 7)) % PLAN_POOL.length];
+}
+
+export const LOBS = ['Medicaid', 'ACA Exchange'];
+export function lobOf(authId: string): string { return lobOfPlan(bhpOf(authId)); }
+
+/** A plan scope is 'all' / undefined, one LOB name or plan code, or a list of LOB names and/or
+ *  plan codes (empty list = all). The top-bar plan filter passes plan codes; Reports passes LOBs. */
+export type PlanScope = string | string[] | undefined;
+export function inPlanScope(authId: string, scope: PlanScope): boolean {
+  if (!scope || scope === 'all') return true;
+  const list = Array.isArray(scope) ? scope : [scope];
+  return list.length === 0 || list.includes(bhpOf(authId)) || list.includes(lobOf(authId));
+}
+/** For records that carry only a LOB (CM cases, notices): in scope if any selected plan has that LOB. */
+export function lobInPlanScope(lob: string, scope: PlanScope): boolean {
+  if (!scope || scope === 'all') return true;
+  const list = Array.isArray(scope) ? scope : [scope];
+  return list.length === 0 || list.some((s) => s === lob || (BHP_BY[s] && lobOfPlan(s) === lob));
+}
 
 // Named "Service Category" (not "Program") so it doesn't collide with CM's own Program concept
 // (care-management program enrollment) — these are unrelated ideas that happen to share a word.

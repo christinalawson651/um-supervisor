@@ -17,7 +17,7 @@ import { downloadCsv, downloadCsvMulti, downloadXls, downloadXlsMulti, exportPdf
           @if (combineMode()) {
             <div class="sect">
               <div class="slab">Tables</div>
-              <div class="combine-note">All {{ sections().length }} tables in this report will be exported together, in full ({{ combineRowCount() }} total rows) — no column or row filtering in this mode.</div>
+              <div class="combine-note">All {{ sections().length }} tables · {{ combineRowCount() }} total rows</div>
             </div>
           }
 

@@ -11,7 +11,6 @@ import { Nav } from '../shared/nav';
   template: `
     <div class="tab-head">
       <h2>Care Management Referrals</h2>
-      <span class="section-note">Authorizations referred from UM into Care Management</span>
     </div>
 
     <div class="cards">

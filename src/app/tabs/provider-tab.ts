@@ -42,7 +42,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   template: `
     <div class="tab-head">
       <h2>Provider &amp; Network Insights</h2>
-      <span class="section-note">Which providers or facilities are creating authorization risk, avoidable work, or network exceptions</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
     <z-widget-customize [vis]="vis"></z-widget-customize>
@@ -68,7 +67,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
         <h3 class="panel-title">Out-of-Network Resolution</h3>
-        <span class="section-note">How OON Review requests were resolved — Continuity of Care, a Single Case Agreement, or a standard exception</span>
         <z-widget-actions (exportClick)="exportOonResolution()" (removeClick)="hide('oon-resolution')"></z-widget-actions>
       </div>
       <div class="tile-row oon-tiles panel-pad">
@@ -137,8 +135,8 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
             <tr class="clickable" [class.attn]="p.needsAttention" (click)="open(p)">
               <td class="strong">
                 {{ p.provider }}
-                @if (p.vip) { <span class="tag vip" title="Plan-designated strategic partner">VIP</span> }
-                @if (p.goldCard) { <span class="tag gold" title="Clean record + sustained approval rate — eligible for prior-auth exemption">Gold Card</span> }
+                @if (p.vip) { <span class="tag vip">VIP</span> }
+                @if (p.goldCard) { <span class="tag gold">Gold Card</span> }
               </td>
               <td>{{ p.specialty }}</td>
               <td><span class="badge" [class.green]="p.networkStatus === 'In-Network'" [class.blue]="p.networkStatus === 'Delegated'"
@@ -236,7 +234,7 @@ export class ProviderTab {
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
 
-  private scopeArgs(): [string | undefined, number | undefined] {
+  private scopeArgs(): [string | string[] | undefined, number | undefined] {
     const lob = this.lobFilter.value();
     const period = this.lookback.period();
     return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];

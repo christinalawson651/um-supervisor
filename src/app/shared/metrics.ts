@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { DashboardData } from '../data/dashboard-data';
 import { nbaFor } from '../data/um-status';
-import { lobOf, urgencyOf, TODAY_ISO } from '../data/case-fields';
+import { lobOf, inPlanScope, urgencyOf, TODAY_ISO } from '../data/case-fields';
 import { Interaction } from './interaction';
 import { LobFilter } from './lob-filter';
 import { Lookback } from './lookback';
@@ -49,7 +49,7 @@ interface Drill { title: string; ctx: (n: number) => string; pick: () => CaseRec
 const DRILLS: Record<string, Drill> = {
   // ---- KPI strip ----
   'kpi.pending':    { title: 'Pending Authorizations', ctx: (n) => `${n} authorizations pending across all queues`, pick: () => pend() },
-  'kpi.tat':        { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk — the authorizations threatening compliance (search/sort to review; On-Track bucket shows the compliant authorizations)`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
+  'kpi.tat':        { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
   'kpi.auto':       { title: 'Auto-Approval Rate', ctx: (n) => `${n} of ${DECIDED_TOTAL} decisions auto-approved by rules (${pct(n, DECIDED_TOTAL)}%)`, pick: () => deci(has('auto')) },
   'kpi.risk':       { title: 'Authorizations at Risk', ctx: (n) => `${n} pending authorizations at risk of a TAT breach`, pick: () => pend(has('atRisk')) },
   'kpi.aht':        { title: 'Avg Handle Time', ctx: (n) => `Average handle time 2.4h across ${n} completed reviews (longest first)`, pick: () => byTat(deci()) },
@@ -73,7 +73,7 @@ const DRILLS: Record<string, Drill> = {
   'tat.standard':   { title: 'Standard Reviews', ctx: (n) => `${n} standard (14-day) reviews`, pick: () => deci(has('standard')) },
   'tat.paused':     { title: 'Paused Authorizations', ctx: (n) => `${n} authorizations paused (clock stopped pending RFI)`, pick: () => pend(has('paused')) },
   'tat.turnaround': { title: 'Avg Turnaround', ctx: (n) => `Average turnaround 1.8 days across ${n} completed reviews`, pick: () => byTat(deci()) },
-  'tat.compliance': { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk — the authorizations threatening compliance (the On-Track bucket lists the compliant authorizations)`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
+  'tat.compliance': { title: 'TAT — Exceptions (at-risk + breached)', ctx: (n) => `${n} of ${DECIDED_TOTAL} reviews are breached or at risk`, pick: () => deci((c) => c.tags.includes('breached') || c.tags.includes('atRisk')) },
 
   // ---- Intake & Documentation ----
   'intake.complete': { title: 'Complete Submissions', ctx: (n) => `${n} of ${PENDING_TOTAL} submissions complete (${pct(n, PENDING_TOTAL)}%)`, pick: () => pend((c) => !c.tags.includes('incompleteDoc')) },
@@ -138,7 +138,7 @@ export class Metrics {
     const lob = this.lobFilter.value();
     const period = this.lookback.period();
     return cases.filter((c) =>
-      (lob === 'all' || lobOf(c.authId) === lob) && (period === '30d' || this.lookback.includes(c.submitted)),
+      inPlanScope(c.authId, lob) && (period === '30d' || this.lookback.includes(c.submitted)),
     );
   }
 

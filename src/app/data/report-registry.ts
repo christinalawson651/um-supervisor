@@ -111,7 +111,7 @@ export interface ReportDef {
   module: 'um' | 'cm' | 'appeals' | 'generic';
   group: string; // sidebar sub-heading — groups a long report list into findable clusters (WFM, Audit & Compliance, etc.)
   title: string;
-  description: string;
+  description?: string;
   staticNote?: string; // shown as a callout when part/all of the report is illustrative, not live
   dimension?: ReportDimensionFilter;
   dimension2?: ReportDimensionFilter; // a second, independent dropdown alongside `dimension`

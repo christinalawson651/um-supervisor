@@ -33,7 +33,6 @@ function initialsOf(name: string): string {
       <header class="rhead">
         <div>
           <h1>Care Management Roster</h1>
-          <p class="rsub">Manage your assigned cases and to-do's</p>
         </div>
         <div class="rhead-right">
           <button class="btn outline" (click)="exportRoster()"><z-icon name="download" [size]="14"></z-icon> Export</button>
@@ -138,7 +137,6 @@ function initialsOf(name: string): string {
     .roster-page { max-width: 1400px; margin: 0 auto; padding: 24px 28px 40px; }
     .rhead { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
     .rhead h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: var(--ink); }
-    .rsub { margin: 0; font-size: 13px; color: var(--gray-500); }
     .rhead-right { display: flex; align-items: center; gap: 12px; }
     .scope-sel { position: relative; display: inline-flex; align-items: center; }
     .scope-sel select { appearance: none; border: 1px solid var(--gray-300); border-radius: 8px; padding: 8px 30px 8px 12px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); background: #fff; cursor: pointer; }

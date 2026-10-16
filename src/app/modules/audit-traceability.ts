@@ -117,7 +117,7 @@ const govSection = governanceSection;
       @case ('trail') {
         <div class="tab-head">
           <div><h2>Audit Trail</h2>
-            <span class="section-note">Every create, read, and change against an authorization, care-management case, member, appeal, report or configuration — attributable, time-stamped and hash-chained. HIPAA §164.312(b).</span></div>
+</div>
           <div class="head-actions">
             <button class="btn outline sm" (click)="verify()">Verify chain</button>
             <button class="btn outline sm" (click)="exportEvents()">Export</button>
@@ -137,7 +137,6 @@ const govSection = governanceSection;
           </div>
           <div class="tile" (click)="drillEvents('Field-Level Edits', fieldEditEvents(), 'field-edits')">
             <div class="tile-val">{{ fieldEditEvents().length | number }}</div><div class="tile-lab">Field-Level Edits</div>
-            <div class="tile-sub">value changed, with what it was before</div>
           </div>
           <div class="tile" (click)="drillEvents('Configuration Changes', configEvents(), 'config')">
             <div class="tile-ic" [class.hot]="configEvents().length > 0"></div>
@@ -238,7 +237,7 @@ const govSection = governanceSection;
       @case ('ai') {
         <div class="tab-head">
           <div><h2>AI Oversight</h2>
-            <span class="section-note">What the model recommended, how sure it said it was, what the clinician decided instead, and whether the score can be trusted. Every determination the agentic flow touched — {{ aiRows().length | number }} in range.</span></div>
+            <span class="section-note">{{ aiRows().length | number }} determinations in range</span></div>
           <button class="btn outline sm" (click)="exportAi()">Export</button>
         </div>
 
@@ -259,7 +258,7 @@ const govSection = governanceSection;
           <div class="tile" (click)="drillAi('Ungrounded Verdicts', ungroundedRows(), 'ungrounded')">
             <div class="tile-ic" [class.hot]="ai().groundednessPct < targets.groundednessPct"></div>
             <div class="tile-val">{{ ai().groundednessPct }}%</div><div class="tile-lab">Groundedness</div>
-            <div class="tile-sub">verdict supported by its cited source · target ≥ {{ targets.groundednessPct }}%</div>
+            <div class="tile-sub">target ≥ {{ targets.groundednessPct }}%</div>
           </div>
           <div class="tile" (click)="drillAi('Panel Splits', panelSplitRows(), 'panel-split')">
             <div class="tile-ic" [class.hot]="ai().convergencePct < targets.convergencePct"></div>
@@ -274,16 +273,14 @@ const govSection = governanceSection;
           <div class="tile" (click)="drillAi('Rationale Shipped Exactly As Generated', verbatimRows(), 'verbatim')">
             <div class="tile-ic" [class.hot]="verbatimPct() >= 70"></div>
             <div class="tile-val">{{ verbatimPct() }}%</div><div class="tile-lab">Rationale Shipped Verbatim</div>
-            <div class="tile-sub">of clinician-reviewed cases · watch for automation bias</div>
           </div>
           <div class="tile" (click)="drillAi('Model-Attributable Overrides', modelAttributableRows(), 'model-attributable')">
             <div class="tile-ic" [class.hot]="ai().modelAttributable > 0"></div>
             <div class="tile-val">{{ ai().modelAttributable }}</div><div class="tile-lab">Model-Attributable Overrides</div>
-            <div class="tile-sub">the ones that are the model's fault</div>
           </div>
           <div class="tile" (click)="drillAi('Pended for Review', pendedRows(), 'pended')">
             <div class="tile-val">{{ ai().pended | number }}</div><div class="tile-lab">Pended for Review</div>
-            <div class="tile-sub">{{ ai().pendedPctOfVolume }}% of volume stopped for a human</div>
+            <div class="tile-sub">{{ ai().pendedPctOfVolume }}% of volume</div>
           </div>
           <div class="tile" (click)="drillAi('Determinations', aiRows(), 'confidence')">
             <div class="tile-val">{{ ai().avgConfidence.toFixed(2) }}</div><div class="tile-lab">Avg Confidence</div>
@@ -292,7 +289,6 @@ const govSection = governanceSection;
           <div class="tile" (click)="drillAi('Flagged for Investigation', flaggedRows(), 'flagged')">
             <div class="tile-ic" [class.hot]="ai().flagged > 0"></div>
             <div class="tile-val">{{ ai().flagged }}</div><div class="tile-lab">Flagged by the Gates</div>
-            <div class="tile-sub">low confidence · panel split · ungrounded</div>
           </div>
           <div class="tile" (click)="drillAi('Determinations', aiRows(), 'spend')">
             <div class="tile-val">\${{ ai().avgCostPerCase.toFixed(2) }}</div><div class="tile-lab">Avg Cost / Case</div>
@@ -306,7 +302,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Confidence Distribution</h3>
-            <span class="section-note sm">Determinations by confidence band. Below {{ gates.autoPendGate.toFixed(2) }} is auto-pended for review — the gate keeps low-confidence approvals out of production; at or above {{ gates.autoApproveGate.toFixed(2) }} a determination is eligible to auto-clear.</span></div>
+            <span class="section-note sm">Auto-pend &lt; {{ gates.autoPendGate.toFixed(2) }} · auto-clear ≥ {{ gates.autoApproveGate.toFixed(2) }}</span></div>
           <table class="z-table">
             <thead><tr><th>Band</th><th class="num">Determinations</th><th class="agree-col">Share</th><th>Gate</th></tr></thead>
             <tbody>
@@ -331,7 +327,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">What the Model Said, and What Went Out</h3>
-            <span class="section-note sm">The rationale the model presented to the reviewer, what the clinician changed, and the text recorded on the determination. A structured override reason says a change happened; only these two say what it was.</span></div>
+</div>
           <div class="panel-pad narrbar">
             <span class="albl">Show</span>
             <button class="qp" [class.on]="narrFilter() === 'edited'" (click)="narrFilter.set('edited')">Edited<span class="qn">{{ editedRows().length | number }}</span></button>
@@ -375,7 +371,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Cases to Investigate</h3>
-            <span class="section-note sm">Flagged by the gates. These are the determinations an ML Ops or compliance reviewer opens first — click through to the run ledger.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Flag</th><th class="num">Determinations</th><th class="num">% of Volume</th><th>What it means</th></tr></thead>
             <tbody>
@@ -397,7 +393,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Per-Agent Latency &amp; Errors</h3>
-            <span class="section-note sm">The {{ agents.length }} LLM agents in the flow. Measured by the runtime rather than derived here — a case pool cannot tell you where a step spent its time.</span></div>
+            <span class="section-note sm">{{ agents.length }} agents</span></div>
           <table class="z-table">
             <thead><tr><th>Agent</th><th class="num">P95</th><th class="num">Error Rate</th><th class="agree-col">Share of P95 Path</th></tr></thead>
             <tbody>
@@ -418,7 +414,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Queue by Pend Reason</h3>
-            <span class="section-note sm">Why the flow stopped and asked for a human. A reviewed determination matching none of these was routine — it reached a clinician without the flow flagging anything, so it is not counted as a pend.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Pend Reason</th><th class="num">Determinations</th><th class="agree-col">Share of Pended</th></tr></thead>
             <tbody>
@@ -438,7 +434,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Models Used</h3>
-            <span class="section-note sm">A panel is convened when one pass is not enough — an adverse direction or a soft score. It costs more per case; this is where you see whether it buys anything.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Models</th><th>Panel</th><th class="num">Runs</th><th class="num">Tokens / Case</th><th class="num">Avg Cost</th><th class="num">Avg Latency</th><th class="num">Decision Agreement</th></tr></thead>
             <tbody>
@@ -459,7 +455,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Confidence Calibration</h3>
-            <span class="section-note sm">The confidence distribution above shows how often the model is sure. This shows whether being sure means anything: a band claiming 0.95 should be right about 95% of the time. Observed agreement against the claim is the evidence a score is or is not reliable — the number alone proves nothing. Tolerance ±{{ targets.maxCalibrationDeviationPts }} points.</span></div>
+            <span class="section-note sm">Tolerance ±{{ targets.maxCalibrationDeviationPts }} points</span></div>
           <table class="z-table">
             <thead><tr><th>Confidence Band</th><th class="num">Determinations</th><th class="num">Claimed</th><th class="num">Observed</th><th class="num">Deviation</th><th>Verdict</th></tr></thead>
             <tbody>
@@ -485,14 +481,14 @@ const govSection = governanceSection;
           @if (overconfidentBands().length) {
             <div class="finding panel-pad">
               <b>Finding</b>
-              The {{ overconfidentBands().join(', ') }} band{{ overconfidentBands().length > 1 ? 's are' : ' is' }} over-confident — it agrees with the clinician less often than its score claims. Scores in that range should not be treated as stronger evidence than the band below it until this closes. Tracked as REQ-20.
+              The {{ overconfidentBands().join(', ') }} band{{ overconfidentBands().length > 1 ? 's are' : ' is' }} over-confident — it agrees with the clinician less often than its score claims. Tracked as REQ-20.
             </div>
           }
         </div>
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Concordance Over Time</h3>
-            <span class="section-note sm">Symphony's three drift series — agreement, groundedness and confidence — by month against what was serving.</span></div>
+</div>
           <!-- Chronological, and deliberately not sortable: a drift series read in any order other
                than time is no longer a drift series. -->
           <table class="z-table">
@@ -517,12 +513,11 @@ const govSection = governanceSection;
               } @empty { <tr><td colspan="6" class="empty">No scored determinations in range.</td></tr> }
             </tbody>
           </table>
-          <div class="foot-note panel-pad">A sustained drop on any of these three is the early signal to re-test and recalibrate before it reaches a member.</div>
         </div>
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Why Clinicians Overrode</h3>
-            <span class="section-note sm">An override rate on its own says nothing. The reason code is what separates "the model is wrong about this population" from "the clinical picture changed after it scored" — only the first is a model problem.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Reason</th><th class="num">Overrides</th><th class="num">% of Overrides</th><th>Attribution</th></tr></thead>
             <tbody>
@@ -540,7 +535,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Agreement by Clinician</h3>
-            <span class="section-note sm">A reviewer below the group is not necessarily wrong — they may be catching what the model misses. This is a signal to look at, never a score to manage someone by.</span></div>
+</div>
           <table class="z-table">
             <thead><tr>
               <th class="srt" (click)="sortRev('reviewer')">Clinician{{ caretRev('reviewer') }}</th>
@@ -574,7 +569,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Where Agreement Breaks Down</h3>
-            <span class="section-note sm">Grouped by the procedure the criteria govern — this is what tells the clinical content team which policy to look at. Groups below {{ targets.minReviewerSample / 2 }} scored determinations are omitted; a sample of three says nothing.</span></div>
+            <span class="section-note sm">Groups with &lt; {{ targets.minReviewerSample / 2 }} scored determinations omitted</span></div>
           <table class="z-table">
             <thead><tr><th>Procedure / Criteria</th><th class="num">Scored</th><th class="num">Decision Agreement</th><th class="num">Override Rate</th></tr></thead>
             <tbody>
@@ -592,7 +587,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Production Config — What's Serving Live</h3>
-            <span class="section-note sm">A determination can only be re-explained against what produced it, so the serving configuration is retained the same way criteria versions are. Changes here are governed like any other configuration change — versioned, independently approved, logged with before and after.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Setting</th><th>Value</th><th class="num">Determinations Scored</th></tr></thead>
             <tbody>
@@ -609,7 +604,7 @@ const govSection = governanceSection;
       @case ('activity') {
         <div class="tab-head">
           <div><h2>User Activity Monitoring</h2>
-            <span class="section-note">Per-account activity review — the evidence behind HIPAA §164.308(a)(1)(ii)(D). Signals are relative to the selected range.</span></div>
+</div>
           <button class="btn outline sm" (click)="exportActivity()">Export</button>
         </div>
 
@@ -629,17 +624,15 @@ const govSection = governanceSection;
           </div>
           <div class="tile" (click)="drillEvents('Denied Record Access', deniedAccess(), 'denied-access')">
             <div class="tile-val">{{ deniedAccess().length }}</div><div class="tile-lab">Out-of-Scope Access Denied</div>
-            <div class="tile-sub">role-based access control working</div>
           </div>
           <div class="tile" (click)="drillBreakGlass()">
             <div class="tile-ic" [class.hot]="breakGlass().length > 0"></div>
             <div class="tile-val">{{ breakGlass().length }}</div><div class="tile-lab">Break-the-Glass Grants</div>
-            <div class="tile-sub">each requires review</div>
           </div>
           <div class="tile" (click)="drillCommonality()">
             <div class="tile-ic" [class.hot]="commCount('High') > 0"></div>
             <div class="tile-val">{{ commAll().length | number }}</div><div class="tile-lab">Relationship Flags</div>
-            <div class="tile-sub">{{ commCount('High') }} high · account shares details with a member they opened</div>
+            <div class="tile-sub">{{ commCount('High') }} high</div>
           </div>
           <div class="tile" (click)="drillEvents('Data Exports', exportEventsList(), 'exports')">
             <div class="tile-val">{{ exportEventsList().length }}</div><div class="tile-lab">Data Exports</div>
@@ -671,7 +664,7 @@ const govSection = governanceSection;
             </div>
 
             <div class="panel-pad narrbar">
-              <span class="albl" title="Independent of the Range control in the page header">Window</span>
+              <span class="albl">Window</span>
               @for (w of windowPresets; track w.id) {
                 <button class="qp" [class.on]="windowPreset() === w.id" (click)="setWindowPreset(w.id)">{{ w.label }}</button>
               }
@@ -688,7 +681,7 @@ const govSection = governanceSection;
                 <button class="qp" [class.on]="grainOverride() === g" (click)="grainOverride.set(g)">{{ g }}</button>
               }
               <span class="spacer"></span>
-              <span class="sub">{{ userEvents().length | number }} events over {{ spanDays() | number }} days · click a bar to open it</span>
+              <span class="sub">{{ userEvents().length | number }} events over {{ spanDays() | number }} days</span>
             </div>
 
             @if (archiveGap(); as gap) {
@@ -725,7 +718,7 @@ const govSection = governanceSection;
             </div>
 
             <div class="panel-pad tbl-head"><h3 class="pt sm">Day of week</h3>
-              <span class="section-note sm">Hour-of-day hides this: a Saturday spike and a 22:00 spike are different findings.</span></div>
+</div>
             <table class="z-table">
               <thead><tr><th>Day</th><th class="num">Events</th><th class="num">PHI</th><th class="num">Off-Hours</th><th class="num">Exports</th><th class="num">Denied / Failed</th><th class="agree-col">Share</th></tr></thead>
               <tbody>
@@ -756,7 +749,6 @@ const govSection = governanceSection;
               <span class="pcount">{{ activity().length }}</span>
             </button>
             @if (isOpen('accounts')) {
-              <span class="section-note sm">Select an account to see its access scope and activity over time.</span>
               <input class="search sm" type="text" placeholder="Search account or role…" [ngModel]="aq()" (ngModelChange)="aq.set($event)" />
               <label class="chk"><input type="checkbox" [checked]="flaggedOnly()" (change)="flaggedOnly.set($any($event.target).checked)" /> Flagged only</label>
             }
@@ -812,7 +804,6 @@ const govSection = governanceSection;
               <span class="pcount">{{ commAll().length | number }}@if (commCount('High')) { · {{ commCount('High') }} high }</span>
             </button>
             @if (isOpen('screening')) {
-              <span class="section-note sm">Accounts that opened the PHI of a member sharing their surname, address, postal code or telephone number. A staff member reading a relative's or a neighbour's record is inside their role, inside their caseload and often inside working hours — no other control on this tab can see it. Every row is a question to ask, never a finding: the innocent explanation is the common one.</span>
             }
           </div>
           @if (isOpen('screening')) {
@@ -851,7 +842,7 @@ const govSection = governanceSection;
       @case ('member') {
         <div class="tab-head">
           <div><h2>Member Timeline</h2>
-            <span class="section-note">Everything done on one member, by everyone who touched them — threaded by the authorization or case it belonged to. The mirror of User Activity: same events, pivoted on the member instead of the account.</span></div>
+</div>
           <button class="btn outline sm" (click)="exportMembers()">Export</button>
         </div>
 
@@ -866,12 +857,10 @@ const govSection = governanceSection;
           </div>
           <div class="tile" (click)="drillMemberSet('Touched by 3+ Accounts', multiUserMembers(), 'multi-account')">
             <div class="tile-val">{{ multiUserMembers().length | number }}</div><div class="tile-lab">Touched by 3+ Accounts</div>
-            <div class="tile-sub">handoffs worth reading end to end</div>
           </div>
           <div class="tile" (click)="drillBreakGlass()">
             <div class="tile-ic" [class.hot]="btgMemberRows().length > 0"></div>
             <div class="tile-val">{{ btgMemberRows().length | number }}</div><div class="tile-lab">Members Accessed Under Break-the-Glass</div>
-            <div class="tile-sub">each opens in context</div>
           </div>
         </div>
 
@@ -881,7 +870,6 @@ const govSection = governanceSection;
           <div class="panel mt-6">
             <div class="msearch">
               <h3 class="ms-h">Find a member</h3>
-              <p class="ms-p">Search by name or member ID to open their complete record — every account that touched them, threaded by authorization or case.</p>
               <input class="ms-in" type="text" placeholder="Member name or ID…" autocomplete="off"
                      [ngModel]="mq()" (ngModelChange)="mq.set($event)" />
 
@@ -900,7 +888,7 @@ const govSection = governanceSection;
                     </button>
                   } @empty { <div class="empty">No member matches "{{ mq() }}" in {{ rangeLabel().toLowerCase() }}.</div> }
                   @if (memberSearchOverflow() > 0) {
-                    <div class="ms-more">{{ memberSearchOverflow() | number }} more match — narrow the search to see them.</div>
+                    <div class="ms-more">{{ memberSearchOverflow() | number }} more match</div>
                   }
                 </div>
               } @else {
@@ -1040,7 +1028,7 @@ const govSection = governanceSection;
       @case ('governance') {
         <div class="tab-head">
           <div><h2>Governance &amp; Access Controls</h2>
-            <span class="section-note">Who is entitled to do what, whether those entitlements are still attested, and where two duties that must stay separate have landed on one person. The account inventory and entitlement figures are a point-in-time state and do not move with the Range control; the segregation-of-duty results are evaluated over the selected range and do.</span></div>
+</div>
           <button class="btn outline sm" (click)="exportGovernance()">Export</button>
         </div>
 
@@ -1067,7 +1055,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Segregation of Duties</h3>
-            <span class="section-note sm">Each rule is evaluated against the live audit trail, not asserted — a clean rule means the trail contains no matching event.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Rule</th><th>Citation</th><th>Result</th><th>Detail</th></tr></thead>
             <tbody>
@@ -1085,7 +1073,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Policy Resolution — Market, State &amp; Line of Business</h3>
-            <span class="section-note sm">Which policy governs a case, and on what basis. Two plans in two states can sit under the same line of business and be governed by different policy, so the SELECTION is logged as its own step — a trail recording which criteria were applied without recording why those criteria answers half the question. Every determination carries a <em>Policy version resolved</em> event with the inputs, the version and the basis.</span></div>
+</div>
           <div class="scroll">
             <table class="z-table">
               <thead><tr><th>Line of Business</th><th>State</th><th>Market</th><th>Policy Version</th><th class="num">Determinations</th><th>Basis</th><th>Citation</th></tr></thead>
@@ -1108,7 +1096,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Notification Rules</h3>
-            <span class="section-note sm">What each signal is, who owns it, and how quickly someone is expected to have looked.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Signal</th><th>Severity</th><th>Owner</th><th>Review Window</th><th>Destination</th><th>Delivery</th></tr></thead>
             <tbody>
@@ -1132,7 +1120,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Role → Permission Matrix</h3>
-            <span class="section-note sm">Constraints matter more than the yes/no — "own caseload only" is a different control than an unconditional grant.</span></div>
+</div>
           <div class="matrix-wrap">
             <table class="z-table matrix">
               <thead><tr><th class="sticky">Permission</th>@for (r of roles; track r) { <th>{{ r }}</th> }</tr></thead>
@@ -1184,7 +1172,7 @@ const govSection = governanceSection;
       @case ('retention') {
         <div class="tab-head">
           <div><h2>Retention &amp; Archive</h2>
-            <span class="section-note">The Audit Trail queries the online store. This is everything behind it — what is retained, for how long, under whose rule, where it physically sits, and what is holding disposition. The Range control above does not apply here; retention is not a reporting window.</span></div>
+</div>
           <div class="head-actions">
             <button class="btn outline sm" (click)="verifyArchive()">Verify archive chain</button>
             <button class="btn outline sm" (click)="exportCertificates()">Certificates</button>
@@ -1226,13 +1214,13 @@ const govSection = governanceSection;
                   <button class="btn primary sm" (click)="requestRestore()">
                     Request restore of {{ lookupNeedingRestore().length }} segment{{ lookupNeedingRestore().length > 1 ? 's' : '' }}
                   </button>
-                  <span class="sub">retrieval target {{ slaLabelFor(lookupNeedingRestore()[0].tier) }} ({{ lookupNeedingRestore()[0].tier }} tier) · the request is itself logged</span>
+                  <span class="sub">retrieval target {{ slaLabelFor(lookupNeedingRestore()[0].tier) }} ({{ lookupNeedingRestore()[0].tier }} tier)</span>
                 } @else {
                   <span class="sub">Every segment covering this window is already requested or retrieved.</span>
                 }
               </div>
             } @else {
-              <div class="panel-pad sub">No archived segment covers this window — the period is either inside the online store already, or older than the retention schedule keeps.</div>
+              <div class="panel-pad sub">No archived segment covers this window.</div>
             }
           </div>
         }
@@ -1253,23 +1241,21 @@ const govSection = governanceSection;
           <div class="tile" (click)="drillSegments('Segments Under Legal Hold', heldSegments(), 'held')">
             <div class="tile-ic" [class.hot]="archive().onHold > 0"></div>
             <div class="tile-val">{{ archive().onHold }}</div><div class="tile-lab">Under Legal Hold</div>
-            <div class="tile-sub">disposition suspended</div>
           </div>
           <div class="tile" (click)="drillSegments('Disposition Queue', purgeQueue(), 'disposition')">
             <div class="tile-ic" [class.hot]="archive().purgeEligible > 0"></div>
             <div class="tile-val">{{ archive().purgeEligible }}</div><div class="tile-lab">Past Retention, Not Held</div>
-            <div class="tile-sub">awaiting certified disposition</div>
           </div>
           <div class="tile" (click)="drillRestores()">
             <div class="tile-ic" [class.hot]="openRestores() > 0"></div>
             <div class="tile-val">{{ openRestores() }}</div><div class="tile-lab">Open Restore Requests</div>
-            <div class="tile-sub">retrieval SLA by tier · nearline {{ slaLabelFor('Nearline') }} · archive {{ slaLabelFor('Archive') }}</div>
+            <div class="tile-sub">nearline {{ slaLabelFor('Nearline') }} · archive {{ slaLabelFor('Archive') }}</div>
           </div>
         </div>
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Retention Schedule</h3>
-            <span class="section-note sm">Per record class, not one blanket number — the legal floor and the longest applicable requirement are rarely the same, and the schedule holds to the longest.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Record Class</th><th class="num">Retention</th><th>Basis</th><th>Citation</th><th>Disposition</th></tr></thead>
             <tbody>
@@ -1284,12 +1270,10 @@ const govSection = governanceSection;
               }
             </tbody>
           </table>
-          <div class="foot-note panel-pad">Directional — confirm against the plan's own retention schedule and any state overrides before this is used as survey evidence.</div>
         </div>
 
         <div class="panel mt-6">
           <div class="panel-pad filters"><h3 class="pt">Archive Segment Index</h3>
-            <span class="section-note sm">Metadata for events that live in cold storage. Each segment's first hash derives from the one before it, so the chain stays continuous across the archive boundary.</span>
             <label class="chk"><input type="checkbox" [checked]="segIssuesOnly()" (change)="segIssuesOnly.set($any($event.target).checked)" /> Held or past retention only</label>
             <span class="count">{{ segments.length }} of {{ archive().archivedSegments }}</span>
           </div>
@@ -1332,7 +1316,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Legal Holds</h3>
-            <span class="section-note sm">A hold suspends disposition regardless of retention date — and today it is applied by hand, which is why REQ-16 is still open.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Hold</th><th>Segment</th><th>Period</th><th class="num">Events Held</th><th>Would Otherwise Purge</th></tr></thead>
             <tbody>
@@ -1351,7 +1335,7 @@ const govSection = governanceSection;
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Certificates of Destruction</h3>
-            <span class="section-note sm">What survives a purge. Once a segment is destroyed the events are gone, so unless something durable states what was destroyed, under whose authority and against which retention basis, there is afterwards no evidence the record existed <em>or</em> that it was lawfully destroyed. The terminal hash is retained so the chain the segment used to close can still be confirmed.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Certificate</th><th>Segment</th><th>Period</th><th class="num">Events Destroyed</th><th>Terminal Hash</th><th>Disposed By</th><th>Approved By</th><th>Date</th></tr></thead>
             <tbody>
@@ -1366,14 +1350,14 @@ const govSection = governanceSection;
                   <td>{{ c.approvedBy }}</td>
                   <td class="mono">{{ c.disposedDate }}</td>
                 </tr>
-              } @empty { <tr><td colspan="8" class="empty">No segments have been disposed of. Use Dispose on a past-retention segment to see the control run.</td></tr> }
+              } @empty { <tr><td colspan="8" class="empty">No segments have been disposed of.</td></tr> }
             </tbody>
           </table>
         </div>
 
         <div class="panel mt-6">
           <div class="panel-pad tbl-head"><h3 class="pt">Restore Requests</h3>
-            <span class="section-note sm">Retrieval from cold storage is itself an auditable act — who asked, why, and how long it took against the retrieval target for its storage tier.</span></div>
+</div>
           <table class="z-table">
             <thead><tr><th>Request</th><th>Segment</th><th>Requested By</th><th>Reason</th><th>Requested</th><th>Fulfilled</th><th>Status</th></tr></thead>
             <tbody>
@@ -1397,7 +1381,7 @@ const govSection = governanceSection;
       @case ('compliance') {
         <div class="tab-head">
           <div><h2>Compliance Requirements &amp; Gaps</h2>
-            <span class="section-note">Requirement → control in the platform today → where the evidence lives → what is still missing. This is the working list for the gap, priority and next-step discussion. The Range and LOB controls do not apply here — this is the control set itself, not a measurement over a window.</span></div>
+</div>
           <button class="btn outline sm" (click)="exportRegister()">Export</button>
         </div>
 
@@ -1477,7 +1461,7 @@ const govSection = governanceSection;
               </p>
               <div class="nkinds">@for (k of r.editKinds; track k) { <span class="chip">{{ k }}</span> }</div>
             } @else {
-              <p class="nverbatim">Submitted exactly as generated. Nothing in the clinical language was changed before it went on the determination.</p>
+              <p class="nverbatim">Submitted exactly as generated.</p>
             }
           </div>
           <div class="ncol">
@@ -1644,7 +1628,6 @@ const govSection = governanceSection;
 
     .msearch { padding:26px 26px 30px; max-width:920px; }
     .ms-h { margin:0 0 4px; font-size:17px; font-weight:700; }
-    .ms-p { margin:0 0 14px; font-size:12.5px; color:var(--gray-500); max-width:62ch; line-height:1.5; }
     .ms-in { width:100%; max-width:520px; border:1px solid var(--gray-300); border-radius:9px;
              padding:11px 14px; font:inherit; font-size:14px; outline:none; }
     .ms-in:focus { border-color:var(--teal-600); box-shadow:0 0 0 3px var(--teal-50); }
@@ -2215,7 +2198,7 @@ export class AuditTraceability {
   verifyArchive() {
     const r = verifyArchiveChain();
     if (r.brokenAt) this.ix.toast(`Archive chain broken at ${r.brokenAt} — ${r.verified} segment(s) verified before the break.`, 'warn');
-    else this.ix.toast(`Archive chain continuous — ${r.verified} sealed segments verified, each chaining to the next and on into the online store.`);
+    else this.ix.toast(`Archive chain continuous — ${r.verified} sealed segments verified.`);
   }
   private readonly SEGMENT_COLUMNS = ['Segment', 'Period From', 'Period To', 'Events', 'Tier', 'WORM Locked', 'Sealed', 'Last Verified', 'Chain Verified', 'Purge Eligible', 'Legal Hold', 'First Hash', 'Last Hash'];
   private segmentRow(g: ArchiveSegment): (string | number)[] {
@@ -2256,10 +2239,10 @@ export class AuditTraceability {
         { label: 'Last Hash', value: g.lastHash },
       ],
       note: held
-        ? `Disposition is suspended on this segment by ${g.legalHold}. The hold is recorded here but applied by hand — nothing yet blocks a purge job from running against it, which is the open half of REQ-16.`
+        ? `Disposition suspended by ${g.legalHold}.`
         : pastRetention
-          ? 'This segment is past its retention date and not held. It sits in the disposition queue — but there is no certified-destruction step yet, so purging it today would leave no evidence it ever existed (REQ-17).'
-          : 'Retained under the schedule. Its first hash derives from the previous segment\u2019s last hash, so the chain is continuous from here into the online store.',
+          ? 'Past retention date · not held.'
+          : undefined,
     });
   }
   exportArchive() {
@@ -2323,7 +2306,6 @@ export class AuditTraceability {
         { label: 'Countersigned By', value: c.approvedBy },
         { label: 'Date', value: c.disposedDate },
       ],
-      note: 'The events themselves are gone. This record, and the terminal hash it carries, are what remain as evidence that the segment existed and was lawfully destroyed — which is the whole purpose of certifying a disposition rather than simply running one.',
     });
   }
   exportCertificates() {
@@ -2449,7 +2431,6 @@ export class AuditTraceability {
         { label: 'Previous Hash', value: e.prevHash },
         { label: 'Record Hash', value: e.recordHash },
       ],
-      note: `This record is chained to the event before it. Altering any field above changes this record's hash and every hash after it, which is what makes the alteration detectable — run "Verify chain" on the Audit Trail tab to re-walk it.`,
       actions: [
         { label: 'Governance record', tone: 'teal', run: () => this.drillGovernanceRecord(e.entityId, e.correlationId) },
         { label: `${e.actor} — all activity`, tone: 'teal' as const, run: () => this.drillAccountTrail({ userId: e.actorId, name: e.actor }) },
@@ -2654,7 +2635,7 @@ export class AuditTraceability {
     const rows = this.commRows();
     this.ix.openExplorer({
       title: 'Relationship Screening',
-      context: `${rows.length} account/member pair(s) sharing identifying details · ${this.commCount('High')} high strength · a question to ask, never a finding`,
+      context: `${rows.length} account/member pair(s) sharing identifying details · ${this.commCount('High')} high strength`,
       columns: ['Account', 'Role', 'Member', 'Member ID', 'What They Share', 'Strength', 'Events', 'PHI Events', 'Break-the-Glass', 'First Touch', 'Last Touch'],
       rows: rows.map((c) => [c.actor, c.actorRole, c.member, c.memberId, c.flags.join('; '), c.strength,
         c.events, c.phiEvents, c.breakGlass, c.firstTouch, c.lastTouch]),
@@ -2674,7 +2655,7 @@ export class AuditTraceability {
     const rows = this.btgList();
     this.ix.openExplorer({
       title: 'Break-the-Glass Access',
-      context: `${rows.length} emergency access grant(s) · ${new Set(rows.map((r) => r.actorId)).size} account(s) · ${new Set(rows.map((r) => r.memberId)).size} member(s) · each requires review`,
+      context: `${rows.length} emergency access grant(s) · ${new Set(rows.map((r) => r.actorId)).size} account(s) · ${new Set(rows.map((r) => r.memberId)).size} member(s)`,
       columns: ['Timestamp', 'Account', 'Role', 'Member', 'Member ID', 'Justification', 'Channel', 'Source IP', 'Event ID'],
       rows: rows.map((r) => [r.timestamp, r.actor, r.actorRole, r.member, r.memberId, r.reasonCode, r.channel, r.sourceIp, r.eventId]),
       exportName: `audit-break-the-glass${TODAY_ISO}`,
@@ -2745,7 +2726,7 @@ export class AuditTraceability {
         { label: 'Overrode the Model', value: `${overrides.length} of ${scored.length}` },
         { label: 'Edited the Rationale', value: scored.length ? `${edited.length} of ${scored.length}` : '—' },
       ],
-      note: `Everything above is scoped to ${this.rangeLabel().toLowerCase()}. Agreement and override rates are a signal to look at, never a score to manage someone by — a reviewer below the group may be catching what the model misses.`,
+      note: `Scoped to ${this.rangeLabel().toLowerCase()}.`,
       actions: [
         ...(scored.length ? [{ label: 'Determinations they reviewed', tone: 'teal' as const,
           run: () => { this.ix.closeDrawer(); this.drillReviewer(name); } }] : []),
