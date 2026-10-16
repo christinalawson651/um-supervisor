@@ -17,6 +17,7 @@ import { Nav, ROLES } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
+import { BhpPicker } from '../shared/bhp-picker';
 import { REFERRALS } from '../data/referrals';
 import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows, liveMissingFields, liveProviderInsights, liveCostInsights } from '../data/dashboard-data';
 
@@ -96,7 +97,7 @@ const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
   selector: 'app-shell',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, ExportDialog, AlertInbox, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard, AuditTraceability,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, BhpPicker, ExportDialog, AlertInbox, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard, AuditTraceability,
     WorkforceTab, SchedulingTab, DemandTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab, FollowThroughBoard,
   ],
@@ -142,15 +143,14 @@ export class Shell {
 
   // ---- shared LOB filter (shown next to Lookback, same pattern) ----
   private lobFilter = inject(LobFilter);
-  readonly lobOptions = this.lobFilter.options;
   readonly lob = this.lobFilter.value;
   // '30d' is the baseline (every pending case fits within it by construction) so it keeps showing
   // the live, session-mutable KPI values (escalate/resolve/assign actions etc.); any other period
   // is recomputed fresh from the case pool for that real date window — no more canned flavor numbers.
   readonly displayKpis = computed(() => {
-    const p = this.period();
-    if (p === '30d') return this.data.kpis();
-    return this.data.liveKpis(this.lookback.windowDays());
+    const p = this.period(), plans = this.lob();
+    if (p === '30d' && plans === 'all') return this.data.kpis();
+    return this.data.liveKpis(this.lookback.windowDays(), plans === 'all' ? undefined : plans);
   });
 
   select(key: string) { this.selected.set(key); }

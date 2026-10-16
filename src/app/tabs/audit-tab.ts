@@ -272,7 +272,7 @@ export class AuditTab {
   isHidden(id: string) { return this.vis.isHidden(id); }
   hide(id: string) { this.vis.remove(id); }
 
-  private scopeArgs(): [string | undefined, number | undefined] {
+  private scopeArgs(): [string | string[] | undefined, number | undefined] {
     const lob = this.lobFilter.value();
     const period = this.lookback.period();
     return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];

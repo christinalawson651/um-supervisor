@@ -17,7 +17,7 @@
 // further; Compliance validates the exact values per tenant. What is not negotiable is the shape:
 // deadline = f(line of business, urgency, notice type, form).
 import { CASE_POOL, CaseRec } from './case-pool';
-import { LOBS, lobOf, urgencyOf, daysAgo, TODAY } from './case-fields';
+import { LOBS, lobOf, lobInPlanScope, urgencyOf, daysAgo, TODAY } from './case-fields';
 
 export type NoticeType =
   | 'Adverse determination'
@@ -262,7 +262,7 @@ export interface NoticeFilters {
 }
 
 const matchesLob = (n: UmNotice, lob?: string | string[]) =>
-  !lob || lob === 'all' || (Array.isArray(lob) ? (lob.length === 0 || lob.includes(n.lob)) : n.lob === lob);
+  lobInPlanScope(n.lob, lob);
 const any = (v: string | undefined) => !v || v === 'All';
 
 export function noticeScope(f: NoticeFilters): UmNotice[] {

@@ -14,6 +14,7 @@ import { compareRows, caretFor, SortDir } from '../shared/sort';
 import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
+import { lobInPlanScope } from '../data/case-fields';
 import { CmData, CmManagerStat, CmTeamStat, CmQueueCard, QueueBand, queueBandOf, SlaBand, slaBandOf, CM_COLUMNS, cmToRow, CARE_PLAN_COLUMNS, carePlanRow, CmProgramStat, CM_UNASSIGNED } from '../shared/cm-data';
 import { CareProgramName, ProgramDisenrollReason } from '../data/cm-programs';
 import { GoalStatus, CarePlanTemplate } from '../data/cm-case-pool';
@@ -1105,7 +1106,7 @@ export class CmDashboard {
   // today/7-day window would just make them look empty rather than "filtered."
   readonly scopedCases = computed(() => {
     const lob = this.lobFilter.value();
-    return lob === 'all' ? this.cmData.cases() : this.cmData.cases().filter((c) => c.lob === lob);
+    return lob === 'all' ? this.cmData.cases() : this.cmData.cases().filter((c) => lobInPlanScope(c.lob, lob));
   });
   readonly referralCmFilter = signal('all');
   readonly careManagerNames = CARE_MANAGERS.map((cm) => cm.name);
@@ -1116,7 +1117,7 @@ export class CmDashboard {
    *  respects LOB/Lookback so the shared top-bar filters apply here too. */
   readonly icWorkload = computed(() => {
     const lob = this.lobFilter.value();
-    const scope = this.cmData.referrals().filter((r) => lob === 'all' || r.lob === lob);
+    const scope = this.cmData.referrals().filter((r) => lobInPlanScope(r.lob, lob));
     const icSource = this.icSourceFilter();
     const source = icSource === 'all' ? undefined : icSource;
     return this.cmData.intakeCoordinatorWorkload(source, scope);
@@ -1125,7 +1126,7 @@ export class CmDashboard {
     const lob = this.lobFilter.value();
     const cmFilter = this.referralCmFilter();
     return this.cmData.referrals().filter((r) =>
-      (lob === 'all' || r.lob === lob) &&
+      (lobInPlanScope(r.lob, lob)) &&
       this.lookback.includes(r.received) &&
       (cmFilter === 'all' || (cmFilter === 'unassigned' ? r.careManager === null : r.careManager === cmFilter)));
   });
@@ -1301,7 +1302,7 @@ export class CmDashboard {
 
   openIcWorkload(name: string) {
     const lob = this.lobFilter.value();
-    const scope = this.cmData.referrals().filter((r) => lob === 'all' || r.lob === lob);
+    const scope = this.cmData.referrals().filter((r) => lobInPlanScope(r.lob, lob));
     const icSource = this.icSourceFilter();
     const source = icSource === 'all' ? undefined : icSource;
     const rows = scope.filter((r) => r.status === 'Pending' && (!source || r.source === source) &&

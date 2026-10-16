@@ -9,6 +9,7 @@ import {
 import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
 import { LobFilter } from '../shared/lob-filter';
+import { lobInPlanScope } from '../data/case-fields';
 import { Lookback } from '../shared/lookback';
 import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
@@ -360,7 +361,7 @@ export class CmAuditTab {
    *  can be months old by design — the same reasoning CmDashboard.scopedCases() documents). */
   readonly scopedCases = computed(() => {
     const lob = this.lobFilter.value();
-    return lob === 'all' ? this.cmData.cases() : this.cmData.cases().filter((c) => c.lob === lob);
+    return lob === 'all' ? this.cmData.cases() : this.cmData.cases().filter((c) => lobInPlanScope(c.lob, lob));
   });
 
   /** Audits are scoped by LOB *and* by when the audit was performed — that's the one date on this
@@ -371,7 +372,7 @@ export class CmAuditTab {
     const period = this.lookback.period();
     const days = period === '30d' ? undefined : this.lookback.windowDays();
     return CM_FILE_AUDITS.filter((r) =>
-      (lob === 'all' || r.lob === lob) && (days === undefined || (daysAgo(r.auditDate) >= 0 && daysAgo(r.auditDate) <= days)));
+      lobInPlanScope(r.lob, lob) && (days === undefined || (daysAgo(r.auditDate) >= 0 && daysAgo(r.auditDate) <= days)));
   });
 
   // ---- Documentation quality across the whole caseload ----

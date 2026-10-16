@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { DashboardData } from '../data/dashboard-data';
 import { nbaFor } from '../data/um-status';
-import { lobOf, urgencyOf, TODAY_ISO } from '../data/case-fields';
+import { lobOf, inPlanScope, urgencyOf, TODAY_ISO } from '../data/case-fields';
 import { Interaction } from './interaction';
 import { LobFilter } from './lob-filter';
 import { Lookback } from './lookback';
@@ -138,7 +138,7 @@ export class Metrics {
     const lob = this.lobFilter.value();
     const period = this.lookback.period();
     return cases.filter((c) =>
-      (lob === 'all' || lobOf(c.authId) === lob) && (period === '30d' || this.lookback.includes(c.submitted)),
+      inPlanScope(c.authId, lob) && (period === '30d' || this.lookback.includes(c.submitted)),
     );
   }
 

@@ -287,7 +287,7 @@ export class ClinicalTab {
   // ---- shared top-bar filters — same treatment as every other converted tab ----
   private lobFilter = inject(LobFilter);
   private lookback = inject(Lookback);
-  private scopeArgs(): [string | undefined, number | undefined] {
+  private scopeArgs(): [string | string[] | undefined, number | undefined] {
     const lob = this.lobFilter.value();
     const period = this.lookback.period();
     return [lob === 'all' ? undefined : lob, period === '30d' ? undefined : this.lookback.windowDays()];

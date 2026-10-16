@@ -13,7 +13,7 @@ import { CASE_POOL, CaseRec, GUIDELINE_BY_PROCEDURE } from '../data/case-pool';
 import { CM_CASE_POOL } from '../data/cm-case-pool';
 import { ReferralIntakeRec } from '../data/cm-intake';
 import { CmData } from './cm-data';
-import { lobOf, serviceCategoryOf, tatStatus, urgencyOf } from '../data/case-fields';
+import { lobOf, bhpOf, bhpStateOf, bhpRelPath, serviceCategoryOf, tatStatus, urgencyOf } from '../data/case-fields';
 import { nbaFor } from '../data/um-status';
 import { pendReason, COLUMNS, toRow } from './metrics';
 
@@ -684,6 +684,7 @@ export class CaseExplorer {
       fields: [
         { label: 'Service Type', value: rec.serviceType },
         { label: 'Provider', value: rec.provider },
+        { label: 'Plan (BHP)', value: `${bhpStateOf(bhpOf(rec.authId))} › ${bhpRelPath(bhpOf(rec.authId))} · ${bhpOf(rec.authId)}` },
         { label: 'Line of Business', value: lobOf(rec.authId) },
         { label: 'Service Category', value: serviceCategoryOf(rec) },
         { label: 'Urgency', value: urgencyOf(rec) },

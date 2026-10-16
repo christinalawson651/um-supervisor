@@ -7,7 +7,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
-import { LOBS, SERVICE_CATEGORIES, lobOf, serviceCategoryOf, authTypeOf, tatStatus, urgencyOf, TODAY_ISO } from '../data/case-fields';
+import { LOBS, SERVICE_CATEGORIES, lobOf, inPlanScope, serviceCategoryOf, authTypeOf, tatStatus, urgencyOf, TODAY_ISO } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
@@ -367,7 +367,7 @@ export class TatTab {
 
   private passes(c: CaseRec, skip: { lob?: boolean; serviceCategory?: boolean; auth?: boolean } = {}) {
     if (!skip.auth && this.authType() !== 'all' && authTypeOf(c) !== this.authType()) return false;
-    if (!skip.lob && this.lob() !== 'all' && lobOf(c.authId) !== this.lob()) return false;
+    if (!skip.lob && !inPlanScope(c.authId, this.lob())) return false;
     if (!skip.serviceCategory && this.serviceCategory() !== 'all' && serviceCategoryOf(c) !== this.serviceCategory()) return false;
     if (this.lookback.period() !== '30d' && !this.lookback.includes(c.submitted)) return false;
     return true;
@@ -459,7 +459,7 @@ export class TatTab {
   readonly showConcurrent = computed(() =>
     (this.authType() === 'all' || this.authType() === 'IP') && (this.serviceCategory() === 'all' || this.serviceCategory() === 'Inpatient'));
   private concurrentActive = computed(() =>
-    this.pending.filter((c) => c.tags.includes('concurrent') && (this.lob() === 'all' || lobOf(c.authId) === this.lob())
+    this.pending.filter((c) => c.tags.includes('concurrent') && inPlanScope(c.authId, this.lob())
       && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted))));
   /** Same scope (LOB + Lookback) as concurrentActive — real rows derived from the case pool. */
   private liveConcurrent(): ReturnType<typeof liveConcurrentRows> {

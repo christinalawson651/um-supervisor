@@ -10,7 +10,7 @@ import { WidgetActions } from '../shared/widget-actions';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { CASE_POOL } from '../data/case-pool';
-import { lobOf, TODAY_ISO } from '../data/case-fields';
+import { lobOf, inPlanScope, TODAY_ISO } from '../data/case-fields';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 
@@ -161,7 +161,7 @@ export class RiskTab {
    */
   readonly riskTiles = computed((): RiskTile[] => {
     const inScope = (c: { authId: string; submitted: string }) =>
-      (this.lobFilter.value() === 'all' || lobOf(c.authId) === this.lobFilter.value())
+      inPlanScope(c.authId, this.lobFilter.value())
       && (this.lookback.period() === '30d' || this.lookback.includes(c.submitted));
     const highDollar = CASE_POOL.filter((c) => c.cost >= 50000 && inScope(c));
     const exposure = highDollar.reduce((s, c) => s + c.cost, 0);
