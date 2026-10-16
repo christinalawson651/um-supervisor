@@ -1121,7 +1121,7 @@ export class CmDashboard {
       this.lookback.includes(r.received) &&
       (cmFilter === 'all' || (cmFilter === 'unassigned' ? r.careManager === null : r.careManager === cmFilter)));
   });
-  readonly lookbackLabel = computed(() => this.lookback.periods.find((p) => p.id === this.lookback.period())?.label ?? '30 days');
+  readonly lookbackLabel = computed(() => this.lookback.label());
   readonly newReferralsPendingCount = computed(() => this.scopedReferrals().filter((r) => r.status === 'Pending').length);
 
   readonly displayKpis = computed((): KpiItem[] => {

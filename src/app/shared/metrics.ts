@@ -147,7 +147,7 @@ export class Metrics {
     if (this.isDefaultScope()) return d.ctx(cases.length);
     const lob = this.lobFilter.value();
     const period = this.lookback.period();
-    const periodLabel = this.lookback.periods.find((p) => p.id === period)?.label ?? period;
+    const periodLabel = this.lookback.label();
     const scope = [lob !== 'all' ? lob : null, period !== '30d' ? periodLabel : null].filter(Boolean).join(' · ');
     return `${cases.length} authorization(s) · filtered to ${scope}`;
   }

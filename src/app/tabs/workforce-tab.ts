@@ -9,7 +9,7 @@ import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { Members } from '../shared/members';
 import { HistoryRefs } from '../shared/history-refs';
-import { urgencyOf, lobOf, inPlanScope, LOBS, ageH, bandOf, daysAgo, TODAY_ISO } from '../data/case-fields';
+import { urgencyOf, lobOf, inPlanScope, inWindow, LOBS, ageH, bandOf, daysAgo, TODAY_ISO } from '../data/case-fields';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
@@ -301,16 +301,16 @@ export class WorkforceTab {
   /** " · Medicaid · Today" style suffix for drill-down titles/context — omits whichever filter is at its default. */
   private scopeLabel(lob: 'all' | string[]): string {
     const period = this.lookback.period();
-    const periodLabel = this.lookback.periods.find((p) => p.id === period)?.label;
+    const periodLabel = this.lookback.label();
     const parts = [lob !== 'all' ? this.lobFilter.summary() : null, period !== '30d' ? periodLabel : null].filter(Boolean);
     return parts.length ? ` · ${parts.join(' · ')}` : '';
   }
-  private inLookback(c: CaseRec): boolean { return daysAgo(c.submitted) <= this.lookback.windowDays(); }
+  private inLookback(c: CaseRec): boolean { return this.lookback.includes(c.submitted); }
 
   /** Real per-LOB breakdown of one queue's unclaimed pool, computed live from the case pool (and the shared Lookback window). */
   private lobSplit(q: QueueCard, scope: 'all' | string[] = 'all'): DisplayQueue[] {
     const days = this.lookback.windowDays();
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === q.name && c.nurse === '—' && daysAgo(c.submitted) <= days && inPlanScope(c.authId, scope));
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && c.status === q.name && c.nurse === '—' && inWindow(c.submitted, days) && inPlanScope(c.authId, scope));
     const byLob = new Map<string, typeof cases>();
     for (const c of cases) { const l = lobOf(c.authId); if (!byLob.has(l)) byLob.set(l, []); byLob.get(l)!.push(c); }
     return LOBS.map((l) => {
@@ -526,7 +526,7 @@ export class WorkforceTab {
       .filter((c) => c.phase === 'pending' && c.status === queue && c.nurse === '—' && (!lob || lobOf(c.authId) === lob) && inPlanScope(c.authId, this.lobFilter.value()) && this.inLookback(c) && bandOf(c.authId, c.tags.includes('breached')) === band)
       .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), this.ageLabel(ageH(c.authId))] as (string | number)[]);
     const period = this.lookback.period();
-    const periodSuffix = period !== '30d' ? ` · ${this.lookback.periods.find((p) => p.id === period)?.label}` : '';
+    const periodSuffix = period !== '30d' ? ` · ${this.lookback.label()}` : '';
     const queueLabel = `${lob ? `${queue} · ${lob}` : queue}${periodSuffix}`;
     this.ix.openExplorer({
       title: `${queueLabel} — ${labels[band]}`,
