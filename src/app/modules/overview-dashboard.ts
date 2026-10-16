@@ -54,7 +54,6 @@ const KEY = 'zyter-exec-widgets-v1';
     @if (customizing()) {
       <div class="customize">
         <div class="cz-head"><b>Choose your widgets</b>
-          <span class="cz-hint">Toggle widgets to preview, then Save to keep your view.</span>
           @if (dirty()) { <span class="cz-dirty">● Unsaved changes</span> }
           <span class="cz-actions">
             <button class="cz-reset" (click)="resetDefault()">Reset to default</button>
@@ -92,22 +91,20 @@ const KEY = 'zyter-exec-widgets-v1';
             @case ('um-decisions') {
               <z-donut [clickable]="true" [segments]="umMix" [size]="120" centerValue="247" centerLabel="decisions"
                 (segClick)="drillDecision($event)" />
-              <div class="foot"><span class="up">▲ 3 pts</span> approval vs last month · click a slice to drill</div>
+              <div class="foot"><span class="up">▲ 3 pts</span> approval vs last month</div>
             }
             @case ('appeal-outcomes') {
               <z-donut [clickable]="true" [segments]="appealMix" [size]="120" centerValue="61%" centerLabel="overturn"
                 (segClick)="nav.go('appeals')" />
-              <div class="foot">High overturn signals upstream UM gaps · click to open Appeals</div>
             }
             @case ('cm-adherence') {
               <z-donut [clickable]="true" [segments]="cmMix" [size]="120" centerValue="91%" centerLabel="adherent"
                 (segClick)="nav.go('cm')" />
-              <div class="foot"><span class="up">▲ 2 pts</span> vs last month · click to open CM</div>
+              <div class="foot"><span class="up">▲ 2 pts</span> vs last month</div>
             }
             @case ('case-mix') {
               <z-donut [clickable]="true" [segments]="caseMix()" [size]="120" [centerValue]="caseMixTotal()" centerLabel="open items"
                 (segClick)="goModule($event)" />
-              <div class="foot">Share of active work across your modules · click a slice to open</div>
             }
             @case ('tat-trend') {
               <div class="w-big">{{ tat[tat.length-1] }}%</div>
@@ -143,7 +140,7 @@ const KEY = 'zyter-exec-widgets-v1';
             }
             @case ('pmpm') {
               <div class="w-big">$412</div>
-              <div class="foot"><span class="up">▼ 2%</span> medical PMPM vs last month (lower is better)</div>
+              <div class="foot"><span class="up">▼ 2%</span> medical PMPM vs last month</div>
             }
             @case ('volume-trend') {
               <div class="w-big">{{ volume[volume.length-1] }}</div>
@@ -161,7 +158,6 @@ const KEY = 'zyter-exec-widgets-v1';
             @case ('automation') {
               <z-donut [clickable]="true" [segments]="autoMix" [size]="120" centerValue="38%" centerLabel="automated"
                 (segClick)="metrics.open('kpi.auto')" />
-              <div class="foot">Auto-approved by rules vs. manual review · click to view</div>
             }
             @case ('denial-reasons') {
               <div class="bars">
@@ -202,7 +198,7 @@ const KEY = 'zyter-exec-widgets-v1';
             @case ('queue-scheduled-snapshot') {
               @if (latestQueueSnapshot(); as snap) {
                 <div class="w-big">{{ queueSnapshotTotal() }}</div>
-                <div class="foot">unclaimed across {{ snap.rows.length }} queues · {{ queueSnapshotBreached() }} breached · click to open the full report</div>
+                <div class="foot">unclaimed across {{ snap.rows.length }} queues · {{ queueSnapshotBreached() }} breached</div>
                 <div class="snap-meta clk" (click)="openQueueReport()">Last scheduled run: {{ formatSnapTime(snap.runAt) }}</div>
               } @else {
                 <div class="foot">No scheduled run yet.</div>
@@ -211,7 +207,7 @@ const KEY = 'zyter-exec-widgets-v1';
           }
         </div>
       } @empty {
-        <div class="empty">No widgets selected — click <b>Customize</b> to add reports.</div>
+        <div class="empty">No widgets selected.</div>
       }
     </div>
   `,
@@ -220,7 +216,6 @@ const KEY = 'zyter-exec-widgets-v1';
     .ex-head h2 { font-size:17px; font-weight:600; margin:0; }
     .customize { background:#fff; border:1px solid var(--teal-600); border-radius:12px; padding:16px 18px; margin-bottom:16px; }
     .cz-head { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
-    .cz-hint { font-size:12px; color:var(--gray-500); }
     .cz-dirty { font-size:11.5px; color:var(--amber-fg); font-weight:600; }
     .cz-actions { margin-left:auto; display:flex; gap:8px; align-items:center; }
     .cz-reset, .cz-cancel { border:1px solid var(--gray-300); background:#fff; color:var(--ink-soft); border-radius:8px; padding:6px 12px; font-weight:600; cursor:pointer; font-size:12.5px; }
@@ -361,7 +356,7 @@ export class OverviewDashboard {
   openCustomize() { this.draft.set([...this.enabled()]); this.customizing.set(true); }
   cancelCustomize() { this.customizing.set(false); }               // discard draft
   toggleDraft(id: string) { this.draft.update((e) => e.includes(id) ? e.filter((x) => x !== id) : [...e, id]); }
-  resetDefault() { this.draft.set([...DEFAULT_ENABLED]); this.ix.toast('Reset to the default view — Save to keep it.', 'info'); }
+  resetDefault() { this.draft.set([...DEFAULT_ENABLED]); this.ix.toast('Reset to the default view.', 'info'); }
   saveView() {
     this.enabled.set([...this.draft()]); this.save(); this.customizing.set(false);
     this.ix.toast('Dashboard view saved.', 'info');

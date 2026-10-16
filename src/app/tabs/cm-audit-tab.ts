@@ -61,7 +61,6 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
   template: `
     <div class="tab-head">
       <h2>Audit &amp; Compliance</h2>
-      <span class="section-note">Documentation file review and regulatory compliance evidence — click a tile to drill in</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
 
@@ -70,7 +69,7 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
     @if (!isHidden('quality')) {
     <div class="panel">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Documentation Quality</h3>
-        <span class="section-note sm">Rubric compliance across the whole caseload, not just the audited sample — {{ scopedCases().length }} case(s) in scope</span>
+        <span class="section-note sm">{{ scopedCases().length }} case(s) in scope</span>
         <z-widget-actions (exportClick)="exportQuality()" (removeClick)="hide('quality')"></z-widget-actions>
       </div>
       <div class="tile-row panel-pad">
@@ -88,7 +87,7 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
     @if (!isHidden('fileAudit')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">File Audit (Chart Review)</h3>
-        <span class="section-note sm">A QI reviewer pulls a sampled member record and scores it element-by-element; a file passes at {{ passTarget }}% of the rubric</span>
+        <span class="section-note sm">Pass target {{ passTarget }}% of rubric</span>
         <z-widget-actions (exportClick)="exportFileAudit()" (removeClick)="hide('fileAudit')"></z-widget-actions>
       </div>
       <div class="tile-row audit-tiles panel-pad">
@@ -123,7 +122,7 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
     @if (!isHidden('byManager')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Pass Rate by Care Manager</h3>
-        <span class="section-note sm">Fewer than {{ minFiles }} audited files is reported as insufficient sample, not as a pass/fail rate</span>
+        <span class="section-note sm">Min. sample {{ minFiles }} files</span>
         <z-widget-actions (exportClick)="exportByManager()" (removeClick)="hide('byManager')"></z-widget-actions>
       </div>
       <div class="ilist">
@@ -146,7 +145,6 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
     @if (!isHidden('elements')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Rubric Element Findings</h3>
-        <span class="section-note sm">Which rubric elements the audited files actually failed — the part that drives training and template fixes</span>
         <z-widget-actions (exportClick)="exportElements()" (removeClick)="hide('elements')"></z-widget-actions>
       </div>
       <div class="ilist">
@@ -174,7 +172,6 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
     @if (!isHidden('specialty')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Compliance by Specialty</h3>
-        <span class="section-note sm">Timeliness, chart completeness and follow-through, per specialty. Line of business answers which regulator's clock applies; specialty answers which team is meeting it — and a supervisor can only assign work against the second. A case can be timely and empty, or complete and late, so the three are measured separately rather than blended into one number.</span>
         <z-widget-actions (exportClick)="exportSpecialty()" (removeClick)="hide('specialty')"></z-widget-actions>
       </div>
       <table class="z-table">
@@ -209,14 +206,12 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
           } @empty { <tr><td colspan="7" class="empty">No cases in scope.</td></tr> }
         </tbody>
       </table>
-      <div class="foot-note panel-pad">A member counts under "All Three" only where the regulatory clocks were met, the chart carries consent, assessment, an open care plan and goals, and no task on the case is past its due date.</div>
     </div>
     }
 
     @if (!isHidden('regCompliance')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Regulatory Compliance by Program</h3>
-        <span class="section-note sm">Initial assessment and individualized care plan completed inside each program's own required window — a member counts as compliant only if both clocks were met</span>
         <z-widget-actions (exportClick)="exportRegCompliance()" (removeClick)="hide('regCompliance')"></z-widget-actions>
       </div>
       <div class="tile-row kpi-row panel-pad no-bottom">
@@ -235,14 +230,12 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
           </div>
         }
       </div>
-      <div class="foot-note panel-pad">Windows and citations are directional — Commercial PPO and ACA Exchange have no federal care-management clock, so those rows measure accreditation/plan policy. Validate exact subsections with Compliance before using this as survey evidence.</div>
     </div>
     }
 
     @if (!isHidden('actions')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Corrective Actions</h3>
-        <span class="section-note sm">Every failed file that escalated into coaching or retraining — evidence the loop closes</span>
         <z-widget-actions (exportClick)="exportActions()" (removeClick)="hide('actions')"></z-widget-actions>
       </div>
       <table class="z-table">
@@ -266,7 +259,6 @@ import { specialtyCompliance, memberCompliance, SpecialtyCompliance, MemberCompl
     @if (!isHidden('flags')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Audit Flags</h3>
-        <span class="section-note sm">Live compliance exceptions on member records — each one points at the case that raised it</span>
         <z-widget-actions (exportClick)="exportFlags()" (removeClick)="hide('flags')"></z-widget-actions>
       </div>
       <table class="z-table">

@@ -40,7 +40,6 @@ type CategoryFilter = 'all' | 'Medical' | IntakeCategory;
   template: `
     <div class="tab-head">
       <h2>Intake &amp; Documentation Quality</h2>
-      <span class="section-note">Documentation quality is tracking positively</span>
       <select class="cat-filter" [value]="categoryFilter()" (change)="categoryFilter.set($any($event.target).value)">
         <option value="all">All Categories</option>
         <option value="Medical">Medical</option>
@@ -235,7 +234,6 @@ type CategoryFilter = 'all' | 'Medical' | IntakeCategory;
     @if (!isHidden('auto-processing')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Intake Auto-Processing</h3>
-        <span class="section-note sm">Auth request received — did the system create a working authorization shell?</span>
         <z-widget-actions (exportClick)="exportProcessing()" (removeClick)="hide('auto-processing')"></z-widget-actions>
       </div>
       <div class="tiles3">
@@ -264,7 +262,6 @@ type CategoryFilter = 'all' | 'Medical' | IntakeCategory;
     .cat-filter { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
       font-size: 12.5px; color: var(--ink-soft); }
     .tbl-head { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; padding-right: 44px; }
-    .section-note.sm { font-size: 12px; color: var(--gray-500); font-weight: 500; }
     .clk { cursor: pointer; }
 
     .ilist { padding: 6px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
@@ -388,13 +385,11 @@ export class IntakeTab {
   openField(f: MissingField) {
     this.ix.openDrawer({
       title: f.field,
-      subtitle: 'Top missing field — submissions this month',
       badge: { text: `${f.pct}% of submissions`, tone: f.pct >= 30 ? 'red' : f.pct >= 15 ? 'amber' : 'teal' },
       fields: [
         { label: 'Submissions Missing This Field', value: String(f.count) },
         { label: '% of All Submissions', value: `${f.pct}%` },
       ],
-      note: 'Aggregated across the month\'s intake volume — see the current Needing RFI (Intake) list for the specific open authorizations.',
       actions: [{ label: 'View Needing RFI (Intake)', tone: 'teal', run: () => this.drillNeedingRfi() }],
     });
   }

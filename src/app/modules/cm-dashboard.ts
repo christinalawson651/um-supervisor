@@ -270,7 +270,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Intake & Assessment SLA -->
       @case ('intake') {
         <div class="tab-head">
-          <div><h2>Intake &amp; Referral</h2><span class="section-note">Referral intake, and members by lifecycle stage banded by SLA status</span></div>
+          <div><h2>Intake &amp; Referral</h2></div>
           <div class="flex gap-8">
             <button class="btn outline sm" (click)="exportStages()">Export</button>
             <button class="btn outline sm" (click)="visIntake.customizing() ? visIntake.cancel() : visIntake.open()">Customize</button>
@@ -280,7 +280,6 @@ const TAB_DEFS: TabDef[] = [
         <z-widget-customize [vis]="visIntake"></z-widget-customize>
 
         @if (!visIntake.isHidden('stages')) {
-        <div class="qhint">Cards show <b>every member currently in that stage</b> of the intake/assessment lifecycle. Bars show SLA status. Click a band to see those members. <b>Overdue</b> = past the stage's SLA.</div>
         <div class="queues">
           @for (s of cmStages(); track s.name) {
             <div class="qcard">
@@ -341,7 +340,6 @@ const TAB_DEFS: TabDef[] = [
               </div>
             }
           </div>
-          <div class="section-note" style="padding:0 16px 14px">Pending referrals only — these are Intake Coordinator (or CM-doing-own-intake) assignments, not the clinical Care Manager decision.</div>
         </div>
         }
 
@@ -468,7 +466,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Care Plan & Outcomes -->
       @case ('careplan') {
         <div class="tab-head">
-          <div><h2>Care Plan &amp; Outcomes</h2><span class="section-note">Care-plan status and goal attainment — every number below is drillable, reassignable and balanceable</span></div>
+          <div><h2>Care Plan &amp; Outcomes</h2></div>
           <div class="flex gap-8">
             <button class="btn outline sm" (click)="exportCarePlanSummary()">Export</button>
             <button class="btn outline sm" (click)="visCarePlan.customizing() ? visCarePlan.cancel() : visCarePlan.open()">Customize</button>
@@ -566,7 +564,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Risk & Escalation -->
       @case ('risk') {
-        <div class="tab-head"><h2>Risk &amp; Escalation</h2><span class="section-note note-warn">High-risk, high-acuity &amp; high-cost members</span></div>
+        <div class="tab-head"><h2>Risk &amp; Escalation</h2></div>
         <div class="rtiles">
           <div class="rtile red"><div class="rl">High-Risk Members</div><div class="rv">23</div><div class="rf">8 rising this week</div></div>
           <div class="rtile amber"><div class="rl">High-Acuity</div><div class="rv">14</div><div class="rf">ICU / oncology / transplant</div></div>
@@ -595,7 +593,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Program Management -->
       @case ('program') {
         <div class="tab-head">
-          <div><h2>Program Management</h2><span class="section-note">Configurable care-management programs — a member can be enrolled in several at once, or none. Enrollment/disenrollment is independent of the case or care plan closing.</span></div>
+          <div><h2>Program Management</h2></div>
           <button class="btn outline sm" (click)="exportProgramSummary()">Export</button>
         </div>
 
@@ -655,7 +653,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Documentation -->
       @case ('documentation') {
-        <div class="tab-head"><h2>Documentation</h2><span class="section-note">Assessment completion &amp; documentation quality</span></div>
+        <div class="tab-head"><h2>Documentation</h2></div>
         <div class="grid-3">
           <div class="panel panel-pad bar-block"><div class="bar-top">HRA Completion</div><div class="bar-val">88%</div><div class="pbar"><span style="width:88%"></span></div></div>
           <div class="panel panel-pad bar-block"><div class="bar-top">SDOH Screening</div><div class="bar-val">76%</div><div class="pbar amber"><span style="width:76%"></span></div></div>
@@ -671,7 +669,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Financial / Cost -->
       @case ('financial') {
-        <div class="tab-head"><h2>Financial / Cost</h2><span class="section-note">Cost avoidance and high-cost members</span></div>
+        <div class="tab-head"><h2>Financial / Cost</h2></div>
         <div class="grid-3">
           <div class="metric-tile"><div class="val">$0.4M</div><div class="lab">Cost Avoided (MTD)</div></div>
           <div class="metric-tile"><div class="val">$3.4M</div><div class="lab">High-Cost Exposure</div></div>
@@ -694,7 +692,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Scheduling & Adherence -->
       @case ('schedule') {
         <div class="tab-head">
-          <div><h2>Scheduling &amp; Adherence</h2><span class="section-note">Shift schedule, adherence, and PTO — {{ schedulePeriodLabel() }}</span></div>
+          <div><h2>Scheduling &amp; Adherence</h2><span class="section-note">{{ schedulePeriodLabel() }}</span></div>
           <div class="flex gap-8 center">
             <label class="sortsel">
               <span>Team</span>
@@ -826,7 +824,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Demand & Forecasting -->
       @case ('demand') {
         <div class="tab-head">
-          <div><h2>Demand &amp; Forecasting</h2><span class="section-note">Referral intake volume, projected demand, and capacity coverage</span></div>
+          <div><h2>Demand &amp; Forecasting</h2></div>
           <label class="sortsel">
             <span>Team</span>
             <select [value]="demandTeamFilter()" (change)="demandTeamFilter.set($any($event.target).value)">
@@ -859,12 +857,6 @@ const TAB_DEFS: TabDef[] = [
           <div class="panel-pad" style="padding-top:0">
             <z-trend [points]="demandTrendPoints()" [labels]="demandTrendLabels()" color="#0d9488"></z-trend>
           </div>
-        </div>
-
-        <div class="qhint mt-6">
-          Projection is a trailing 4-week average of completed weeks (excludes the current partial week).
-          @if (demandTeamFilter() === 'all') { Team Intake Capacity is the nominal referral load {{ intakeCoordinators.length }} Intake Coordinators can carry at once. }
-          @else { Caseload Headroom is how many more active cases {{ demandTeamFilter() }} could take on right now (capacity minus current active) — referrals are attributed to a team by the discipline their reason maps to (see Automated Routing), since a Pending referral has no team of its own yet. }
         </div>
       }
 
@@ -923,7 +915,6 @@ const TAB_DEFS: TabDef[] = [
     .pct { margin-left:10px; font-size:12.5px; font-weight:600; color:var(--ink-soft); }
     .clk { cursor:pointer; } .ml { color:#2563eb; font-weight:600; cursor:pointer; } .ml:hover { text-decoration:underline; }
     .pt { font-size:14px; font-weight:600; color:var(--ink); margin:0 0 4px; }
-    .note-warn { color:var(--amber-fg); }
     .flex { display:flex; } .gap-8 { gap:8px; } .center { align-items:center; }
     .tbl-head { display:flex; align-items:center; justify-content:space-between; }
     .srt { cursor:pointer; user-select:none; } .srt:hover { color:var(--ink-soft); }

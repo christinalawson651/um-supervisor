@@ -70,7 +70,7 @@ const TAB_DEFS: TabDef[] = [
     @switch (sel()) {
       <!-- Workforce & Queue -->
       @case ('workforce') {
-        <div class="tab-head"><h2>Appeals Worklist</h2><span class="section-note">Prioritized by smart priority — deadline &amp; risk weighted</span></div>
+        <div class="tab-head"><h2>Appeals Worklist</h2></div>
         <div class="wl-tools">
           <div class="pills">
             @for (f of filters; track f.key) {
@@ -115,7 +115,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- TAT & Deadline Compliance -->
       @case ('tat') {
-        <div class="tab-head"><h2>TAT &amp; Deadline Compliance</h2><span class="section-note">Regulatory deadline adherence</span></div>
+        <div class="tab-head"><h2>TAT &amp; Deadline Compliance</h2></div>
         <div class="panel panel-pad"><div class="sla-grid">
           <div class="donut"><z-ring [value]="88" [size]="120" [thickness]="12" tone="teal"></z-ring><div class="dlab">On-Time Rate</div></div>
           <div class="rows">
@@ -134,7 +134,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Determination Insights -->
       @case ('determination') {
-        <div class="tab-head"><h2>Determination Insights</h2><span class="section-note">Outcome mix and overturn drivers</span></div>
+        <div class="tab-head"><h2>Determination Insights</h2></div>
         <div class="dstats">
           <div class="dstat teal"><div class="dv">61%</div><div class="dl">Overturned</div></div>
           <div class="dstat gray"><div class="dv">31%</div><div class="dl">Upheld</div></div>
@@ -153,14 +153,14 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Risk & Escalation -->
       @case ('risk') {
-        <div class="tab-head"><h2>Risk &amp; Escalation</h2><span class="section-note note-warn">Appeals at deadline or escalation risk</span></div>
+        <div class="tab-head"><h2>Risk &amp; Escalation</h2></div>
         <div class="rtiles">
           <div class="rtile red"><div class="rl">Overdue</div><div class="rv">1</div><div class="rf">immediate action</div></div>
           <div class="rtile amber"><div class="rl">Near Deadline (≤5d)</div><div class="rv">4</div><div class="rf">expedite review</div></div>
           <div class="rtile blue"><div class="rl">Pending MD / P2P</div><div class="rv">2</div><div class="rf">physician review</div></div>
           <div class="rtile amber"><div class="rl">Pending Information</div><div class="rv">1</div><div class="rf">RFI · clock paused</div></div>
         </div>
-        <div class="panel mt-6"><div class="panel-pad tbl-head"><h3 class="pt">Cases Requiring Attention</h3><span class="section-note">Sorted by deadline</span></div>
+        <div class="panel mt-6"><div class="panel-pad tbl-head"><h3 class="pt">Cases Requiring Attention</h3></div>
           <table class="z-table"><thead><tr><th>Appeal</th><th>Member</th><th>Level</th><th>Status</th><th>TAT</th><th>Action</th></tr></thead>
           <tbody>@for (a of riskCases(); track a.appealId) {
             <tr><td class="strong">{{ a.appealId }}</td><td><a class="ml" (click)="members.openByName(a.member)">{{ a.member }}</a></td>
@@ -172,7 +172,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Level & Aging -->
       @case ('level') {
-        <div class="tab-head"><h2>Level &amp; Aging</h2><span class="section-note">Volume &amp; aging by appeal level</span></div>
+        <div class="tab-head"><h2>Level &amp; Aging</h2></div>
         <div class="dstats">
           <div class="dstat blue"><div class="dv">11</div><div class="dl">Level 1 (Internal)</div></div>
           <div class="dstat purple"><div class="dv">5</div><div class="dl">Level 2</div></div>
@@ -186,7 +186,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Intake & Documentation -->
       @case ('intake') {
-        <div class="tab-head"><h2>Intake &amp; Documentation</h2><span class="section-note">Appeal intake completeness</span></div>
+        <div class="tab-head"><h2>Intake &amp; Documentation</h2></div>
         <div class="grid-3">
           <div class="panel panel-pad bar-block"><div class="bar-top">Complete Intake</div><div class="bar-val">83%</div><div class="pbar"><span style="width:83%"></span></div></div>
           <div class="panel panel-pad bar-block"><div class="bar-top">AI Auto-Extracted</div><div class="bar-val">71%</div><div class="pbar"><span style="width:71%"></span></div></div>
@@ -201,7 +201,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Provider Patterns -->
       @case ('provider') {
-        <div class="tab-head"><h2>Provider Appeal Patterns</h2><span class="section-note">Providers driving appeals &amp; overturns</span></div>
+        <div class="tab-head"><h2>Provider Appeal Patterns</h2></div>
         <div class="panel"><table class="z-table">
           <thead><tr><th>Provider</th><th>Appeals</th><th>Overturn Rate</th><th>Top Service</th></tr></thead>
           <tbody>@for (p of providerPatterns; track p.provider) {
@@ -212,7 +212,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Overturn Cost Impact -->
       @case ('overturn') {
-        <div class="tab-head"><h2>Overturn Cost Impact</h2><span class="section-note">Financial impact of appeal determinations</span></div>
+        <div class="tab-head"><h2>Overturn Cost Impact</h2></div>
         <div class="grid-3">
           <div class="metric-tile"><div class="val">$0.2M</div><div class="lab">Cost Reinstated (overturns)</div></div>
           <div class="metric-tile"><div class="val">$0.9M</div><div class="lab">Denials Upheld (avoided)</div></div>
@@ -229,7 +229,7 @@ const TAB_DEFS: TabDef[] = [
       <!-- Scheduling & Adherence -->
       @case ('schedule') {
         <div class="tab-head">
-          <div><h2>Scheduling &amp; Adherence</h2><span class="section-note">Reviewer shift schedule, adherence, and PTO — {{ schedulePeriodLabel() }}</span></div>
+          <div><h2>Scheduling &amp; Adherence</h2><span class="section-note">{{ schedulePeriodLabel() }}</span></div>
           <div class="seg-toggle">
             <button [class.on]="schedulePeriod() === 'daily'" (click)="schedulePeriod.set('daily')">Daily</button>
             <button [class.on]="schedulePeriod() === 'weekly'" (click)="schedulePeriod.set('weekly')">Weekly</button>
@@ -348,7 +348,7 @@ const TAB_DEFS: TabDef[] = [
 
       <!-- Demand & Forecasting -->
       @case ('demand') {
-        <div class="tab-head"><h2>Demand &amp; Forecasting</h2><span class="section-note">Appeal intake volume, projected demand, and capacity coverage</span></div>
+        <div class="tab-head"><h2>Demand &amp; Forecasting</h2></div>
         <div class="cp-grid">
           <div class="cp-tile clk" (click)="openWeeklyVolume()">
             <div class="cp-icon blue"><z-icon name="inbox" [size]="18"></z-icon></div>
@@ -375,7 +375,6 @@ const TAB_DEFS: TabDef[] = [
           </div>
         </div>
 
-        <div class="qhint mt-6">Projection is a trailing 4-week average of completed weeks (excludes the current partial week). Reviewer Capacity is the nominal appeal load {{ APPEALS_REVIEWERS.length }} reviewers can carry at once.</div>
       }
 
       <!-- AI / NextGen -->
@@ -412,7 +411,7 @@ const TAB_DEFS: TabDef[] = [
     .pct { margin-left:10px; font-size:12.5px; font-weight:600; color:var(--ink-soft); }
     .clk { cursor:pointer; } .ml { color:#5B47E0; font-weight:600; cursor:pointer; } .ml:hover { text-decoration:underline; }
     .pt { font-size:14px; font-weight:600; color:var(--ink); margin:0 0 4px; }
-    .note-warn { color:var(--amber-fg); } .tbl-head { display:flex; align-items:center; justify-content:space-between; }
+    .tbl-head { display:flex; align-items:center; justify-content:space-between; }
     .flex { display:flex; } .gap-8 { gap:8px; } .center { align-items:center; }
     .srt { cursor:pointer; user-select:none; } .srt:hover { color:var(--ink-soft); }
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:190px; outline:none; }
@@ -499,7 +498,6 @@ const TAB_DEFS: TabDef[] = [
     .shift-chip[data-type="Evening"] { background:#EEEAFC; color:#5B47E0; }
     .shift-chip[data-type="Off"] { background:var(--gray-100); color:var(--gray-400); }
     .shift-chip[data-type="PTO"] { background:#FEF3E2; color:#C07A0A; }
-    .qhint { font-size:12px; color:var(--gray-500); background:var(--gray-50, #f9fafb); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
   `],
 })
 export class AppealsDashboard {

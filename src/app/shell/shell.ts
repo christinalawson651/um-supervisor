@@ -84,13 +84,13 @@ const MODULES = [
   { id: 'audit' as const, label: 'Audit & Traceability' },
 ];
 
-const HEADINGS: Record<string, { title: string; sub: string; role: string }> = {
-  overview: { title: 'TruCare Pulse', sub: 'Outcomes, quality & financial performance across UM, CM & Appeals', role: 'Operations Supervisor' },
-  um: { title: 'UM Supervisor Dashboard', sub: "Your team is performing well — here's your operational overview", role: 'UM Supervisor' },
-  cm: { title: 'CM Supervisor Dashboard', sub: 'Care management worklist and referral intake', role: 'CM Supervisor' },
-  appeals: { title: 'Appeals Supervisor Dashboard', sub: 'Appeals & grievances worklist, prioritized by deadline', role: 'Appeals Supervisor' },
-  reports: { title: 'Reports', sub: 'Printable, exportable reports — smart-filtered by date range and LOB. UM and the audit set ship today; UM Appeals, CM and A&G follow', role: 'Operations Supervisor' },
-  audit: { title: 'Audit & Traceability', sub: 'Audit trail, user activity monitoring, access governance and compliance evidence across every module', role: 'Compliance & Oversight' },
+const HEADINGS: Record<string, { title: string; role: string }> = {
+  overview: { title: 'TruCare Pulse', role: 'Operations Supervisor' },
+  um: { title: 'UM Supervisor Dashboard', role: 'UM Supervisor' },
+  cm: { title: 'CM Supervisor Dashboard', role: 'CM Supervisor' },
+  appeals: { title: 'Appeals Supervisor Dashboard', role: 'Appeals Supervisor' },
+  reports: { title: 'Reports', role: 'Operations Supervisor' },
+  audit: { title: 'Audit & Traceability', role: 'Compliance & Oversight' },
 };
 
 @Component({
@@ -164,7 +164,7 @@ export class Shell {
       table: h.length
         ? { columns: ['Time', 'Action', 'Detail'], rows: h.map((e) => [e.time, e.action, e.detail]) }
         : undefined,
-      note: h.length ? undefined : 'No actions yet — reassign an authorization or escalate one to see the log here.',
+      note: h.length ? undefined : 'No actions yet.',
       actions: [{ label: 'Reset demo data', tone: 'red', run: () => this.resetDemo() }],
     });
   }

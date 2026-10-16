@@ -28,8 +28,6 @@ import { Icon } from './icon';
           <button class="x" (click)="alerts.close()" aria-label="Close">×</button>
         </header>
 
-        <p class="note">Nothing here is assigned to you. Each one opens the screen that owns it, where the actions already are.</p>
-
         <div class="filters">
           <div class="frow">
             @for (f of severities; track f.id) {
@@ -94,7 +92,6 @@ import { Icon } from './icon';
     .sub { margin: 3px 0 0; font-size: 12.5px; color: var(--gray-500); }
     .sub .crit { color: var(--red, #c0392b); font-weight: 700; }
     .x { margin-left: auto; border: 0; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; color: var(--gray-500); }
-    .note { margin: 0; padding: 12px 20px; font-size: 12px; color: var(--gray-500); background: var(--gray-50, #f9fafb); border-bottom: 1px solid var(--border); line-height: 1.5; }
 
     .filters { padding: 10px 20px 12px; border-bottom: 1px solid var(--border); display: grid; gap: 7px; }
     .frow { display: flex; flex-wrap: wrap; gap: 6px; }

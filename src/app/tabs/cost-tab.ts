@@ -41,7 +41,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   template: `
     <div class="tab-head">
       <h2>Cost &amp; Utilization Insights</h2>
-      <span class="section-note">Which active authorizations may create unusually high cost, payment exposure, or avoidable utilization — click a tile to drill in</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
     <z-widget-customize [vis]="vis"></z-widget-customize>

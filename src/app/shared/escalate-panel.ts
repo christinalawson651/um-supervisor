@@ -11,7 +11,7 @@ import { Escalate, EscalateCandidate } from './escalate';
       <div class="scrim" (click)="ex.close()">
         <div class="modal" (click)="$event.stopPropagation()">
           <div class="mh">
-            <div><h3>{{ c.title }}</h3><div class="sub">Designate the authorizations to escalate, then choose who to assign them to.</div></div>
+            <div><h3>{{ c.title }}</h3></div>
             <button class="x" (click)="ex.close()">×</button>
           </div>
 

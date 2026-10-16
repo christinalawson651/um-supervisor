@@ -13,7 +13,7 @@ import { DashboardData } from '../data/dashboard-data';
       <div class="scrim" (click)="rx.close()">
         <div class="panel" (click)="$event.stopPropagation()">
           <div class="ph">
-            <div><h3>{{ c.title }}</h3><div class="psub">Select {{ nounPlural() }}, review the recommendation, and reassign</div></div>
+            <div><h3>{{ c.title }}</h3></div>
             <button class="x" (click)="rx.close()">×</button>
           </div>
 
@@ -80,7 +80,6 @@ import { DashboardData } from '../data/dashboard-data';
                 </div>
               } @else {
                 <div class="ovr">Select a queue:</div>
-                <p class="qnote">Work in a queue has no owner — anyone can pull it. Moving an assigned {{ noun() }} here releases it from its current caseload.</p>
                 <div class="nlist">
                   @for (qn of queueTargets(); track qn.name) {
                     <button class="ni qi" [class.on]="target() === qn.name" (click)="target.set(qn.name)">
@@ -108,8 +107,7 @@ import { DashboardData } from '../data/dashboard-data';
     .scrim { position:fixed; inset:0; background:rgba(17,24,39,.5); z-index:120; display:flex; align-items:center; justify-content:center; padding:3vh 3vw; }
     .panel { background:#fff; border-radius:14px; width:100%; max-width:960px; height:100%; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(0,0,0,.28); overflow:hidden; }
     .ph { display:flex; justify-content:space-between; align-items:flex-start; padding:18px 22px; border-bottom:1px solid var(--border); }
-    .ph h3 { margin:0; font-size:17px; } .psub { font-size:12.5px; color:var(--gray-500); margin-top:4px; }
-    .x { border:none; background:none; font-size:24px; color:var(--gray-400); cursor:pointer; }
+    .ph h3 { margin:0; font-size:17px; }    .x { border:none; background:none; font-size:24px; color:var(--gray-400); cursor:pointer; }
     .body { flex:1; display:grid; grid-template-columns:1.4fr 1fr; gap:0; overflow:hidden; }
     .col { display:flex; flex-direction:column; overflow:hidden; padding:16px 20px; }
     .col.target { border-left:1px solid var(--border); background:var(--gray-50); }
@@ -138,7 +136,6 @@ import { DashboardData } from '../data/dashboard-data';
     .nrec.on { background:var(--teal-50); }
     .recbadge { font-size:10.5px; font-weight:700; color:var(--teal-700); background:var(--teal-100); padding:2px 8px; border-radius:999px; }
     .nmeta { font-size:11.5px; color:var(--gray-500); margin:2px 0 8px; }
-    .qnote { font-size:11.5px; color:var(--gray-500); line-height:1.45; margin:-2px 0 10px; }
     .ovr { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); font-weight:700; margin-bottom:8px; }
     .nlist { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
     .ni { text-align:left; width:100%; border:1px solid var(--gray-300); background:#fff; border-radius:10px; padding:10px 12px; cursor:pointer; }

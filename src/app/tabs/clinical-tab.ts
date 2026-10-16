@@ -34,7 +34,6 @@ const CLINICAL_WIDGETS = [
   template: `
     <div class="tab-head">
       <h2>Clinical Decision Insights</h2>
-      <span class="section-note">Decision quality remains strong across service types</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
 
@@ -95,7 +94,6 @@ const CLINICAL_WIDGETS = [
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
         <h3 class="panel-title">Diagnosis Mix</h3>
-        <span class="section-note">Primary diagnosis behind every authorization, ranked by volume</span>
         <z-widget-actions (exportClick)="exportDiagnosisMix()" (removeClick)="hide('diagnosis-mix')"></z-widget-actions>
       </div>
       <div class="reason-rows">

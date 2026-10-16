@@ -28,7 +28,7 @@ export interface Segment { label: string; value: number; color: string; key?: st
         }
       </div>
       @if (hover() >= 0) {
-        <div class="tip">{{ segments[hover()].label }}: {{ segments[hover()].value }} ({{ pctOf(segments[hover()].value) }}%)@if (clickable) { <span class="tap"> · click to view</span> }</div>
+        <div class="tip">{{ segments[hover()].label }}: {{ segments[hover()].value }} ({{ pctOf(segments[hover()].value) }}%)</div>
       }
     </div>
     <div class="legend">
@@ -48,7 +48,6 @@ export interface Segment { label: string; value: number; color: string; key?: st
     .cl { font-size:10px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; margin-top:3px; text-align:center; }
     .tip { position:absolute; top:-10px; left:50%; transform:translate(-50%,-100%); white-space:nowrap;
       background:var(--ink); color:#fff; font-size:11px; font-weight:600; padding:5px 9px; border-radius:6px; pointer-events:none; z-index:5; }
-    .tap { opacity:.7; font-weight:400; }
     .legend { display:flex; flex-direction:column; gap:8px; }
     .lg { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); }
     .lg.hot { cursor:pointer; } .lg.hot:hover { color:var(--ink); }

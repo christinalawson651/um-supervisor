@@ -50,7 +50,6 @@ const WORKFORCE_WIDGETS = [
 
     <z-widget-customize [vis]="vis"></z-widget-customize>
 
-    <div class="qhint">Cards show <b>unclaimed authorizations available to pull next</b> — work already claimed by a nurse shows in Workload below. Bars show how long each has been waiting. Click a band to see those authorizations. <b>Breach</b> = past the SLA deadline.</div>
 
     <div class="qtoolbar">
       <input class="search" type="text" placeholder="Search queues…" [ngModel]="queueSearch()" (ngModelChange)="queueSearch.set($event)" />
@@ -193,7 +192,6 @@ const WORKFORCE_WIDGETS = [
     .tab-head { flex-wrap: wrap; row-gap: 8px; }
     .tab-head > .flex { flex-wrap: wrap; row-gap: 8px; }
     .cz-btn { margin-left: 8px; }
-    .qhint { font-size: 12px; color: var(--gray-500); margin-bottom: 12px; } .qhint b { color: var(--ink-soft); }
     .seg > span { cursor: pointer; }
     .legend span { cursor: pointer; } .legend span:hover { color: var(--ink-soft); }
     /* auto-fill instead of a fixed column count so this scales to any number of queues

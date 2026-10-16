@@ -38,7 +38,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   template: `
     <div class="tab-head">
       <h2>Audit &amp; Compliance</h2>
-      <span class="section-note">Internal quality review and regulatory compliance evidence — click a tile to drill in</span>
       <button class="btn outline cz-btn" (click)="vis.customizing() ? vis.cancel() : vis.open()">Customize</button>
     </div>
 
@@ -63,7 +62,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     @if (!isHidden('irr')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Inter-Rater Reliability (IRR)</h3>
-        <span class="section-note sm">{{ irrTarget }}% agreement is this org's own policy target — NCQA/URAC require a defined, followed methodology, not one universal number</span>
+        <span class="section-note sm">Target {{ irrTarget }}% agreement</span>
         <z-widget-actions (exportClick)="exportIrr()" (removeClick)="hide('irr')"></z-widget-actions>
       </div>
       <div class="tile-row irr-row panel-pad">
@@ -118,7 +117,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     @if (!isHidden('irrReasons')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">IRR Discrepancy Reasons</h3>
-        <span class="section-note sm">Why the sampled disagreements happened — the part that actually drives training/criteria fixes</span>
         <z-widget-actions (exportClick)="exportIrrReasons()" (removeClick)="hide('irrReasons')"></z-widget-actions>
       </div>
       <div class="ilist">
@@ -136,7 +134,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     @if (!isHidden('irrActions')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">IRR Corrective Actions</h3>
-        <span class="section-note sm">Every disagreement that escalated into coaching or retraining — evidence the loop closes</span>
         <z-widget-actions (exportClick)="exportIrrActions()" (removeClick)="hide('irrActions')"></z-widget-actions>
       </div>
       <table class="z-table">
@@ -159,7 +156,6 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     @if (!isHidden('regTat')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head"><h3 class="panel-title">Regulatory TAT Compliance by Program</h3>
-        <span class="section-note sm">Standard decision window / expedited window, per program's own statutory requirement</span>
         <z-widget-actions (exportClick)="exportRegTat()" (removeClick)="hide('regTat')"></z-widget-actions>
       </div>
       <div class="tile-row kpi-row panel-pad no-bottom">
