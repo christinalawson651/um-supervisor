@@ -18,6 +18,7 @@ import { Exporter } from '../shared/exporter';
 import { Lookback } from '../shared/lookback';
 import { LobFilter } from '../shared/lob-filter';
 import { BhpPicker } from '../shared/bhp-picker';
+import { DateSpan } from '../shared/date-span';
 import { REFERRALS } from '../data/referrals';
 import { DashboardData, liveTatBuckets, liveTatStats, liveDecisionRows, liveConcurrentRows, liveMissingFields, liveProviderInsights, liveCostInsights } from '../data/dashboard-data';
 
@@ -97,7 +98,7 @@ const HEADINGS: Record<string, { title: string; role: string }> = {
   selector: 'app-shell',
   standalone: true,
   imports: [
-    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, BhpPicker, ExportDialog, AlertInbox, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard, AuditTraceability,
+    Icon, Overlays, CaseExplorer, MemberChart, ReassignPanel, EscalatePanel, PtoPanel, GlobalSearch, BhpPicker, DateSpan, ExportDialog, AlertInbox, OverviewDashboard, CmDashboard, AppealsDashboard, ReportsDashboard, AuditTraceability,
     WorkforceTab, SchedulingTab, DemandTab, TatTab, ClinicalTab, RiskTab, ConcurrentTab,
     IntakeTab, ProviderTab, CostTab, AuditTab, AiTab, ReferralsTab, FollowThroughBoard,
   ],
@@ -137,7 +138,7 @@ export class Shell {
   }
 
   // ---- lookback period on the KPI tiles (shared across modules) ----
-  private lookback = inject(Lookback);
+  readonly lookback = inject(Lookback);
   readonly periods = this.lookback.periods;
   readonly period = this.lookback.period;
 

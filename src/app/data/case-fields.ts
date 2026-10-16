@@ -363,3 +363,13 @@ export function daysAgo(dateStr: string): number {
   const d = new Date(`${dateStr}T00:00:00`);
   return Math.round((TODAY.getTime() - d.getTime()) / 86400000);
 }
+
+/** End of the shell's date span in days before today (0 = today). Set by Lookback so the
+ *  data-layer derivations, which take only `withinDays` (the start), also honour the end. */
+export const SPAN_END = { daysAgo: 0 };
+/** A yyyy-mm-dd date inside the span: `withinDays` back to SPAN_END. undefined = no date filter. */
+export function inWindow(dateStr: string, withinDays?: number): boolean {
+  if (withinDays === undefined) return true;
+  const d = daysAgo(dateStr);
+  return d <= withinDays && d >= SPAN_END.daysAgo;
+}

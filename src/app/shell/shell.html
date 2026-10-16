@@ -61,12 +61,13 @@
 
     @if (nav.module() !== 'overview' && nav.module() !== 'reports' && nav.module() !== 'audit') {
       <div class="period-bar">
-        <span class="period-lab">Lookback</span>
+        <span class="period-lab">Dates</span>
         <div class="period-seg">
           @for (p of periods; track p.id) {
-            <button [class.on]="period() === p.id" (click)="period.set(p.id)">{{ p.label }}</button>
+            <button [class.on]="period() === p.id" (click)="lookback.setQuick(p.id)">{{ p.label }}</button>
           }
         </div>
+        <app-date-span />
         <span class="period-lab lob-lab">Plans</span>
         <app-bhp-picker />
       </div>

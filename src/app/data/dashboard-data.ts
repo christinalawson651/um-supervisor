@@ -10,7 +10,7 @@ import { CASE_POOL, NURSES, CaseRec, GUIDELINE_BY_PROCEDURE, PROVIDERS, NPI_BY_P
 // seeded case number and referral resolvable. Data-to-data import only — no service dependency.
 import { CM_CASE_POOL, CM_UNASSIGNED } from './cm-case-pool';
 import { CM_REFERRAL_INTAKE } from './cm-intake';
-import { ageH, bandOf, lobOf, inPlanScope, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf, providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf, isDuplicateOf, duplicateResolvedOf, LOBS, TODAY_LONG } from './case-fields';
+import { ageH, bandOf, lobOf, inPlanScope, inWindow, daysAgo, TODAY, APPROVAL_CODES, DENIAL_CODES, determinationReasonOf, providerMetaOf, providerResponseDaysOf, rfiOriginStageOf, serviceCategoryOf, urgencyOf, isDuplicateOf, duplicateResolvedOf, LOBS, TODAY_LONG } from './case-fields';
 import { IrrReviewRecord, UM_IRR_REVIEWS, DISCREPANCY_REASONS, DiscrepancyReason, MIN_SAMPLE_PER_REVIEWER } from './um-irr';
 
 /**
@@ -111,7 +111,7 @@ function queueStats(statusName: string, opts?: { lob?: string | string[]; within
   const unclaimed = CASE_POOL.filter((c) =>
     c.phase === 'pending' && c.status === statusName && c.nurse === '—' &&
     lobMatches(c.authId, opts?.lob) &&
-    (opts?.withinDays === undefined || daysAgo(c.submitted) <= opts.withinDays),
+    inWindow(c.submitted, opts?.withinDays),
   );
   const total = unclaimed.length || 1;
   const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
@@ -128,7 +128,7 @@ function queueStats(statusName: string, opts?: { lob?: string | string[]; within
 function nurseStats(name: string, opts?: { lob?: string | string[]; withinDays?: number }) {
   const inScope = (c: CaseRec) =>
     lobMatches(c.authId, opts?.lob) &&
-    (opts?.withinDays === undefined || daysAgo(c.submitted) <= opts.withinDays);
+    inWindow(c.submitted, opts?.withinDays);
   const active = CASE_POOL.filter((c) => c.phase === 'pending' && c.nurse === name && inScope(c));
   const pending = active.filter((c) => c.tags.includes('rfi') || c.tags.includes('p2p'));
   const completed = CASE_POOL.filter((c) => c.phase === 'decided' && c.nurse === name && inScope(c));
@@ -621,7 +621,7 @@ export class DashboardData {
    * instead of hand-picked flavor numbers.
    */
   liveKpis(withinDays: number, plans?: string[]): Kpi[] {
-    const within = (c: CaseRec) => daysAgo(c.submitted) <= withinDays && inPlanScope(c.authId, plans);
+    const within = (c: CaseRec) => inWindow(c.submitted, withinDays) && inPlanScope(c.authId, plans);
     const pendingIn = CASE_POOL.filter((c) => c.phase === 'pending' && within(c));
     const decidedIn = CASE_POOL.filter((c) => c.phase === 'decided' && within(c));
     const onTrack = decidedIn.filter((c) => c.tags.includes('onTrack')).length;
@@ -661,7 +661,7 @@ function lobMatches(authId: string, lob?: string | string[]): boolean {
 }
 export function inScope(c: CaseRec, lob?: string | string[], withinDays?: number): boolean {
   return lobMatches(c.authId, lob)
-    && (withinDays === undefined || daysAgo(c.submitted) <= withinDays);
+    && inWindow(c.submitted, withinDays);
 }
 
 export function liveTatBuckets(lob?: string | string[], withinDays?: number): TatBucket[] {
@@ -879,7 +879,7 @@ export function liveComplianceBars(lob?: string | string[], withinDays?: number)
 // review record itself (sample selection, independent redetermination, discrepancy reason,
 // corrective-action tier) is built once in um-irr.ts; everything here is just filtering/rollup. ----
 function irrInScope(r: IrrReviewRecord, lob?: string | string[], withinDays?: number): boolean {
-  return inPlanScope(r.authId, lob) && (withinDays === undefined || daysAgo(r.reviewDate) <= withinDays);
+  return inPlanScope(r.authId, lob) && inWindow(r.reviewDate, withinDays);
 }
 export function liveIrrReviews(lob?: string | string[], withinDays?: number): IrrReviewRecord[] {
   return UM_IRR_REVIEWS.filter((r) => irrInScope(r, lob, withinDays));
