@@ -12,7 +12,7 @@
 // a demo can be walked through twice and land on the same rows.
 import { CASE_POOL, CaseRec, NURSES } from './case-pool';
 import { CM_CASE_POOL, CARE_MANAGERS, SCENARIO_JADE_ID, SCENARIO_WILLIS_ID } from './cm-case-pool';
-import { TODAY, MD_REVIEWERS, lobOf } from './case-fields';
+import { TODAY, MD_REVIEWERS, lobOf, bhpOf, bhpStateOf } from './case-fields';
 import { AI_DECISIONS } from './ai-oversight';
 import { registerScenarioCareTeam, CareTeamMember, ExternalProgramLink } from './cm-care-team';
 
@@ -186,16 +186,18 @@ const AI_BY_AUTH = new Map(AI_DECISIONS.map((r) => [r.authId, r]));
 // per member, the same way every other attribute in this demo is.
 
 export const STATES_BY_LOB: Record<string, string[]> = {
-  'Medicaid': ['TX', 'FL', 'GA'],
+  'Medicaid': ['FL', 'AZ'],
   'Medicare Advantage': ['TX', 'FL', 'AZ'],
   'Commercial PPO': ['TX', 'IL'],
-  'ACA Exchange': ['FL', 'GA'],
+  'ACA Exchange': ['FL', 'AZ'],
 };
 const MARKET_BY_STATE: Record<string, string> = {
   TX: 'TX — Central', FL: 'FL — South', GA: 'GA — Metro Atlanta', AZ: 'AZ — Maricopa', IL: 'IL — Chicagoland',
 };
 
 export function stateOf(authId: string, lob: string): string {
+  // Pilot scope: the state is the one the case's BHP plan sits under (Florida or Arizona).
+  if (lob === 'Medicaid' || lob === 'ACA Exchange') return bhpStateOf(bhpOf(authId)) === 'Arizona' ? 'AZ' : 'FL';
   const pool = STATES_BY_LOB[lob] ?? ['TX'];
   // Not `n % pool.length`: the line of business is itself `n % 4`, so within one LOB every case
   // shares a residue and a two-state pool collapsed to a single state — every Commercial PPO case
@@ -223,6 +225,8 @@ export const POLICY_RULES: PolicyRule[] = [
   { lob: 'Medicare Advantage', state: 'AZ', policyVersion: 'MA-NAT v5.0', basis: 'National Medicare Advantage policy — no state override', citation: '42 CFR §422.101 · NCD/LCD' , stateRule: false },
   { lob: 'Commercial PPO', state: 'TX', policyVersion: 'COM-TX v1.9', basis: 'State insurance-department mandate applies over the group policy', citation: 'TX DOI mandate · ERISA §2560.503-1' , stateRule: true },
   { lob: 'Commercial PPO', state: 'IL', policyVersion: 'COM-NAT v4.2', basis: 'Group policy — no state mandate engaged', citation: 'ERISA §2560.503-1' , stateRule: false },
+  { lob: 'Medicaid', state: 'AZ', policyVersion: 'MCD-AZ v1.4', basis: 'State Medicaid programme rules override the national policy', citation: 'AZ AHCCCS UM policy · 42 CFR §438.210' , stateRule: true },
+  { lob: 'ACA Exchange', state: 'AZ', policyVersion: 'ACA-EHB-AZ v1.6', basis: 'State essential health benefits benchmark plan', citation: '45 CFR §156.110 · ACA §2719' , stateRule: true },
   { lob: 'ACA Exchange', state: 'FL', policyVersion: 'ACA-EHB-FL v2.2', basis: 'State essential health benefits benchmark plan', citation: '45 CFR §156.110 · ACA §2719' , stateRule: true },
   { lob: 'ACA Exchange', state: 'GA', policyVersion: 'ACA-EHB-GA v2.0', basis: 'State essential health benefits benchmark plan', citation: '45 CFR §156.110 · ACA §2719' , stateRule: true },
 ];
@@ -265,6 +269,7 @@ export interface AuditEvent {
   entityId: string;
   memberId: string | null;
   lob: string | null;
+  bhp?: string | null;             // pilot plan (BHP leaf code) for case-linked events
   field: string | null;            // what changed, when this event was a change
   before: string | null;
   after: string | null;
@@ -416,7 +421,7 @@ function umEventsFor(c: CaseRec, i: number): Draft[] {
   const base = (over: Partial<Draft>): Draft => ({
     timestamp: '', actor: intake.name, actorId: intake.userId, actorRole: intake.role,
     category: 'Case Management', action: '', entityType: 'Authorization', entityId: c.authId,
-    memberId, lob, field: null, before: null, after: null,
+    memberId, lob, bhp: bhpOf(c.authId), field: null, before: null, after: null,
     channel: 'Web UI', sourceIp: ipFor(intake, i), sessionId: session, correlationId: corr,
     reasonCode: null, phi: true, outcome: 'Success', ...over,
   });

@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
 import {
@@ -19,7 +19,11 @@ import {
 import { Interaction } from '../shared/interaction';
 import { Nav } from '../shared/nav';
 import { Exporter } from '../shared/exporter';
-import { LOBS, daysAgo, TODAY_ISO } from '../data/case-fields';
+import { LOBS, daysAgo, TODAY_ISO, inPlanScope, lobInPlanScope } from '../data/case-fields';
+import { Lookback, PeriodId } from '../shared/lookback';
+import { LobFilter } from '../shared/lob-filter';
+import { DateSpan } from '../shared/date-span';
+import { BhpPicker } from '../shared/bhp-picker';
 import { careTeamFor, externalLinksFor, EXTERNAL_PROGRAM_BY_ID } from '../data/cm-care-team';
 import { diffWords, DiffOp, EditKind, EDIT_KINDS } from '../data/ai-oversight';
 import { compareRows, caretFor, SortDir } from '../shared/sort';
@@ -79,30 +83,19 @@ const govSection = governanceSection;
 @Component({
   selector: 'app-audit-traceability',
   standalone: true,
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, DateSpan, BhpPicker],
   template: `
-    <!-- This module carries its own Range/LOB control rather than the shared dashboard period bar:
-         on a caseload tab '30 days' is the unfiltered baseline, but the audit log spans the whole
-         retained history, so that convention made the count FALL when you widened to QTD. -->
+    <!-- Same Dates and Plans filters as every Pulse tab (AT-0.1, AT-0.2), shared state. -->
     <div class="scopebar">
-      <span class="sc-lab">Range</span>
+      <span class="sc-lab">Dates</span>
       <div class="seg">
-        @for (r of ranges; track r.id) {
-          <button [class.on]="range() === r.id" (click)="setRange(r.id)">{{ r.label }}</button>
+        @for (p of lookback.periods; track p.id) {
+          <button [class.on]="lookback.period() === p.id" (click)="setQuick(p.id)">{{ p.label }}</button>
         }
       </div>
-      <span class="sc-lab">LOB</span>
-      <div class="seg">
-        <button [class.on]="lob() === 'all'" (click)="setLob('all')">All LOBs</button>
-        @for (l of lobs; track l) {
-          <button [class.on]="lob() === l" (click)="setLob(l)">{{ l }}</button>
-        }
-      </div>
-      <span class="span-note">
-        Online store: <b>{{ span.count | number }}</b> events, {{ span.from }} → {{ span.to }}.
-        @if (range() !== 'all') { <a class="lnk" (click)="setRange('all')">Show entire online history</a> }
-        @else { <a class="lnk" (click)="sel.set('retention')">+{{ archive().archivedEvents | number }} archived</a> }
-      </span>
+      <app-date-span />
+      <span class="sc-lab">Plans</span>
+      <app-bhp-picker />
     </div>
 
     <nav class="subtabs">
@@ -1815,20 +1808,25 @@ export class AuditTraceability {
   readonly span = auditSpan();
 
   // ---- scope: this module's own controls, not the shared dashboard period bar ----
-  readonly range = signal<AuditRange>('all');
-  readonly lob = signal<string>('all');
-  readonly rangeLabel = computed(() => AUDIT_RANGES.find((r) => r.id === this.range())?.label ?? 'All history');
-  setRange(r: AuditRange) { this.range.set(r); this.page.set(0); }
-  setLob(l: string) { this.lob.set(l); this.page.set(0); }
+  readonly lookback = inject(Lookback);
+  readonly plans = inject(LobFilter);
+  readonly rangeLabel = computed(() => this.lookback.label());
+  setQuick(id: PeriodId) { this.lookback.setQuick(id); }
+  /** Case-linked events match by plan; LOB-only events by LOB; infrastructure events (no LOB) always show. */
+  private inPlans(e: AuditEvent): boolean {
+    const sel = this.plans.value();
+    if (sel === 'all' || e.lob === null) return true;
+    return e.bhp ? sel.includes(e.bhp) : lobInPlanScope(e.lob, sel);
+  }
+  private readonly resetOnScope = effect(() => { this.lookback.period(); this.lookback.from(); this.lookback.to(); this.plans.selected(); untracked(() => this.page.set(0)); });
 
   readonly scopedEvents = computed(() => {
-    const days = AUDIT_RANGES.find((r) => r.id === this.range())?.days ?? null;
-    const lob = this.lob();
+    this.lookback.period(); this.lookback.from(); this.lookback.to(); this.plans.selected();
     return AUDIT_EVENTS.filter((e) => {
-      if (days !== null) { const d = daysAgo(eventDate(e.timestamp)); if (d < 0 || d > days) return false; }
+      if (!this.lookback.includes(eventDate(e.timestamp))) return false;
       // Infrastructure events (sign-ins, config changes, account admin) carry no LOB. They stay
       // visible under an LOB filter — hiding them would misrepresent the trail, not narrow it.
-      if (lob !== 'all' && e.lob !== null && e.lob !== lob) return false;
+      if (!this.inPlans(e)) return false;
       return true;
     });
   });
@@ -1964,8 +1962,9 @@ export class AuditTraceability {
   readonly agents = AGENTS;
   /** Scoped by the module's own Range/LOB controls, same as everything else on this module. */
   readonly aiRows = computed(() => {
-    const days = AUDIT_RANGES.find((r) => r.id === this.range())?.days ?? null;
-    return aiScope(this.lob(), days === null ? undefined : days);
+    this.lookback.period(); this.lookback.from(); this.lookback.to();
+    const sel = this.plans.value();
+    return aiScope().filter((r) => inPlanScope(r.authId, sel) && this.lookback.includes(r.decidedDate));
   });
   readonly ai = computed(() => aiSummary(this.aiRows()));
   readonly calib = computed(() => calibration(this.aiRows()));
@@ -2586,12 +2585,13 @@ export class AuditTraceability {
   readonly userEvents = computed(() => {
     const id = this.selectedUser();
     if (!id) return [];
-    const from = this.winFrom() || this.shiftDays(90), to = this.winTo(), lob = this.lob();
+    const from = this.winFrom() || this.shiftDays(90), to = this.winTo();
+    this.plans.selected();
     return AUDIT_EVENTS.filter((e) => {
       if (e.actorId !== id) return false;
       const d = eventDate(e.timestamp);
       if (d < from || d > to) return false;
-      if (lob !== 'all' && e.lob !== null && e.lob !== lob) return false;
+      if (!this.inPlans(e)) return false;
       return true;
     });
   });

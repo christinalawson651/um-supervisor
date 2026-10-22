@@ -43,9 +43,6 @@ import { AiTab } from '../tabs/ai-tab';
 import { ReferralsTab } from '../tabs/referrals-tab';
 import { FollowThroughBoard } from '../shared/follow-through-board';
 
-// AI / NextGen Intelligence is temporarily hidden — not deleted, just not listed/switched to.
-// To bring it back: add an 'ai' entry to TAB_DEFS here, and restore its @case('ai') in shell.html.
-//
 // Tabs are keyed by a stable string id, not by array position — shell.html's inner
 // @switch(selected()) matches on TAB.key, so reordering this list never requires renumbering any
 // @case block (same convention as CM/Appeals' dashboards). selected() itself holds a key, not an index.
@@ -62,6 +59,7 @@ const TAB_DEFS: TabDef[] = [
   { key: 'provider', label: 'Provider & Network Insights' },
   { key: 'cost', label: 'Cost & Utilization Insights' },
   { key: 'audit', label: 'Audit & Compliance' },
+  { key: 'ai', label: 'AI / NextGen Intelligence' },
   { key: 'referrals', label: 'CM Referrals' },
   { key: 'followthrough', label: 'Follow-Through Board' },
 ];
