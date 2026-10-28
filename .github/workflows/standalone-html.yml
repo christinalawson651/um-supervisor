@@ -1,0 +1,47 @@
+# Builds the single-file pulse-app.html from every push to main (the commit Render deploys) and
+# publishes it as the "pulse-app" release, replacing the previous one. Download it from the
+# repository's Releases page. Can also be run by hand from the Actions tab.
+name: Standalone HTML
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: standalone-html
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npx ng build --configuration standalone
+
+      - name: Inline into one HTML file
+        run: node scripts/build-standalone-html.js dist/pulse-app.html
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          gh release delete pulse-app --cleanup-tag --yes || true
+          gh release create pulse-app dist/pulse-app.html \
+            --target "$GITHUB_SHA" \
+            --title "TruCare Pulse (single HTML) · $SHORT" \
+            --notes "Built from $SHORT on main, the same commit Render deploys. Open pulse-app.html in any browser; no server needed." \
+            --latest

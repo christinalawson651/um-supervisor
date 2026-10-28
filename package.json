@@ -6,7 +6,8 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "build:standalone": "ng build --configuration standalone && node scripts/build-standalone-html.js"
   },
   "private": true,
   "packageManager": "npm@11.18.0",
