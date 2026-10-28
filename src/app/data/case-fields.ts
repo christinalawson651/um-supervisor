@@ -373,3 +373,52 @@ export function inWindow(dateStr: string, withinDays?: number): boolean {
   const d = daysAgo(dateStr);
   return d <= withinDays && d >= SPAN_END.daysAgo;
 }
+
+// ---- WFM queues (client list, no Medicare): 20 general + 7 specialized ----
+// A pending case's workflow stage (c.status: Intake, Clinical Review, MD Review…) is unchanged; on
+// top of it every pending case is routed to one WFM queue by level, health type, setting, product
+// (from its BHP plan) and specialty. Assignment filters stack: BHP (the shell's Plans filter),
+// Specialty, Urgency, Role and State — AND across filters, OR within one.
+export type WfmRole = 'L1 Nurse Reviewer' | 'L2 Physician Reviewer' | 'Correspondence' | 'Intake Coordinator';
+export interface WfmQueue { id: string; name: string; type: 'General' | 'Specialized'; spec: string[]; roles: WfmRole[]; setting: 'IP' | 'OP' | 'IP/OP'; product: 'Medicaid' | 'Marketplace' | 'All'; flag?: string; }
+const LEVEL_ROLE: Record<string, WfmRole> = { L1: 'L1 Nurse Reviewer', L2: 'L2 Physician Reviewer' };
+const HEALTH: [string, string][] = [['PH', 'Physical Health'], ['BH', 'Behavioral Health']];
+const PRODUCTS: ('Medicaid' | 'Marketplace')[] = ['Medicaid', 'Marketplace'];
+export const WFM_QUEUES: WfmQueue[] = [
+  ...['L1', 'L2'].flatMap((lv) => HEALTH.flatMap(([h, spec]) => (['IP', 'OP'] as const).flatMap((set) => PRODUCTS.map((prod): WfmQueue =>
+    ({ id: `${lv}-${h}-${set}-${prod}`, name: `${lv} - ${h} - ${set} - ${prod}`, type: 'General', spec: [spec], roles: [LEVEL_ROLE[lv]], setting: set, product: prod }))))),
+  ...HEALTH.flatMap(([h, spec]) => PRODUCTS.map((prod): WfmQueue =>
+    ({ id: `Corr-${h}-${prod}`, name: `Corr - ${h} - IP/OP - ${prod}`, type: 'General', spec: [spec], roles: ['Correspondence'], setting: 'IP/OP', product: prod }))),
+  { id: 'PH-Transplant', name: 'PH - IP/OP - Transplant', type: 'Specialized', spec: ['Physical Health', 'Transplant'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'IP/OP', product: 'All' },
+  { id: 'BH-ABA', name: 'BH - ABA', type: 'Specialized', spec: ['Behavioral Health', 'ABA'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'OP', product: 'All' },
+  { id: 'BH-Psych', name: 'BH - Psych testing', type: 'Specialized', spec: ['Behavioral Health', 'Psych Testing'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'OP', product: 'All', flag: 'Markets to confirm' },
+  { id: 'IP-NICU', name: 'IP - NICU', type: 'Specialized', spec: ['Physical Health', 'NICU'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'IP', product: 'All' },
+  { id: 'IP-PAC', name: 'IP - PAC', type: 'Specialized', spec: ['Physical Health', 'PAC'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'IP', product: 'All' },
+  { id: 'Intake-Esc', name: 'Intake Escalation (inside Zyter)', type: 'Specialized', spec: ['Physical Health', 'Behavioral Health'], roles: ['Intake Coordinator'], setting: 'IP/OP', product: 'All' },
+  { id: 'Corr-Exception', name: 'Correspondence Approval Fallout/Exception Queue', type: 'Specialized', spec: ['Physical Health', 'Behavioral Health'], roles: ['Correspondence'], setting: 'IP/OP', product: 'All' },
+];
+export const WFM_SPECIALTIES = ['Physical Health', 'Behavioral Health', 'Transplant', 'ABA', 'Psych Testing', 'NICU', 'PAC'];
+export const WFM_ROLES: WfmRole[] = ['L1 Nurse Reviewer', 'L2 Physician Reviewer', 'Correspondence', 'Intake Coordinator'];
+export const WFM_STATES = ['FL', 'AZ'];
+export const WFM_URGENCIES = ['Expedited', 'Standard'];
+/** FL or AZ — the state the case's BHP plan sits under. */
+export const stateCodeOf = (authId: string): string => (bhpStateOf(bhpOf(authId)) === 'Arizona' ? 'AZ' : 'FL');
+
+/** The WFM queue a pending case is routed to. Deterministic per case. */
+export function wfmQueueOf(c: CaseRec): string {
+  const n = Number(c.authId.replace(/\D/g, '')) || 0;
+  const health = c.serviceType === 'Behavioral' ? 'BH' : 'PH';
+  const product = lobOf(c.authId) === 'ACA Exchange' ? 'Marketplace' : 'Medicaid';
+  if (c.procedure === 'NICU Stay') return 'IP-NICU';
+  if (c.status === 'Intake' && (c.tags.includes('atRisk') || c.tags.includes('breached'))) return 'Intake-Esc';
+  if (c.serviceType === 'Inpatient' && n % 29 === 0) return 'PH-Transplant';
+  if (c.tags.includes('concurrent') && n % 4 === 0) return 'IP-PAC';
+  if (health === 'BH' && n % 3 === 0) return 'BH-ABA';
+  if (health === 'BH' && n % 5 === 0) return 'BH-Psych';
+  if (n % 97 === 0) return 'Corr-Exception';
+  if (c.status !== 'Intake' && n % 13 === 0) return `Corr-${health}-${product}`;
+  const level = c.status === 'MD Review' || c.status === 'Pending P2P' ? 'L2' : 'L1';
+  // Behavioral partial hospitalization (PHP) is facility-based, so it routes to the BH inpatient queues.
+  const setting = c.serviceType === 'Inpatient' || c.procedure === 'Behavioral Health PHP' ? 'IP' : 'OP';
+  return `${level}-${health}-${setting}-${product}`;
+}
