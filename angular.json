@@ -75,6 +75,28 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "standalone": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "1.5MB",
+                  "maximumError": "2.5MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "16kB",
+                  "maximumError": "32kB"
+                }
+              ],
+              "outputHashing": "all",
+              "outputPath": "dist/standalone",
+              "fileReplacements": [
+                {
+                  "replace": "src/app/app.config.ts",
+                  "with": "src/app/app.config.standalone.ts"
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
