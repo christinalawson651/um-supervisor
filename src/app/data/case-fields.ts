@@ -374,33 +374,77 @@ export function inWindow(dateStr: string, withinDays?: number): boolean {
   return d <= withinDays && d >= SPAN_END.daysAgo;
 }
 
-// ---- WFM queues (client list, no Medicare): 20 general + 7 specialized ----
-// A pending case's workflow stage (c.status: Intake, Clinical Review, MD Review…) is unchanged; on
-// top of it every pending case is routed to one WFM queue by level, health type, setting, product
-// (from its BHP plan) and specialty. Assignment filters stack: BHP (the shell's Plans filter),
-// Specialty, Urgency, Role and State — AND across filters, OR within one.
+// ---- WFM queues for the pilot (no Medicare): 16 general + 7 specialized ----
+// Not every combination of attributes gets a queue: queues exist only where the combination is a
+// real team assignment, specialty boundary or operational need; finer precision comes from task
+// attributes and worker proficiencies. General queues are per market unless a regional team covers
+// them; specialized queues may be national or per market.
+// A pending case's workflow stage (c.status) is unchanged; on top of it every pending case is
+// routed to one WFM queue. Assignment filters stack: BHP (the shell's Plans filter), Specialty,
+// Urgency, Role and State — AND across filters, OR within one.
 export type WfmRole = 'L1 Nurse Reviewer' | 'L2 Physician Reviewer' | 'Correspondence' | 'Intake Coordinator';
-export interface WfmQueue { id: string; name: string; type: 'General' | 'Specialized'; spec: string[]; roles: WfmRole[]; setting: 'IP' | 'OP' | 'IP/OP'; product: 'Medicaid' | 'Marketplace' | 'All'; flag?: string; }
-const LEVEL_ROLE: Record<string, WfmRole> = { L1: 'L1 Nurse Reviewer', L2: 'L2 Physician Reviewer' };
-const HEALTH: [string, string][] = [['PH', 'Physical Health'], ['BH', 'Behavioral Health']];
-const PRODUCTS: ('Medicaid' | 'Marketplace')[] = ['Medicaid', 'Marketplace'];
+export interface WfmQueue { id: string; name: string; type: 'General' | 'Specialized'; spec: string[]; roles: WfmRole[]; setting: 'IP' | 'OP' | 'IP/OP'; product: 'Medicaid' | 'Marketplace' | 'Medicaid/Marketplace'; scope: string; flag?: string; }
+const PH = 'Physical Health', BH = 'Behavioral Health';
+const L1: WfmRole[] = ['L1 Nurse Reviewer'], L2: WfmRole[] = ['L2 Physician Reviewer'], CORR: WfmRole[] = ['Correspondence'];
+const MARKET = 'Per market', SPEC_SCOPE = 'National or per market';
+const q = (id: string, name: string, type: WfmQueue['type'], spec: string[], roles: WfmRole[], setting: WfmQueue['setting'], product: WfmQueue['product'], scope: string, flag?: string): WfmQueue =>
+  ({ id, name, type, spec, roles, setting, product, scope, ...(flag ? { flag } : {}) });
 export const WFM_QUEUES: WfmQueue[] = [
-  ...['L1', 'L2'].flatMap((lv) => HEALTH.flatMap(([h, spec]) => (['IP', 'OP'] as const).flatMap((set) => PRODUCTS.map((prod): WfmQueue =>
-    ({ id: `${lv}-${h}-${set}-${prod}`, name: `${lv} - ${h} - ${set} - ${prod}`, type: 'General', spec: [spec], roles: [LEVEL_ROLE[lv]], setting: set, product: prod }))))),
-  ...HEALTH.flatMap(([h, spec]) => PRODUCTS.map((prod): WfmQueue =>
-    ({ id: `Corr-${h}-${prod}`, name: `Corr - ${h} - IP/OP - ${prod}`, type: 'General', spec: [spec], roles: ['Correspondence'], setting: 'IP/OP', product: prod }))),
-  { id: 'PH-Transplant', name: 'PH - IP/OP - Transplant', type: 'Specialized', spec: ['Physical Health', 'Transplant'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'IP/OP', product: 'All' },
-  { id: 'BH-ABA', name: 'BH - ABA', type: 'Specialized', spec: ['Behavioral Health', 'ABA'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'OP', product: 'All' },
-  { id: 'BH-Psych', name: 'BH - Psych testing', type: 'Specialized', spec: ['Behavioral Health', 'Psych Testing'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'OP', product: 'All', flag: 'Markets to confirm' },
-  { id: 'IP-NICU', name: 'IP - NICU', type: 'Specialized', spec: ['Physical Health', 'NICU'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'IP', product: 'All' },
-  { id: 'IP-PAC', name: 'IP - PAC', type: 'Specialized', spec: ['Physical Health', 'PAC'], roles: ['L1 Nurse Reviewer', 'L2 Physician Reviewer'], setting: 'IP', product: 'All' },
-  { id: 'Intake-Esc', name: 'Intake Escalation (inside Zyter)', type: 'Specialized', spec: ['Physical Health', 'Behavioral Health'], roles: ['Intake Coordinator'], setting: 'IP/OP', product: 'All' },
-  { id: 'Corr-Exception', name: 'Correspondence Approval Fallout/Exception Queue', type: 'Specialized', spec: ['Physical Health', 'Behavioral Health'], roles: ['Correspondence'], setting: 'IP/OP', product: 'All' },
+  // L1 / L2 Physical Health: one queue per setting covering both products
+  ...(['L1', 'L2'] as const).flatMap((lv) => (['IP', 'OP'] as const).map((set) =>
+    q(`${lv}-PH-${set}`, `${lv} - PH - ${set} - Medicaid/Marketplace`, 'General', [PH], lv === 'L1' ? L1 : L2, set, 'Medicaid/Marketplace', MARKET))),
+  // L1 / L2 Behavioral Health: split by setting and product
+  ...(['L1', 'L2'] as const).flatMap((lv) => (['IP', 'OP'] as const).flatMap((set) => (['Medicaid', 'Marketplace'] as const).map((prod) =>
+    q(`${lv}-BH-${set}-${prod}`, `${lv} - BH - ${set} - ${prod}`, 'General', [BH], lv === 'L1' ? L1 : L2, set, prod, MARKET)))),
+  // Correspondence: PH is outpatient, BH is inpatient
+  ...(['Medicaid', 'Marketplace'] as const).map((prod) => q(`Corr-PH-OP-${prod}`, `Corr - PH - OP - ${prod}`, 'General', [PH], CORR, 'OP', prod, MARKET)),
+  ...(['Medicaid', 'Marketplace'] as const).map((prod) => q(`Corr-BH-IP-${prod}`, `Corr - BH - IP - ${prod}`, 'General', [BH], CORR, 'IP', prod, MARKET)),
+  // Specialized
+  q('PH-Transplant', 'PH - IP/OP - Transplant', 'Specialized', [PH, 'Transplant'], [...L1, ...L2], 'IP/OP', 'Medicaid/Marketplace', SPEC_SCOPE),
+  q('BH-ABA', 'BH - ABA', 'Specialized', [BH, 'ABA'], [...L1, ...L2], 'OP', 'Medicaid/Marketplace', SPEC_SCOPE),
+  q('BH-Psych', 'BH - Psych testing', 'Specialized', [BH, 'Psych Testing'], [...L1, ...L2], 'OP', 'Medicaid/Marketplace', 'Multiple markets'),
+  q('IP-NICU', 'IP - NICU', 'Specialized', [PH, 'NICU'], [...L1, ...L2], 'IP', 'Medicaid/Marketplace', SPEC_SCOPE),
+  q('IP-PAC', 'IP - PAC', 'Specialized', [PH, 'PAC'], [...L1, ...L2], 'IP', 'Medicaid/Marketplace', SPEC_SCOPE),
+  q('Intake-Esc', 'Intake Escalation (inside Zyter)', 'Specialized', [PH, BH], ['Intake Coordinator'], 'IP/OP', 'Medicaid/Marketplace', SPEC_SCOPE),
+  q('Corr-Exception', 'Correspondence Approval Fallout/Exception Queue', 'Specialized', [PH, BH], CORR, 'IP/OP', 'Medicaid/Marketplace', SPEC_SCOPE),
 ];
-export const WFM_SPECIALTIES = ['Physical Health', 'Behavioral Health', 'Transplant', 'ABA', 'Psych Testing', 'NICU', 'PAC'];
+/** Medicare queues — not considered for the pilot. Listed for reference only; no work routes to them. */
+export const WFM_NOT_IN_PILOT = [
+  'L1 - PH - IP - Medicare', 'L1 - PH - OP - Medicare', 'L1 - BH - IP - Medicare', 'L1 - BH - OP - Medicare',
+  'L2 - PH - IP - Medicare', 'L2 - PH - OP - Medicare', 'L2 - BH - IP - Medicare', 'L2 - BH - OP - Medicare',
+  'Corr - PH - OP - Medicare', 'Corr - BH - IP - Medicare',
+];
+export const WFM_SPECIALTIES = [PH, BH, 'Transplant', 'ABA', 'Psych Testing', 'NICU', 'PAC'];
 export const WFM_ROLES: WfmRole[] = ['L1 Nurse Reviewer', 'L2 Physician Reviewer', 'Correspondence', 'Intake Coordinator'];
 export const WFM_STATES = ['FL', 'AZ'];
 export const WFM_URGENCIES = ['Expedited', 'Standard'];
+
+/** Who can take WFM work: role, specialty proficiencies and licensed states. The RNs are the
+ *  Workload roster (their load is live from DashboardData); the rest carry their own load here. */
+export interface WfmStaff { name: string; role: WfmRole; skills: string[]; states: string[]; active?: number; cap?: number; }
+export const WFM_STAFF: WfmStaff[] = [
+  { name: 'Maria Gonzalez, RN', role: 'L1 Nurse Reviewer', skills: [PH, 'NICU', 'PAC'], states: ['FL'] },
+  { name: 'Andrew Mitchell, RN', role: 'L1 Nurse Reviewer', skills: [PH, 'Transplant', 'PAC'], states: ['FL', 'AZ'] },
+  { name: 'Jessica Williams, RN', role: 'L1 Nurse Reviewer', skills: [PH, BH], states: ['FL'] },
+  { name: 'Sarah Mitchell, RN', role: 'L1 Nurse Reviewer', skills: [BH, 'ABA', 'Psych Testing'], states: ['FL', 'AZ'] },
+  { name: 'Rachel Foster, RN', role: 'L1 Nurse Reviewer', skills: [PH, BH], states: ['AZ'] },
+  { name: 'Emily Chen, RN', role: 'L1 Nurse Reviewer', skills: [PH, 'NICU', 'Transplant'], states: ['FL', 'AZ'] },
+  { name: 'Robert Kim, RN', role: 'L1 Nurse Reviewer', skills: [BH, 'ABA'], states: ['AZ'] },
+  { name: 'Dr. Alan Reyes, MD', role: 'L2 Physician Reviewer', skills: [PH, 'Transplant', 'NICU', 'PAC'], states: ['FL', 'AZ'], active: 14, cap: 20 },
+  { name: 'Dr. Priya Shah, MD', role: 'L2 Physician Reviewer', skills: [BH, 'ABA', 'Psych Testing'], states: ['FL', 'AZ'], active: 11, cap: 20 },
+  { name: 'Dr. Mark Webb, DO', role: 'L2 Physician Reviewer', skills: [PH, BH, 'PAC'], states: ['FL'], active: 16, cap: 20 },
+  { name: 'Tanya Brooks', role: 'Correspondence', skills: [PH, BH], states: ['FL', 'AZ'], active: 22, cap: 40 },
+  { name: 'Luis Ortega', role: 'Correspondence', skills: [PH, BH], states: ['FL'], active: 30, cap: 40 },
+  { name: 'Megan Hall', role: 'Intake Coordinator', skills: [PH, BH], states: ['FL', 'AZ'], active: 18, cap: 35 },
+  { name: 'Omar Haddad', role: 'Intake Coordinator', skills: [PH, BH], states: ['AZ'], active: 12, cap: 35 },
+];
+/** Can this person work this queue? Right role, and the queue's specialty (the specialized one
+ *  when it has one, else PH or BH). State is checked per case, against the case's plan state. */
+export function wfmEligible(s: WfmStaff, q: WfmQueue): boolean {
+  if (!q.roles.includes(s.role)) return false;
+  const special = q.spec.filter((x) => x !== PH && x !== BH);
+  return special.length ? special.every((x) => s.skills.includes(x)) : q.spec.some((x) => s.skills.includes(x));
+}
 /** FL or AZ — the state the case's BHP plan sits under. */
 export const stateCodeOf = (authId: string): string => (bhpStateOf(bhpOf(authId)) === 'Arizona' ? 'AZ' : 'FL');
 
@@ -416,9 +460,10 @@ export function wfmQueueOf(c: CaseRec): string {
   if (health === 'BH' && n % 3 === 0) return 'BH-ABA';
   if (health === 'BH' && n % 5 === 0) return 'BH-Psych';
   if (n % 97 === 0) return 'Corr-Exception';
-  if (c.status !== 'Intake' && n % 13 === 0) return `Corr-${health}-${product}`;
+  // Correspondence: physical health letters sit in the OP queue, behavioral health in the IP queue.
+  if (c.status !== 'Intake' && n % 13 === 0) return health === 'PH' ? `Corr-PH-OP-${product}` : `Corr-BH-IP-${product}`;
   const level = c.status === 'MD Review' || c.status === 'Pending P2P' ? 'L2' : 'L1';
   // Behavioral partial hospitalization (PHP) is facility-based, so it routes to the BH inpatient queues.
   const setting = c.serviceType === 'Inpatient' || c.procedure === 'Behavioral Health PHP' ? 'IP' : 'OP';
-  return `${level}-${health}-${setting}-${product}`;
+  return health === 'PH' ? `${level}-PH-${setting}` : `${level}-BH-${setting}-${product}`;
 }

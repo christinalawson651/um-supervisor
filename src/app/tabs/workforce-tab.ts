@@ -9,7 +9,8 @@ import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { Members } from '../shared/members';
 import { HistoryRefs } from '../shared/history-refs';
-import { urgencyOf, lobOf, inPlanScope, inWindow, ageH, bandOf, daysAgo, TODAY_ISO, WFM_QUEUES, WfmQueue, WFM_SPECIALTIES, WFM_URGENCIES, WFM_ROLES, WFM_STATES, wfmQueueOf, stateCodeOf } from '../data/case-fields';
+import { urgencyOf, lobOf, inPlanScope, inWindow, ageH, bandOf, daysAgo, TODAY_ISO, WFM_QUEUES, WfmQueue, WFM_SPECIALTIES, WFM_URGENCIES, WFM_ROLES, WFM_STATES, wfmQueueOf, stateCodeOf, WFM_STAFF } from '../data/case-fields';
+import { WfmAssignPanel, AssignRequest, StaffLoad } from './wfm-assign-panel';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
@@ -30,7 +31,7 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
 @Component({
   selector: 'app-workforce-tab',
   standalone: true,
-  imports: [Icon, FormsModule, WidgetActions, WidgetCustomize],
+  imports: [Icon, FormsModule, WidgetActions, WidgetCustomize, WfmAssignPanel],
   template: `
     <div class="tab-head">
       <h2>Workforce &amp; Queue Management</h2>
@@ -73,16 +74,29 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
       @if (wfActive()) { <button class="btn outline sm" (click)="clearWf()">Clear filters</button> }
     </div>
 
+    <div class="bulkbar" [class.on]="selQ().size">
+      <label class="selall"><input type="checkbox" [checked]="allQSelected()" (change)="toggleAllQ()" />
+        {{ selQ().size ? selQ().size + ' queue' + (selQ().size === 1 ? '' : 's') + ' selected' : 'Select queues to assign in bulk' }}</label>
+      @if (selQ().size) {
+        <span class="bb-n"><b>{{ selUnassigned() }}</b> unassigned in scope</span>
+        <span class="spacer"></span>
+        <button class="btn outline sm" (click)="selQ.set(new0())">Clear</button>
+        <button class="btn primary sm" [disabled]="!selUnassigned()" (click)="openAssign([...selQ()])">Assign {{ selUnassigned() }}…</button>
+      }
+    </div>
+
     <div class="queues">
       @for (q of displayQueues(); track q.baseName) {
         @if (!isHidden(q.baseName)) {
-        <div class="qcard">
+        <div class="qcard" [class.picked]="selQ().has(q.baseName)">
           <z-widget-actions (exportClick)="exportQueue(q)" (removeClick)="hide(q.baseName)"></z-widget-actions>
           <div class="qtop">
+            <input class="qpick" type="checkbox" [checked]="selQ().has(q.baseName)" (change)="toggleQ(q.baseName)" [attr.aria-label]="'Select ' + q.name" />
             <span class="qname">{{ q.name }}</span>
             <span class="qcount">{{ q.count }}</span>
           </div>
-          <div class="qmeta">{{ q.unassigned }} unassigned · {{ q.type }}@if (q.flag) { · <span class="qflag">{{ q.flag }}</span> }</div>
+          <div class="qmeta">{{ q.unassigned }} unassigned · {{ q.type }}@if (q.flag) { · <span class="qflag">{{ q.flag }}</span> }
+            @if (q.unassigned) { <button class="qassign" (click)="openAssign([q.baseName])">Assign</button> }</div>
           <div class="seg">
             <span class="s-fresh"  [style.width.%]="q.buckets.fresh"  title="0–24h in queue" (click)="openBucket(q.baseName, 'fresh')"></span>
             <span class="s-day2"   [style.width.%]="q.buckets.day2"   title="24–48h in queue" (click)="openBucket(q.baseName, 'day2')"></span>
@@ -101,6 +115,8 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
         <div class="qempty">No queues match.</div>
       }
     </div>
+
+    <app-wfm-assign-panel [request]="assignReq()" [staff]="staffLoads()" (assign)="applyAssign($event)" (close)="assignReq.set(null)"></app-wfm-assign-panel>
 
     @if (!isHidden('workload')) {
     <div class="panel mt-6">
@@ -217,7 +233,15 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
     .wf-chips { display:inline-flex; gap:4px; flex-wrap:wrap; }
     .wf-chip { border:1px solid var(--gray-300); background:#fff; border-radius:999px; padding:3px 10px; font-size:11.5px; color:var(--gray-500); cursor:pointer; }
     .wf-chip.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; font-weight:600; }
-    .qmeta { font-size:11.5px; color:var(--gray-500); margin:-6px 0 10px; }
+    .qmeta { font-size:11.5px; color:var(--gray-500); margin:-6px 0 10px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+    .qassign { margin-left:auto; border:1px solid var(--teal-600); background:#fff; color:var(--teal-700); border-radius:6px; padding:2px 10px; font-size:11px; font-weight:700; cursor:pointer; }
+    .qassign:hover { background:var(--teal-700); color:#fff; }
+    .qpick { margin:0 6px 0 0; accent-color:var(--teal-700); cursor:pointer; }
+    .qcard.picked { border-color:var(--teal-600); box-shadow:0 0 0 2px var(--teal-100); }
+    .bulkbar { display:flex; align-items:center; gap:12px; margin:-6px 0 12px; padding:6px 12px; border:1px dashed var(--gray-300); border-radius:8px; font-size:12px; color:var(--gray-500); }
+    .bulkbar.on { position:sticky; top:0; z-index:5; border:1px solid var(--teal-600); background:var(--teal-50); color:var(--teal-900); }
+    .bulkbar .selall { display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; }
+    .bulkbar .spacer { flex:1; }
     .qflag { color:var(--amber-fg); font-weight:600; }
     .qempty { grid-column:1/-1; text-align:center; padding:24px; color:var(--gray-500); font-size:13px; }
     .qcard { position: relative; background:#fff; border:1px solid var(--border); border-radius: var(--radius);
@@ -305,6 +329,58 @@ export class WorkforceTab {
   // range) but their queue count grows independently once queues are segmented by LOB or
   // specialty — so the queue section, not headcount, is what has to scale. ----
   readonly queueSearch = signal('');
+
+  // ---- bulk manual assignment: queues are picked on their cards, cases split across eligible staff.
+  /** Assignments made this session (authId -> person), layered over the case pool's owners. */
+  readonly assignedNow = signal<ReadonlyMap<string, string>>(new Map());
+  /** Cases added this session to staff who aren't on the RN Workload roster. */
+  private readonly staffAdds = signal<ReadonlyMap<string, number>>(new Map());
+  ownerOf(c: CaseRec) { return this.assignedNow().get(c.authId) ?? c.nurse; }
+  readonly selQ = signal<ReadonlySet<string>>(new Set());
+  readonly assignReq = signal<AssignRequest | null>(null);
+  new0() { return new Set<string>(); }
+  toggleQ(id: string) { const s = new Set(this.selQ()); s.has(id) ? s.delete(id) : s.add(id); this.selQ.set(s); }
+  private shownQueueIds() { return this.displayQueues().filter((q) => !this.isHidden(q.baseName)).map((q) => q.baseName); }
+  allQSelected() { const ids = this.shownQueueIds(); return ids.length > 0 && ids.every((id) => this.selQ().has(id)); }
+  toggleAllQ() { this.selQ.set(this.allQSelected() ? new Set() : new Set(this.shownQueueIds())); }
+  readonly selUnassigned = computed(() => this.displayQueues().filter((q) => this.selQ().has(q.baseName)).reduce((n, q) => n + q.unassigned, 0));
+  /** Everyone who can take WFM work, with live load: RNs from the Workload roster, the rest from their own count. */
+  readonly staffLoads = computed((): StaffLoad[] => {
+    const rns = new Map(this.data.nurses().map((n) => [n.name, n]));
+    return WFM_STAFF.map((s) => {
+      const rn = rns.get(s.name);
+      if (rn) return { ...s, active: rn.active, utilization: rn.utilization, perCase: rn.active > 0 ? rn.utilization / rn.active : 3 };
+      const active = (s.active ?? 0) + (this.staffAdds().get(s.name) ?? 0), cap = s.cap ?? 30;
+      return { ...s, active, utilization: Math.min(100, Math.round((active / cap) * 100)), perCase: 100 / cap };
+    });
+  });
+  /** Open bulk assignment over the unassigned work in these queues, within the current filters. */
+  openAssign(queueIds: string[]) {
+    const ids = new Set(queueIds);
+    const cases = this.wfmCases().filter((c) => ids.has(wfmQueueOf(c)) && this.ownerOf(c) === '—').map((c) => ({
+      authId: c.authId, member: c.member, queueId: wfmQueueOf(c), urgency: urgencyOf(c), state: stateCodeOf(c.authId), ageH: ageH(c.authId),
+      priority: (c.tags.includes('breached') ? 'Breached' : c.tags.includes('atRisk') ? 'At risk' : 'Routine') as 'Breached' | 'At risk' | 'Routine',
+    }));
+    this.assignReq.set({ queues: WFM_QUEUES.filter((q) => ids.has(q.id)), cases });
+  }
+  applyAssign(list: { authId: string; to: string }[]) {
+    if (!list.length) return;
+    const next = new Map(this.assignedNow()), adds = new Map(this.staffAdds());
+    const rns = new Set(this.data.nurses().map((n) => n.name));
+    for (const { authId, to } of list) {
+      next.set(authId, to);
+      if (rns.has(to)) this.data.claimToNurse(null, null, to);
+      else adds.set(to, (adds.get(to) ?? 0) + 1);
+    }
+    this.assignedNow.set(next); this.staffAdds.set(adds);
+    const people = [...new Set(list.map((x) => x.to))];
+    const queues = this.assignReq()?.queues.map((q) => q.name) ?? [];
+    const members = list.map((x) => CASE_POOL.find((c) => c.authId === x.authId)?.member).filter((m): m is string => !!m);
+    this.ix.toast(`${list.length} authorization(s) assigned to ${people.length === 1 ? people[0] : people.length + ' people'}.`);
+    this.data.addHistory('swap', 'Bulk assigned from WFM queue', `${list.length} authorization(s) from ${queues.length === 1 ? queues[0] : queues.length + ' queues'} → ${people.join(', ')}`, undefined,
+      { toStaff: people.length === 1 ? people[0] : undefined, members, refs: list.map((x) => x.authId) });
+    this.assignReq.set(null); this.selQ.set(new Set());
+  }
   readonly queueSort = signal<QueueSort>('volume');
   // ---- WFM assignment filters: BHP is the shell's Plans filter; the rest stack here.
   // AND across filters, OR within one. Specialty and Role narrow which queues show; Urgency and
@@ -359,7 +435,7 @@ export class WorkforceTab {
       const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
       cs.forEach((c) => { bands[bandOf(c.authId, c.tags.includes('breached'))]++; });
       return {
-        name: q.name, baseName: q.id, count: cs.length, unassigned: cs.filter((c) => c.nurse === '—').length, type: q.type, flag: q.flag,
+        name: q.name, baseName: q.id, count: cs.length, unassigned: cs.filter((c) => this.ownerOf(c) === '—').length, type: q.type, flag: q.flag,
         buckets: {
           fresh: Math.round((bands.fresh / total) * 100), day2: Math.round((bands.day2 / total) * 100),
           over48: Math.round((bands.over48 / total) * 100), breach: Math.round((bands.breach / total) * 100),
@@ -546,7 +622,7 @@ export class WorkforceTab {
     const queue = WFM_QUEUES.find((q) => q.id === queueId)?.name ?? queueId;
     const rows = this.wfmCases()
       .filter((c) => wfmQueueOf(c) === queueId && bandOf(c.authId, c.tags.includes('breached')) === band)
-      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), stateCodeOf(c.authId), c.nurse, this.ageLabel(ageH(c.authId))] as (string | number)[]);
+      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), stateCodeOf(c.authId), this.ownerOf(c), this.ageLabel(ageH(c.authId))] as (string | number)[]);
     const period = this.lookback.period();
     const queueLabel = `${queue}${period !== '30d' ? ` · ${this.lookback.label()}` : ''}`;
     this.ix.openExplorer({
