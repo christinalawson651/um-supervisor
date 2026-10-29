@@ -2,11 +2,11 @@ import { Component, Input, computed, effect, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { CASE_POOL } from '../data/case-pool';
 import {
-  WFM_QUEUES, WFM_ROLES, WFM_SPECIALTIES, WFM_STATES, WFM_URGENCIES, WfmQueue, LOBS, TODAY_ISO,
+  WFM_QUEUES, WFM_ROLES, WFM_SPECIALTIES, WfmQueue, LOBS, TODAY_ISO,
   inPlanScope, lobOf, bandOf, ageH, urgencyOf, stateCodeOf,
 } from '../data/case-fields';
 import { NOW, dueLabel, dueTone } from '../data/wfm-work';
-import { BarKey, Item, UNCLAIMED, WfmStore, WorkState } from '../shared/wfm-store';
+import { Item, UNCLAIMED, WfmStore, WorkState } from '../shared/wfm-store';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 import { Interaction } from '../shared/interaction';
@@ -14,28 +14,24 @@ import { Exporter } from '../shared/exporter';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetActions } from '../shared/widget-actions';
 import { WfmAssignPanel, AssignCase, AssignRequest } from './wfm-assign-panel';
-import { WfmWorklist, prioOf } from './wfm-worklist';
+import { WfmWorklist } from './wfm-worklist';
+import { WfmQueueFilter, matchQueueFilter, prioOf, qfCount, qfSummary } from './wfm-queue-filter';
 import { WfmEscalateDialog } from './wfm-escalate-dialog';
 
+type FindList = 'type' | 'setting' | 'product' | 'spec' | 'role';
 interface Card {
   key: string; queue: WfmQueue; lob?: string; name: string;
   auths: number; lines: number; mine: number; slaBreached: number; stepOverdue: number; soonest: number;
   buckets: { fresh: number; day2: number; over48: number; breach: number };
 }
-const BAR_DIMS: { key: BarKey; label: string; values: readonly string[] }[] = [
-  { key: 'spec', label: 'Specialty', values: WFM_SPECIALTIES },
-  { key: 'urg', label: 'Urgency', values: WFM_URGENCIES },
-  { key: 'role', label: 'Role', values: WFM_ROLES },
-  { key: 'state', label: 'State', values: WFM_STATES },
-];
 
-/** The UM queues: saved views, a queue finder, the stacking assignment filters, queue cards and,
- *  once a queue is opened, its worklist. Supervisors assign in bulk; reviewers see only the queues
+/** The UM queues: saved views, a queue finder, queue cards each with its own filters and, once a
+ *  queue is opened, its worklist (which shares the queue's filters). Supervisors assign in bulk; reviewers see only the queues
  *  they may work and claim (cherry-pick) any item for themselves. */
 @Component({
   selector: 'app-wfm-queues',
   standalone: true,
-  imports: [FormsModule, WidgetActions, WfmAssignPanel, WfmWorklist, WfmEscalateDialog],
+  imports: [FormsModule, WidgetActions, WfmAssignPanel, WfmWorklist, WfmEscalateDialog, WfmQueueFilter],
   template: `
     <!-- Saved views -->
     <div class="views">
@@ -72,6 +68,15 @@ const BAR_DIMS: { key: BarKey; label: string; values: readonly string[] }[] = [
           <span class="lab">{{ g.label }}</span>
           @for (v of g.values; track v) { <button class="chip" [class.on]="finderHas(g.key, v)" (click)="toggleFinder(g.key, v)">{{ v }}</button> }
         }
+        @if (findActive()) { <button class="btn outline sm" (click)="clearFind()">Clear</button> }
+      </div>
+      <div class="finder">
+        <span class="lab">Specialty</span>
+        @for (v of specs; track v) { <button class="chip" [class.on]="finderHas('spec', v)" (click)="toggleFinder('spec', v)">{{ v }}</button> }
+        @if (!store.isReviewer()) {
+          <span class="lab">Role</span>
+          @for (v of roles; track v) { <button class="chip" [class.on]="finderHas('role', v)" (click)="toggleFinder('role', v)">{{ v }}</button> }
+        }
         <button class="chip" [class.on]="st().find.pinned" (click)="setFind('pinned', !st().find.pinned)">★ Pinned</button>
         <button class="chip" [class.on]="st().find.breach" (click)="setFind('breach', !st().find.breach)">Has SLA breaches</button>
         <button class="chip" [class.on]="st().find.unclaimed" (click)="setFind('unclaimed', !st().find.unclaimed)">Has unclaimed</button>
@@ -86,16 +91,6 @@ const BAR_DIMS: { key: BarKey; label: string; values: readonly string[] }[] = [
         <span class="count">{{ cards().length }} of {{ store.visibleQueues().length }} queues</span>
       </div>
     }
-
-    <!-- Stacking assignment filters -->
-    <div class="bar">
-      <span class="lab">BHP</span><span class="bhp">{{ lobFilter.summary() }}</span>
-      @for (d of barDims(); track d.key) {
-        <span class="lab">{{ d.label }}</span>
-        @for (v of d.values; track v) { <button class="chip" [class.on]="st().bar[d.key].includes(v)" (click)="toggleBar(d.key, v)">{{ v }}</button> }
-      }
-      @if (barActive()) { <button class="btn outline sm" (click)="store.patch(s => s.bar = { spec: [], urg: [], role: [], state: [] })">Clear</button> }
-    </div>
 
     @if (!openQueue()) {
       @if (store.perms().assignOthers) {
@@ -112,7 +107,7 @@ const BAR_DIMS: { key: BarKey; label: string; values: readonly string[] }[] = [
 
       <div class="qhint">
         @if (store.isReviewer()) { You see the queues your role, specialties and licensed states allow, with unclaimed work and your own. Open a queue and claim any item. }
-        @else { Cards show <b>unclaimed authorizations available to pull next</b>. Bars show how long each has waited; click a band to see those authorizations. Open a queue for its worklist. }
+        @else { Cards show <b>unclaimed authorizations available to pull next</b>, after <b>each queue's own filters</b> (Plans at the top apply to all). Bars show how long each has waited; click a band to see those authorizations. Open a queue for its worklist, which uses the same filters. }
       </div>
 
       <div class="cards">
@@ -138,8 +133,19 @@ const BAR_DIMS: { key: BarKey; label: string; values: readonly string[] }[] = [
               @if (c.slaBreached) { <span class="fl red">{{ c.slaBreached }} past SLA</span> }
               @if (c.stepOverdue) { <span class="fl amber">{{ c.stepOverdue }} past step due</span> }
               @if (c.auths) { <span class="fl" [attr.data-t]="tone(c.soonest)">next SLA {{ due(c.soonest) }}</span> }
-              @if (qfCount(c.queue.id)) { <span class="fl teal">{{ qfCount(c.queue.id) }} saved filter{{ qfCount(c.queue.id) === 1 ? '' : 's' }}</span> }
             </div>
+            <div class="qf">
+              <button class="qfbtn" [class.on]="qfN(c.queue.id)" (click)="filterOpen.set(filterOpen() === c.key ? null : c.key)">
+                ⚲ Filters@if (qfN(c.queue.id)) { · {{ qfN(c.queue.id) }}}</button>
+              @if (qfText(c.queue.id); as t) { <span class="qfsum" [title]="t">{{ t }}</span><button class="qfx" (click)="clearQf(c.queue.id)" title="Clear this queue's filters">×</button> }
+            </div>
+            @if (filterOpen() === c.key) {
+              <div class="qfpop">
+                <app-wfm-queue-filter class="stack" [queueId]="c.queue.id" [items]="queueItems(c.queue.id)" [holder]="false"></app-wfm-queue-filter>
+                <div class="qff"><span>Applies to this queue's card and worklist · saved for {{ store.actor() }}</span>
+                  <button class="btn primary sm" (click)="filterOpen.set(null)">Done</button></div>
+              </div>
+            }
             <div class="seg">
               <span class="s-fresh"  [style.width.%]="c.buckets.fresh"  title="0–24h in queue" (click)="openBucket(c, 'fresh')"></span>
               <span class="s-day2"   [style.width.%]="c.buckets.day2"   title="24–48h in queue" (click)="openBucket(c, 'day2')"></span>
@@ -182,6 +188,13 @@ const BAR_DIMS: { key: BarKey; label: string; values: readonly string[] }[] = [
     .btn.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; }
     .sortsel { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray-500); }
     .count { margin-left:auto; font-size:12px; font-weight:600; color:var(--gray-500); }
+    .qf { display:flex; align-items:center; gap:6px; margin-bottom:8px; min-width:0; }
+    .qfbtn { border:1px solid var(--gray-300); background:#fff; color:var(--gray-500); border-radius:6px; padding:2px 9px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
+    .qfbtn.on { border-color:var(--teal-600); color:var(--teal-700); background:var(--teal-50); }
+    .qfsum { font-size:11px; color:var(--teal-900); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; }
+    .qfx { border:none; background:none; color:var(--gray-500); cursor:pointer; font-size:15px; line-height:1; padding:0; }
+    .qfpop { position:absolute; left:8px; top:96px; z-index:20; width:min(440px, 92vw); background:#fff; border:1px solid var(--teal-600); border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.18); padding:12px; }
+    .qff { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:11px; color:var(--gray-500); } .qff span { flex:1; }
     .bhp { font-size:11.5px; font-weight:600; color:var(--teal-900); background:var(--teal-50); border:1px solid var(--teal-100); border-radius:999px; padding:3px 10px; }
     .bulk { display:flex; align-items:center; gap:12px; margin:0 0 12px; padding:6px 12px; border:1px dashed var(--gray-300); border-radius:8px; font-size:12px; color:var(--gray-500); }
     .bulk.on { position:sticky; top:0; z-index:5; border:1px solid var(--teal-600); background:var(--teal-50); color:var(--teal-900); }
@@ -229,6 +242,9 @@ export class WfmQueues {
     'L2 - PH - IP - Medicare', 'L2 - PH - OP - Medicare', 'L2 - BH - IP - Medicare', 'L2 - BH - OP - Medicare',
     'Corr - PH - OP - Medicare', 'Corr - BH - IP - Medicare',
   ];
+  readonly specs = WFM_SPECIALTIES;
+  readonly roles = WFM_ROLES;
+  readonly filterOpen = signal<string | null>(null);
   readonly finderGroups = [
     { key: 'type' as const, label: 'Type', values: ['General', 'Specialized'] },
     { key: 'setting' as const, label: 'Setting', values: ['IP', 'OP'] },
@@ -257,33 +273,37 @@ export class WfmQueues {
 
   // ---- finder and bar
   setFind<K extends keyof WorkState['find']>(k: K, v: WorkState['find'][K]) { this.store.patch((s) => { s.find[k] = v; }); }
-  finderHas(k: 'type' | 'setting' | 'product', v: string) { return this.st().find[k].includes(v); }
-  toggleFinder(k: 'type' | 'setting' | 'product', v: string) {
+  finderHas(k: FindList, v: string) { return this.st().find[k].includes(v); }
+  readonly findActive = computed(() => { const f = this.st().find; return !!(f.q || f.type.length || f.setting.length || f.product.length || f.spec.length || f.role.length || f.pinned || f.breach || f.unclaimed); });
+  clearFind() { this.store.patch((s) => { s.find = { q: '', type: [], setting: [], product: [], spec: [], role: [], pinned: false, breach: false, unclaimed: false }; }); }
+  toggleFinder(k: FindList, v: string) {
     this.store.patch((s) => { const a = s.find[k]; s.find[k] = a.includes(v) ? a.filter((x) => x !== v) : [...a, v]; });
   }
-  readonly barDims = computed(() => (this.store.isReviewer() ? BAR_DIMS.filter((d) => d.key !== 'role') : BAR_DIMS));
-  readonly barActive = computed(() => Object.values(this.st().bar).some((v) => v.length));
-  toggleBar(k: BarKey, v: string) { this.store.patch((s) => { const a = s.bar[k]; s.bar[k] = a.includes(v) ? a.filter((x) => x !== v) : [...a, v]; }); }
-  qfCount(id: string) { const f = this.st().qf[id]; return f ? Object.values(f).reduce((n, v) => n + (v?.length ?? 0), 0) : 0; }
+  qfN(id: string) { return qfCount(this.st().qf[id]); }
+  qfText(id: string) { return qfSummary(this.st().qf[id]); }
+  clearQf(id: string) { this.store.patch((s) => { delete s.qf[id]; }); }
+  /** All of a queue's work in scope, before its own filters (the filter offers plans from it). */
+  queueItems(id: string) { return this.byQueue().get(id) ?? []; }
+  /** A queue's work after its own filters — what its card counts and assigns. */
+  private filtered(id: string) { const f = this.st().qf[id] ?? {}, me = this.store.actor(); return this.queueItems(id).filter((i) => matchQueueFilter(f, i, me)); }
 
-  /** Open lines in scope: Plans, Dates, Urgency and State, and for a reviewer only unclaimed or
-   *  their own work in the states they are licensed in. */
+  /** Open lines in scope: the shell's Plans and Dates, and for a reviewer only unclaimed or their
+   *  own work in the states they are licensed in. Each queue's own filters apply on top. */
   readonly items = computed((): Item[] => {
-    const plans = this.lobFilter.value(), period = this.lookback.period(), bar = this.st().bar;
+    const plans = this.lobFilter.value(), period = this.lookback.period();
     this.lookback.from(); this.lookback.to();
     const me = this.store.me(), actor = this.store.actor();
     const cases = CASE_POOL.filter((c) => c.phase === 'pending' && inPlanScope(c.authId, plans) && (period === '30d' || this.lookback.includes(c.submitted))
-      && (!bar.state.length || bar.state.includes(stateCodeOf(c.authId))) && (!me || me.states.includes(stateCodeOf(c.authId))));
-    return this.store.items(cases).filter((i) => (!bar.urg.length || bar.urg.includes(i.l.urgency))
-      && (this.store.perms().othersWork || i.holder === UNCLAIMED || i.holder === actor));
+      && (!me || me.states.includes(stateCodeOf(c.authId))));
+    return this.store.items(cases).filter((i) => this.store.perms().othersWork || i.holder === UNCLAIMED || i.holder === actor);
   });
   private queueOk(q: WfmQueue) {
-    const s = this.st(), f = s.find, b = s.bar;
+    const s = this.st(), f = s.find;
     const t = f.q.trim().toLowerCase();
     return (!t || q.name.toLowerCase().includes(t)) && (!f.type.length || f.type.includes(q.type))
       && (!f.setting.length || f.setting.some((x) => q.setting.includes(x))) && (!f.product.length || f.product.some((x) => q.product.includes(x)))
       && (!f.pinned || this.store.pins().includes(q.id))
-      && (!b.spec.length || q.spec.some((x) => b.spec.includes(x))) && (!b.role.length || q.roles.some((x) => b.role.includes(x)));
+      && (!f.spec.length || q.spec.some((x) => f.spec.includes(x))) && (!f.role.length || q.roles.some((x) => f.role.includes(x)));
   }
   readonly byQueue = computed(() => {
     const m = new Map<string, Item[]>();
@@ -313,9 +333,9 @@ export class WfmQueues {
     };
   }
   readonly cards = computed((): Card[] => {
-    const s = this.st(), pins = this.store.pins(), by = this.byQueue();
+    const s = this.st(), pins = this.store.pins();
     let list = this.store.visibleQueues().filter((q) => this.queueOk(q)).flatMap((q) => {
-      const all = by.get(q.id) ?? [];
+      const all = this.filtered(q.id);
       return s.split ? LOBS.map((l) => this.card(q, all, l)).filter((c) => c.auths > 0) : [this.card(q, all)];
     });
     if (s.find.breach) list = list.filter((c) => c.slaBreached > 0);
@@ -353,7 +373,7 @@ export class WfmQueues {
   toggleAllCards() { this.selCards.set(this.allCardsSel() ? new Set() : new Set(this.shownKeys())); }
   readonly selUnclaimed = computed(() => this.cards().filter((c) => this.selCards().has(c.key)).reduce((n, c) => n + c.auths, 0));
   assignCards(keys: string[]) {
-    const items = keys.flatMap((k) => { const { id, lob } = this.parse(k); return (this.byQueue().get(id) ?? []).filter((i) => i.holder === UNCLAIMED && (!lob || lobOf(i.c.authId) === lob)); });
+    const items = keys.flatMap((k) => { const { id, lob } = this.parse(k); return this.filtered(id).filter((i) => i.holder === UNCLAIMED && (!lob || lobOf(i.c.authId) === lob)); });
     this.assignItems(items);
   }
   /** One assign row per authorization: its selected lines move together. */
@@ -399,7 +419,7 @@ export class WfmQueues {
       rows, exportName: `${c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${band}${TODAY_ISO}`, memberColumn: 1,
     });
   }
-  private worklistFor(c: Card) { return (this.byQueue().get(c.queue.id) ?? []).filter((i) => !c.lob || lobOf(i.c.authId) === c.lob); }
+  private worklistFor(c: Card) { return this.filtered(c.queue.id).filter((i) => !c.lob || lobOf(i.c.authId) === c.lob); }
   exportCard(c: Card) {
     this.exporter.open({
       title: c.name, name: `queue-${c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${TODAY_ISO}`, columns: ['Metric', 'Value'],

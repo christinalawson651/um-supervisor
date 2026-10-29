@@ -1,15 +1,14 @@
 import { Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { BHP_BY, BHP_PRODUCTS, WFM_STATES, bhpOf, bhpProductOf, bhpStateOf, stateCodeOf, wfmQueueOf } from '../data/case-fields';
-import { NOW, H, dueLabel, dueTone, fmtDue } from '../data/wfm-work';
-import { Item, QfKey, QueueFilter, UNCLAIMED, WfmStore } from '../shared/wfm-store';
+import { bhpOf, bhpProductOf, stateCodeOf, wfmQueueOf } from '../data/case-fields';
+import { WfmQueueFilter, matchQueueFilter, prioOf, productLabel, qfCount } from './wfm-queue-filter';
+import { NOW, dueLabel, dueTone, fmtDue } from '../data/wfm-work';
+import { Item, QueueFilter, UNCLAIMED, WfmStore } from '../shared/wfm-store';
 import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
 import { TODAY_ISO } from '../data/case-fields';
 
-/** Breached = past the SLA; At risk = step overdue or SLA inside a day; else Routine. */
-export const prioOf = (i: Item) => (i.l.slaDue < NOW ? 'Breached' : i.l.stepDue < NOW || i.l.slaDue - NOW < 24 * H ? 'At risk' : 'Routine');
-const productLabel = (id: string) => `${bhpStateOf(id) === 'Arizona' ? 'AZ' : 'FL'} · ${BHP_BY[id].name}`;
+export { prioOf };
 const stepOf = (i: Item) => (i.queue !== wfmQueueOf(i.c) ? 'MD Review' : i.c.status);
 
 interface AuthRow { authId: string; items: Item[]; first: Item; slaDue: number; stepDue: number; holder: string; prio: string; }
@@ -21,7 +20,7 @@ type SortKey = 'sla' | 'step' | 'age' | 'member';
 @Component({
   selector: 'app-wfm-worklist',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, WfmQueueFilter],
   template: `
     <div class="wl">
       <div class="wl-head">
@@ -43,15 +42,7 @@ type SortKey = 'sla' | 'step' | 'age' | 'member';
         <label class="tog"><input type="checkbox" [ngModel]="byAuth()" (ngModelChange)="byAuth.set($event)" /> Group lines by authorization</label>
         @if (fCount()) { <button class="btn outline sm" (click)="clearF()">Clear filters ({{ fCount() }})</button> }
       </div>
-      <div class="wl-filters">
-        @for (d of dims(); track d.key) {
-          <div class="fg"><span class="fl">{{ d.label }}</span>
-            @for (o of d.options; track o.id) {
-              <button class="chip" [class.on]="has(d.key, o.id)" (click)="toggleF(d.key, o.id)">{{ o.label }}</button>
-            }
-          </div>
-        }
-      </div>
+      <app-wfm-queue-filter class="wl-filters" [queueId]="queueId" [items]="allItems()"></app-wfm-queue-filter>
 
       <div class="bulk" [class.on]="sel().size">
         <label class="selall"><input type="checkbox" [checked]="allSel()" (change)="toggleAll()" />
@@ -135,11 +126,7 @@ type SortKey = 'sla' | 'step' | 'age' | 'member';
     .search { border:1px solid var(--gray-300); border-radius:8px; padding:7px 12px; font-size:12.5px; width:280px; outline:none; } .search:focus { border-color:var(--teal-600); }
     .sortsel { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray-500); } .sortsel select { border:1px solid var(--gray-300); border-radius:8px; padding:6px 8px; font-size:12px; }
     .tog { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-soft); cursor:pointer; }
-    .wl-filters { display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px; }
-    .fg { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
-    .fl { font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-500); font-weight:700; margin-right:2px; }
-    .chip { border:1px solid var(--gray-300); background:#fff; border-radius:999px; padding:2px 9px; font-size:11.5px; color:var(--gray-500); cursor:pointer; }
-    .chip.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; font-weight:600; }
+    .wl-filters { margin-bottom:10px; }
     .bulk { position:sticky; top:0; z-index:4; display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px dashed var(--gray-300); border-radius:8px; margin-bottom:8px; font-size:12px; color:var(--gray-500); background:#fff; flex-wrap:wrap; }
     .bulk.on { border:1px solid var(--teal-600); background:var(--teal-50); color:var(--teal-900); }
     .selall { display:flex; align-items:center; gap:8px; cursor:pointer; } .spacer { flex:1; }
@@ -171,8 +158,8 @@ export class WfmWorklist {
 
   @Input({ required: true }) queueId!: string;
   @Input() title = '';
-  private readonly itemsSig = signal<Item[]>([]);
-  @Input() set items(v: Item[]) { this.itemsSig.set(v); }
+  readonly allItems = signal<Item[]>([]);
+  @Input() set items(v: Item[]) { this.allItems.set(v); }
   @Output() readonly back = new EventEmitter<void>();
   @Output() readonly assign = new EventEmitter<Item[]>();
   @Output() readonly escalate = new EventEmitter<Item[]>();
@@ -184,46 +171,18 @@ export class WfmWorklist {
   none() { return new Set<string>(); }
 
   // ---- filters, saved per queue in the user's current view
-  readonly dims = computed(() => {
-    const plans = [...new Set(this.itemsSig().map((i) => bhpProductOf(bhpOf(i.c.authId))))];
-    const holder = this.store.isReviewer() ? ['Unclaimed', 'Mine'] : ['Unclaimed', 'Assigned', 'Mine'];
-    const o = (xs: string[]) => xs.map((x) => ({ id: x, label: x }));
-    return [
-      { key: 'holder' as QfKey, label: 'Holder', options: o(holder) },
-      { key: 'due' as QfKey, label: 'Due', options: o(['SLA breached', 'SLA < 24h', 'Step overdue']) },
-      { key: 'urg' as QfKey, label: 'Urgency', options: o(['Expedited', 'Standard']) },
-      { key: 'prio' as QfKey, label: 'Priority', options: o(['Breached', 'At risk', 'Routine']) },
-      { key: 'state' as QfKey, label: 'State', options: o(WFM_STATES) },
-      { key: 'plan' as QfKey, label: 'Plan', options: BHP_PRODUCTS.filter((p) => plans.includes(p.id)).map((p) => ({ id: p.id, label: productLabel(p.id) })) },
-    ];
-  });
   private readonly f = computed<QueueFilter>(() => this.store.state().qf[this.queueId] ?? {});
   readonly sort = computed(() => (this.store.state().qsort[this.queueId] ?? 'sla') as SortKey);
-  readonly fCount = computed(() => Object.values(this.f()).reduce((n, v) => n + (v?.length ?? 0), 0));
-  has(k: QfKey, v: string) { return !!this.f()[k]?.includes(v); }
-  toggleF(k: QfKey, v: string) {
-    this.store.patch((s) => {
-      const cur = s.qf[this.queueId] ?? {}, vals = cur[k] ?? [];
-      cur[k] = vals.includes(v) ? vals.filter((x) => x !== v) : [...vals, v];
-      if (!cur[k]!.length) delete cur[k];
-      if (Object.keys(cur).length) s.qf[this.queueId] = cur; else delete s.qf[this.queueId];
-    });
-    this.sel.set(new Set());
-  }
+  readonly fCount = computed(() => qfCount(this.f()));
   clearF() { this.store.patch((s) => { delete s.qf[this.queueId]; }); }
   setSort(v: string) { this.store.patch((s) => { s.qsort[this.queueId] = v; }); }
 
   private match(i: Item): boolean {
-    const f = this.f(), me = this.store.actor();
-    const any = (k: QfKey, ok: (v: string) => boolean) => !f[k]?.length || f[k]!.some(ok);
     const text = this.q().trim().toLowerCase();
-    return any('holder', (v) => v === 'Unclaimed' ? i.holder === UNCLAIMED : v === 'Mine' ? i.holder === me : i.holder !== UNCLAIMED)
-      && any('due', (v) => v === 'SLA breached' ? i.l.slaDue < NOW : v === 'SLA < 24h' ? i.l.slaDue >= NOW && i.l.slaDue - NOW < 24 * H : i.l.stepDue < NOW)
-      && any('urg', (v) => v === i.l.urgency) && any('prio', (v) => v === prioOf(i)) && any('state', (v) => v === stateCodeOf(i.c.authId))
-      && any('plan', (v) => v === bhpProductOf(bhpOf(i.c.authId)))
+    return matchQueueFilter(this.f(), i, this.store.actor())
       && (!text || [i.c.authId, i.c.member, i.c.provider, i.l.service].some((x) => x.toLowerCase().includes(text)));
   }
-  readonly visibleItems = computed(() => this.itemsSig().filter((i) => this.match(i)));
+  readonly visibleItems = computed(() => this.allItems().filter((i) => this.match(i)));
   readonly unclaimedCount = computed(() => this.visibleItems().filter((i) => i.holder === UNCLAIMED).length);
   private cmp(a: { slaDue: number; stepDue: number; age: number; member: string }, b: typeof a) {
     switch (this.sort()) {

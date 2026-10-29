@@ -22,10 +22,10 @@ export const WFM_PERMS: Record<'Supervisor' | WfmRole, WfmPerms> = {
 /** A queue worklist's own filters. */
 export type QfKey = 'plan' | 'urg' | 'state' | 'prio' | 'holder' | 'due';
 export type QueueFilter = Partial<Record<QfKey, string[]>>;
-export type BarKey = 'spec' | 'urg' | 'role' | 'state';
 export interface WorkState {
-  find: { q: string; type: string[]; setting: string[]; product: string[]; pinned: boolean; breach: boolean; unclaimed: boolean };
-  bar: Record<BarKey, string[]>;
+  /** Finding queues: by name, what the queue is (type, setting, product, specialty, role) and flags. */
+  find: { q: string; type: string[]; setting: string[]; product: string[]; spec: string[]; role: string[]; pinned: boolean; breach: boolean; unclaimed: boolean };
+  /** Each queue's own filters, by queue id. */
   qf: Record<string, QueueFilter>;
   qsort: Record<string, string>;
   split: boolean;
@@ -33,10 +33,15 @@ export interface WorkState {
 }
 export interface SavedView { name: string; state: WorkState; }
 const EMPTY: WorkState = {
-  find: { q: '', type: [], setting: [], product: [], pinned: false, breach: false, unclaimed: false },
-  bar: { spec: [], urg: [], role: [], state: [] }, qf: {}, qsort: {}, split: false, cardSort: 'volume',
+  find: { q: '', type: [], setting: [], product: [], spec: [], role: [], pinned: false, breach: false, unclaimed: false },
+  qf: {}, qsort: {}, split: false, cardSort: 'volume',
 };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+/** A saved state over the defaults, so views saved before a field existed still load. */
+const withDefaults = (x?: Partial<WorkState>): WorkState => {
+  const e = clone(EMPTY), v = clone(x ?? {});
+  return { ...e, ...v, find: { ...e.find, ...(v.find ?? {}) }, qf: v.qf ?? {}, qsort: v.qsort ?? {} };
+};
 
 /** One open line of work, with the session's changes applied. */
 export interface Item { c: CaseRec; l: WorkLine; key: string; queue: string; holder: string; }
@@ -206,7 +211,7 @@ export class WfmStore {
         this.defaultView.set(saved.defaultView ?? null);
         this.pins.set(saved.pins ?? []);
         const def = saved.views?.find((v) => v.name === saved.defaultView);
-        this.state.set({ ...clone(EMPTY), ...clone(def?.state ?? saved.state ?? EMPTY) });
+        this.state.set(withDefaults(def?.state ?? saved.state));
         this.activeView.set(def?.name ?? null);
       });
     });
@@ -225,7 +230,7 @@ export class WfmStore {
   }
   applyView(name: string) {
     const v = this.views().find((x) => x.name === name);
-    if (v) { this.state.set({ ...clone(EMPTY), ...clone(v.state) }); this.activeView.set(name); }
+    if (v) { this.state.set(withDefaults(v.state)); this.activeView.set(name); }
   }
   deleteView(name: string) {
     this.views.set(this.views().filter((x) => x.name !== name));
