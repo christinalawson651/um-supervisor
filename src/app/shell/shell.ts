@@ -116,6 +116,8 @@ export class Shell {
   readonly visibleTabs = computed(() => MODULES.filter((m) => this.nav.visibleModules().includes(m.id)));
   readonly alerts = inject(Alerts);
   readonly selected = signal('workforce');
+  /** Reviewer roles work their queues only; the supervisor analytics tabs are not theirs. */
+  readonly shownTabs = computed(() => (this.nav.role().wfmUser ? [{ key: 'workforce', label: 'My Queues' }] : TAB_DEFS));
 
   constructor() {
     // An alert targeting a UM tab lands here — the shell owns UM's tab state, so it is the only
@@ -181,6 +183,8 @@ export class Shell {
     if (item.active) return;
     this.ix.toast(`${item.label} module isn't part of this demo build.`, 'info');
   }
+
+  private readonly reviewerTab = effect(() => { if (this.nav.role().wfmUser) this.selected.set('workforce'); });
 
   roleMenu() {
     this.ix.choose({

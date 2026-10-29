@@ -1,8 +1,10 @@
 import { Component, computed, effect, EventEmitter, Input, Output, signal, untracked } from '@angular/core';
 import { WfmQueue, WfmStaff, wfmEligible } from '../data/case-fields';
+import { dueLabel, dueTone } from '../data/wfm-work';
 
-/** One unassigned case offered for bulk assignment. */
-export interface AssignCase { authId: string; member: string; queueId: string; urgency: string; state: string; ageH: number; priority: 'Breached' | 'At risk' | 'Routine'; }
+/** One row offered for bulk assignment: a whole authorization (its open lines go together) or a
+ *  single line when the supervisor splits one out. authId is the row id; label is what shows. */
+export interface AssignCase { label?: string; lines?: number; slaDue?: number; authId: string; member: string; queueId: string; urgency: string; state: string; ageH: number; priority: 'Breached' | 'At risk' | 'Routine'; }
 /** A staff member with their current load, so the split can favour whoever has room. */
 export interface StaffLoad extends WfmStaff { active: number; utilization: number; perCase: number; }
 export interface AssignRequest { queues: WfmQueue[]; cases: AssignCase[]; }
@@ -34,7 +36,7 @@ type Pick = 'all' | 'breach' | 'risk' | 'exp';
           <div class="body">
             <div class="col">
               <div class="col-head">
-                <span class="ct">Unclaimed <span class="cn">{{ selected().size }}/{{ shown().length }}</span></span>
+                <span class="ct">Work <span class="cn">{{ selected().size }}/{{ shown().length }}</span></span>
                 <div class="take">
                   <span class="tl">Take</span>
                   @for (n of takes; track n) { <button class="tk" (click)="take(n)">{{ n === 0 ? 'All' : 'Top ' + n }}</button> }
@@ -50,11 +52,11 @@ type Pick = 'all' | 'breach' | 'risk' | 'exp';
                 @for (c of shown(); track c.authId) {
                   <label class="ci" [class.sel]="selected().has(c.authId)">
                     <input type="checkbox" [checked]="selected().has(c.authId)" (change)="toggle(c.authId)" />
-                    <span class="cid">{{ c.authId }}</span>
+                    <span class="cid">{{ c.label ?? c.authId }}</span>@if (c.lines && c.lines > 1) { <span class="cq">{{ c.lines }} lines</span> }
                     <span class="cmem">{{ c.member }}</span>
                     @if (r.queues.length > 1) { <span class="cq">{{ c.queueId }}</span> }
                     <span class="pr" [attr.data-p]="c.priority">{{ c.priority }}</span>
-                    <span class="cm">{{ c.urgency === 'Expedited' ? 'Exp' : 'Std' }} · {{ c.state }} · {{ age(c.ageH) }}</span>
+                    <span class="cm">{{ c.urgency === 'Expedited' ? 'Exp' : 'Std' }} · {{ c.state }}</span>@if (c.slaDue) { <span class="sla" [attr.data-t]="dtone(c.slaDue)">SLA {{ due(c.slaDue) }}</span> }
                     @if (plan().to.get(c.authId); as who) { <span class="to">→ {{ short(who) }}</span> }
                     @else if (selected().has(c.authId)) { <span class="to none">no eligible staff</span> }
                   </label>
@@ -130,6 +132,7 @@ type Pick = 'all' | 'breach' | 'risk' | 'exp';
     .cq { font-size:10.5px; color:var(--gray-500); } .cm { font-size:11px; color:var(--gray-500); }
     .pr { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:1px 5px; border-radius:3px; background:var(--gray-100); color:var(--gray-500); }
     .pr[data-p="Breached"] { background:var(--red-bg, #fde8e8); color:var(--red, #c81e1e); } .pr[data-p="At risk"] { background:var(--amber-bg); color:var(--amber-fg); }
+    .sla { font-size:10.5px; font-weight:700; } .sla[data-t="red"] { color:var(--red,#c81e1e); } .sla[data-t="amber"] { color:var(--amber-fg); } .sla[data-t="green"] { color:var(--green-fg,#1e7b3a); }
     .to { font-size:11px; font-weight:700; color:var(--teal-700); min-width:92px; text-align:right; } .to.none { color:var(--amber-fg); font-weight:600; }
     .hint { font-size:11px; color:var(--gray-500); margin-bottom:8px; }
     .slist { display:flex; flex-direction:column; }
@@ -165,7 +168,7 @@ export class WfmAssignPanel {
   readonly chosen = signal<ReadonlySet<string>>(new Set());
 
   /** Most urgent first, then oldest. */
-  readonly sorted = computed(() => [...(this.reqSig()?.cases ?? [])].sort((a, b) => RANK[a.priority] - RANK[b.priority] || b.ageH - a.ageH));
+  readonly sorted = computed(() => [...(this.reqSig()?.cases ?? [])].sort((a, b) => RANK[a.priority] - RANK[b.priority] || (a.slaDue ?? 0) - (b.slaDue ?? 0) || b.ageH - a.ageH));
   readonly shown = computed(() => this.sorted().filter((c) => this.matches(c, this.pick())));
   readonly eligible = computed(() => {
     const qs = this.reqSig()?.queues ?? [];
@@ -218,6 +221,8 @@ export class WfmAssignPanel {
   projected(s: StaffLoad, n: number) { return Math.min(100, Math.round(s.utilization + n * s.perCase)); }
   tone(u: number) { return u >= 90 ? 'red' : u >= 75 ? 'amber' : 'green'; }
   short(name: string) { return name.replace(/,.*$/, ''); }
+  due(at: number) { return dueLabel(at); }
+  dtone(at: number) { return dueTone(at); }
   age(h: number) { return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`; }
   apply() { this.assign.emit([...this.plan().to].map(([authId, to]) => ({ authId, to }))); }
 }

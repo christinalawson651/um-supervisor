@@ -3,7 +3,9 @@ import { Injectable, computed, signal } from '@angular/core';
 export type ModuleId = 'overview' | 'um' | 'cm' | 'appeals' | 'reports' | 'audit';
 export type BizModule = 'um' | 'cm' | 'appeals';
 
-export interface Role { id: string; label: string; modules: BizModule[]; }
+/** wfmUser: a reviewer role that acts as one person on the WFM staff roster. It sees only the queues
+ *  that person may work and only their own or unclaimed work, and can claim work for themselves. */
+export interface Role { id: string; label: string; modules: BizModule[]; wfmUser?: string; }
 
 export const ROLES: Role[] = [
   { id: 'exec',        label: 'Executive / Ops Leader', modules: ['um', 'cm', 'appeals'] },
@@ -13,6 +15,9 @@ export const ROLES: Role[] = [
   { id: 'um_cm',       label: 'UM + CM Lead',           modules: ['um', 'cm'] },
   { id: 'um_appeals',  label: 'UM + Appeals Lead',      modules: ['um', 'appeals'] },
   { id: 'cm_appeals',  label: 'CM + Appeals Lead',      modules: ['cm', 'appeals'] },
+  { id: 'um_l1',       label: 'UM L1 Nurse Reviewer',   modules: ['um'], wfmUser: 'Maria Gonzalez, RN' },
+  { id: 'um_l2',       label: 'UM L2 Physician Reviewer', modules: ['um'], wfmUser: 'Dr. Alan Reyes, MD' },
+  { id: 'um_corr',     label: 'UM Correspondence',      modules: ['um'], wfmUser: 'Tanya Brooks' },
 ];
 
 @Injectable({ providedIn: 'root' })

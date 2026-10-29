@@ -35,7 +35,7 @@
         <z-icon name="chevron" [size]="14"></z-icon></button>
       <div class="user">
         <span class="avatar">CL</span>
-        <span class="uinfo"><b>Christina Lawson</b><small>{{ nav.role().label }}</small></span>
+        <span class="uinfo"><b>{{ nav.role().wfmUser ?? 'Christina Lawson' }}</b><small>{{ nav.role().label }}</small></span>
       </div>
     </div>
 
@@ -53,7 +53,7 @@
       <div class="dash-title">
         <span class="dash-shield"><z-icon name="shield" [size]="20"></z-icon></span>
         <div>
-          <h1>{{ headings[nav.module()].title }}</h1>
+          <h1>{{ nav.role().wfmUser && nav.module() === 'um' ? 'UM Reviewer Workspace' : headings[nav.module()].title }}</h1>
         </div>
       </div>
       <div class="dash-date">{{ data.today }}</div>
@@ -87,7 +87,7 @@
             {{ kpiCollapsed() ? 'Show KPIs' : 'Hide KPIs' }}
           </button>
         </div>
-        @if (!kpiCollapsed()) {
+        @if (!kpiCollapsed() && !nav.role().wfmUser) {
           <div class="kpi-strip">
             @for (k of displayKpis(); track k.label; let i = $index) {
               <div class="kpi clickable" [attr.data-tone]="k.tone" (click)="drill(kpiKeys[i])">
@@ -104,7 +104,7 @@
         <!-- Tab bar -->
         <div class="tabbar-row">
           <nav class="tabbar" #tabbar>
-            @for (t of tabs; track t.key) {
+            @for (t of shownTabs(); track t.key) {
               <button class="tab" [class.active]="selected() === t.key" (click)="select(t.key)">{{ t.label }}</button>
             }
           </nav>
