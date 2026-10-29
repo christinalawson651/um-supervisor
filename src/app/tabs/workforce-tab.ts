@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DashboardData } from '../data/dashboard-data';
 import { Interaction } from '../shared/interaction';
@@ -9,7 +9,7 @@ import { NurseRow, QueueCard } from '../data/dashboard.models';
 import { CASE_POOL, CaseRec } from '../data/case-pool';
 import { Members } from '../shared/members';
 import { HistoryRefs } from '../shared/history-refs';
-import { urgencyOf, lobOf, inPlanScope, inWindow, ageH, bandOf, daysAgo, TODAY_ISO, WFM_QUEUES, WfmQueue, WFM_SPECIALTIES, WFM_URGENCIES, WFM_ROLES, WFM_STATES, wfmQueueOf, stateCodeOf, WFM_STAFF } from '../data/case-fields';
+import { urgencyOf, lobOf, inPlanScope, inWindow, ageH, bandOf, daysAgo, TODAY_ISO, WFM_QUEUES, WfmQueue, WFM_SPECIALTIES, WFM_URGENCIES, WFM_ROLES, WFM_STATES, wfmQueueOf, stateCodeOf, WFM_STAFF, LOBS, BHP_PRODUCTS, bhpOf, bhpProductOf, bhpStateOf } from '../data/case-fields';
 import { WfmAssignPanel, AssignRequest, StaffLoad } from './wfm-assign-panel';
 import { COLUMNS, toRow } from '../shared/metrics';
 import { LobFilter } from '../shared/lob-filter';
@@ -21,7 +21,22 @@ import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetCustomize } from '../shared/widget-customize';
 import { Pto } from '../shared/pto';
 
-interface DisplayQueue extends QueueCard { baseName: string; unassigned: number; type: string; flag?: string; }
+interface DisplayQueue extends QueueCard { key: string; baseName: string; lob?: string; type: string; flag?: string; qfCount: number; qfSummary: string; }
+/** A queue's own filters, saved per user: plan products, urgency, state, priority. */
+type QfKey = 'plan' | 'urg' | 'state' | 'prio';
+type QueueFilter = Partial<Record<QfKey, string[]>>;
+// The signed-in supervisor (the shell shows the same name). Saved Workforce filters are kept per user.
+const CURRENT_USER = 'Christina Lawson';
+const WF_SAVE_KEY = `zyter-um-wfm-filters-v1:${CURRENT_USER}`;
+interface WfSaved { bar?: Partial<Record<string, string[]>>; queues?: Record<string, QueueFilter>; split?: boolean; }
+function loadWfSaved(): WfSaved { try { return JSON.parse(localStorage.getItem(WF_SAVE_KEY) ?? '{}') as WfSaved; } catch { return {}; } }
+const priorityOf = (c: CaseRec) => (c.tags.includes('breached') ? 'Breached' : c.tags.includes('atRisk') ? 'At risk' : 'Routine');
+const QF_DIMS: { key: QfKey; label: string; options: { id: string; label: string }[] }[] = [
+  { key: 'plan', label: 'Plan', options: BHP_PRODUCTS.map((p) => ({ id: p.id, label: `${bhpStateOf(p.id) === 'Arizona' ? 'AZ' : 'FL'} · ${p.name}` })) },
+  { key: 'urg', label: 'Urgency', options: WFM_URGENCIES.map((v) => ({ id: v, label: v })) },
+  { key: 'state', label: 'State', options: WFM_STATES.map((v) => ({ id: v, label: v })) },
+  { key: 'prio', label: 'Priority', options: ['Breached', 'At risk', 'Routine'].map((v) => ({ id: v, label: v })) },
+];
 type WfDim = 'spec' | 'urg' | 'role' | 'state';
 type QueueSort = 'volume' | 'breach' | 'name';
 
@@ -48,6 +63,8 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
     <z-widget-customize [vis]="vis"></z-widget-customize>
 
 
+    <div class="qhint">Cards show <b>unclaimed authorizations available to pull next</b> — work already claimed by a nurse shows in Workload below. Bars show how long each has been waiting. Click a band to see those authorizations. <b>Breach</b> = past the SLA deadline.</div>
+
     <div class="qtoolbar">
       <input class="search" type="text" placeholder="Search queues…" [ngModel]="queueSearch()" (ngModelChange)="queueSearch.set($event)" />
       <label class="sortsel">
@@ -58,6 +75,9 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
           <option value="name">Name A–Z</option>
         </select>
       </label>
+      <button class="btn outline sm" [class.on]="splitByLob()" (click)="splitByLob.set(!splitByLob())">
+        {{ splitByLob() ? 'Split by LOB ✓' : 'Split by LOB' }}
+      </button>
       <span class="qtotal">{{ displayQueues().length }} queue{{ displayQueues().length === 1 ? '' : 's' }}</span>
     </div>
 
@@ -72,13 +92,14 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
         </div>
       }
       @if (wfActive()) { <button class="btn outline sm" (click)="clearWf()">Clear filters</button> }
+      <span class="wf-saved" title="These filters and each queue's own filters are saved for you">✓ Saved for {{ user }}</span>
     </div>
 
     <div class="bulkbar" [class.on]="selQ().size">
       <label class="selall"><input type="checkbox" [checked]="allQSelected()" (change)="toggleAllQ()" />
         {{ selQ().size ? selQ().size + ' queue' + (selQ().size === 1 ? '' : 's') + ' selected' : 'Select queues to assign in bulk' }}</label>
       @if (selQ().size) {
-        <span class="bb-n"><b>{{ selUnassigned() }}</b> unassigned in scope</span>
+        <span class="bb-n"><b>{{ selUnassigned() }}</b> unclaimed in scope</span>
         <span class="spacer"></span>
         <button class="btn outline sm" (click)="selQ.set(new0())">Clear</button>
         <button class="btn primary sm" [disabled]="!selUnassigned()" (click)="openAssign([...selQ()])">Assign {{ selUnassigned() }}…</button>
@@ -86,29 +107,49 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
     </div>
 
     <div class="queues">
-      @for (q of displayQueues(); track q.baseName) {
+      @for (q of displayQueues(); track q.key) {
         @if (!isHidden(q.baseName)) {
-        <div class="qcard" [class.picked]="selQ().has(q.baseName)">
+        <div class="qcard" [class.picked]="selQ().has(q.key)" [class.fopen]="filterOpen() === q.key">
           <z-widget-actions (exportClick)="exportQueue(q)" (removeClick)="hide(q.baseName)"></z-widget-actions>
           <div class="qtop">
-            <input class="qpick" type="checkbox" [checked]="selQ().has(q.baseName)" (change)="toggleQ(q.baseName)" [attr.aria-label]="'Select ' + q.name" />
+            <input class="qpick" type="checkbox" [checked]="selQ().has(q.key)" (change)="toggleQ(q.key)" [attr.aria-label]="'Select ' + q.name" />
             <span class="qname">{{ q.name }}</span>
             <span class="qcount">{{ q.count }}</span>
           </div>
-          <div class="qmeta">{{ q.unassigned }} unassigned · {{ q.type }}@if (q.flag) { · <span class="qflag">{{ q.flag }}</span> }
-            @if (q.unassigned) { <button class="qassign" (click)="openAssign([q.baseName])">Assign</button> }</div>
+          <div class="qmeta">{{ q.type }}@if (q.flag) { · <span class="qflag">{{ q.flag }}</span> }
+            <button class="qfbtn" [class.on]="q.qfCount" (click)="filterOpen.set(filterOpen() === q.key ? null : q.key)">Filters@if (q.qfCount) { · {{ q.qfCount }}}</button>
+          </div>
+          @if (q.qfSummary) {
+            <div class="qfsum" [title]="q.qfSummary">{{ q.qfSummary }}<button (click)="clearQf(q.baseName)" title="Clear this queue's filters">×</button></div>
+          }
+          @if (filterOpen() === q.key) {
+            <div class="qfpop">
+              @for (d of qfDims; track d.key) {
+                <div class="qf-lab">{{ d.label }}</div>
+                <div class="wf-chips">
+                  @for (o of d.options; track o.id) {
+                    <button class="wf-chip" [class.on]="qfHas(q.baseName, d.key, o.id)" (click)="toggleQf(q.baseName, d.key, o.id)">{{ o.label }}</button>
+                  }
+                </div>
+              }
+              <div class="qf-foot"><span>Saved for {{ user }}</span>
+                <button class="btn outline sm" (click)="clearQf(q.baseName)">Clear</button>
+                <button class="btn primary sm" (click)="filterOpen.set(null)">Done</button></div>
+            </div>
+          }
           <div class="seg">
-            <span class="s-fresh"  [style.width.%]="q.buckets.fresh"  title="0–24h in queue" (click)="openBucket(q.baseName, 'fresh')"></span>
-            <span class="s-day2"   [style.width.%]="q.buckets.day2"   title="24–48h in queue" (click)="openBucket(q.baseName, 'day2')"></span>
-            <span class="s-over48" [style.width.%]="q.buckets.over48" title="Over 48h in queue" (click)="openBucket(q.baseName, 'over48')"></span>
-            <span class="s-breach" [style.width.%]="q.buckets.breach" title="Past SLA deadline" (click)="openBucket(q.baseName, 'breach')"></span>
+            <span class="s-fresh"  [style.width.%]="q.buckets.fresh"  title="0–24h in queue" (click)="openBucket(q.baseName, 'fresh', q.lob)"></span>
+            <span class="s-day2"   [style.width.%]="q.buckets.day2"   title="24–48h in queue" (click)="openBucket(q.baseName, 'day2', q.lob)"></span>
+            <span class="s-over48" [style.width.%]="q.buckets.over48" title="Over 48h in queue" (click)="openBucket(q.baseName, 'over48', q.lob)"></span>
+            <span class="s-breach" [style.width.%]="q.buckets.breach" title="Past SLA deadline" (click)="openBucket(q.baseName, 'breach', q.lob)"></span>
           </div>
           <div class="legend">
-            <span (click)="openBucket(q.baseName, 'fresh')"><i class="d-fresh"></i>0-24h</span>
-            <span (click)="openBucket(q.baseName, 'day2')"><i class="d-day2"></i>24-48h</span>
-            <span (click)="openBucket(q.baseName, 'over48')"><i class="d-over48"></i>&gt;48h</span>
-            <span (click)="openBucket(q.baseName, 'breach')"><i class="d-breach"></i>Breach</span>
+            <span (click)="openBucket(q.baseName, 'fresh', q.lob)"><i class="d-fresh"></i>0-24h</span>
+            <span (click)="openBucket(q.baseName, 'day2', q.lob)"><i class="d-day2"></i>24-48h</span>
+            <span (click)="openBucket(q.baseName, 'over48', q.lob)"><i class="d-over48"></i>&gt;48h</span>
+            <span (click)="openBucket(q.baseName, 'breach', q.lob)"><i class="d-breach"></i>Breach</span>
           </div>
+          <button class="qassign" [disabled]="!q.count" (click)="openAssign([q.key])">Assign {{ q.count || '' }}</button>
         </div>
         }
       } @empty {
@@ -234,8 +275,20 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
     .wf-chip { border:1px solid var(--gray-300); background:#fff; border-radius:999px; padding:3px 10px; font-size:11.5px; color:var(--gray-500); cursor:pointer; }
     .wf-chip.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; font-weight:600; }
     .qmeta { font-size:11.5px; color:var(--gray-500); margin:-6px 0 10px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
-    .qassign { margin-left:auto; border:1px solid var(--teal-600); background:#fff; color:var(--teal-700); border-radius:6px; padding:2px 10px; font-size:11px; font-weight:700; cursor:pointer; }
-    .qassign:hover { background:var(--teal-700); color:#fff; }
+    .qhint { font-size: 12px; color: var(--gray-500); margin-bottom: 12px; } .qhint b { color: var(--ink-soft); }
+    .wf-saved { margin-left:auto; font-size:11px; color:var(--teal-700); font-weight:600; }
+    .qcard { display:flex; flex-direction:column; }
+    .qcard.fopen { z-index:6; }
+    .qassign { margin-top:12px; width:100%; border:none; background:var(--teal-700); color:#fff; border-radius:8px; padding:7px 10px; font-size:12.5px; font-weight:700; cursor:pointer; }
+    .qassign:hover { background:var(--teal-900); }
+    .qassign[disabled] { background:var(--gray-200); color:var(--gray-500); cursor:default; }
+    .qfbtn { margin-left:auto; border:1px solid var(--gray-300); background:#fff; color:var(--gray-500); border-radius:6px; padding:1px 8px; font-size:11px; font-weight:600; cursor:pointer; }
+    .qfbtn.on { border-color:var(--teal-600); color:var(--teal-700); background:var(--teal-50); }
+    .qfsum { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--teal-900); background:var(--teal-50); border-radius:6px; padding:2px 4px 2px 8px; margin:-4px 0 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .qfsum button { margin-left:auto; border:none; background:none; color:var(--gray-500); cursor:pointer; font-size:14px; line-height:1; }
+    .qfpop { position:absolute; left:8px; right:-90px; top:58px; z-index:20; background:#fff; border:1px solid var(--teal-600); border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.18); padding:10px 12px; }
+    .qf-lab { font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-500); font-weight:700; margin:6px 0 4px; }
+    .qf-foot { display:flex; align-items:center; gap:6px; margin-top:10px; font-size:11px; color:var(--gray-500); } .qf-foot span { margin-right:auto; }
     .qpick { margin:0 6px 0 0; accent-color:var(--teal-700); cursor:pointer; }
     .qcard.picked { border-color:var(--teal-600); box-shadow:0 0 0 2px var(--teal-100); }
     .bulkbar { display:flex; align-items:center; gap:12px; margin:-6px 0 12px; padding:6px 12px; border:1px dashed var(--gray-300); border-radius:8px; font-size:12px; color:var(--gray-500); }
@@ -306,7 +359,7 @@ export class WorkforceTab {
     this.exporter.open({
       title: q.name, name: `queue-${q.name.toLowerCase().replace(/[^a-z]+/g, '-')}${TODAY_ISO}`,
       columns: ['Metric', 'Value'],
-      rows: [['In queue', q.count], ['Unassigned', q.unassigned], ['0-24h %', q.buckets.fresh], ['24-48h %', q.buckets.day2], ['>48h %', q.buckets.over48], ['Breach %', q.buckets.breach]],
+      rows: [['Unclaimed', q.count], ['0-24h %', q.buckets.fresh], ['24-48h %', q.buckets.day2], ['>48h %', q.buckets.over48], ['Breach %', q.buckets.breach]],
     });
   }
   exportWorkload() {
@@ -340,10 +393,10 @@ export class WorkforceTab {
   readonly assignReq = signal<AssignRequest | null>(null);
   new0() { return new Set<string>(); }
   toggleQ(id: string) { const s = new Set(this.selQ()); s.has(id) ? s.delete(id) : s.add(id); this.selQ.set(s); }
-  private shownQueueIds() { return this.displayQueues().filter((q) => !this.isHidden(q.baseName)).map((q) => q.baseName); }
+  private shownQueueIds() { return this.displayQueues().filter((q) => !this.isHidden(q.baseName)).map((q) => q.key); }
   allQSelected() { const ids = this.shownQueueIds(); return ids.length > 0 && ids.every((id) => this.selQ().has(id)); }
   toggleAllQ() { this.selQ.set(this.allQSelected() ? new Set() : new Set(this.shownQueueIds())); }
-  readonly selUnassigned = computed(() => this.displayQueues().filter((q) => this.selQ().has(q.baseName)).reduce((n, q) => n + q.unassigned, 0));
+  readonly selUnassigned = computed(() => this.displayQueues().filter((q) => this.selQ().has(q.key)).reduce((n, q) => n + q.count, 0));
   /** Everyone who can take WFM work, with live load: RNs from the Workload roster, the rest from their own count. */
   readonly staffLoads = computed((): StaffLoad[] => {
     const rns = new Map(this.data.nurses().map((n) => [n.name, n]));
@@ -354,12 +407,13 @@ export class WorkforceTab {
       return { ...s, active, utilization: Math.min(100, Math.round((active / cap) * 100)), perCase: 100 / cap };
     });
   });
-  /** Open bulk assignment over the unassigned work in these queues, within the current filters. */
-  openAssign(queueIds: string[]) {
-    const ids = new Set(queueIds);
-    const cases = this.wfmCases().filter((c) => ids.has(wfmQueueOf(c)) && this.ownerOf(c) === '—').map((c) => ({
+  /** Open bulk assignment over the unclaimed work on these cards (queue id, or id|LOB when split), within every filter. */
+  openAssign(keys: string[]) {
+    const parts = keys.map((k) => k.split('|') as [string, string?]);
+    const ids = new Set(parts.map(([id]) => id));
+    const cases = parts.flatMap(([id, lob]) => this.cardCases(id, lob)).map((c) => ({
       authId: c.authId, member: c.member, queueId: wfmQueueOf(c), urgency: urgencyOf(c), state: stateCodeOf(c.authId), ageH: ageH(c.authId),
-      priority: (c.tags.includes('breached') ? 'Breached' : c.tags.includes('atRisk') ? 'At risk' : 'Routine') as 'Breached' | 'At risk' | 'Routine',
+      priority: priorityOf(c) as 'Breached' | 'At risk' | 'Routine',
     }));
     this.assignReq.set({ queues: WFM_QUEUES.filter((q) => ids.has(q.id)), cases });
   }
@@ -391,7 +445,45 @@ export class WorkforceTab {
     { key: 'role', label: 'Role', values: WFM_ROLES },
     { key: 'state', label: 'State', values: WFM_STATES },
   ];
-  readonly wf = signal<Record<WfDim, ReadonlySet<string>>>({ spec: new Set(), urg: new Set(), role: new Set(), state: new Set() });
+  readonly user = CURRENT_USER;
+  private readonly saved = loadWfSaved();
+  readonly wf = signal<Record<WfDim, ReadonlySet<string>>>({
+    spec: new Set(this.saved.bar?.['spec']), urg: new Set(this.saved.bar?.['urg']), role: new Set(this.saved.bar?.['role']), state: new Set(this.saved.bar?.['state']),
+  });
+  readonly splitByLob = signal(!!this.saved.split);
+  /** Each queue's own filters, by queue id. */
+  readonly qf = signal<Record<string, QueueFilter>>(this.saved.queues ?? {});
+  readonly qfDims = QF_DIMS;
+  readonly filterOpen = signal<string | null>(null);
+  // Every change to the bar, Split by LOB or a queue's filters is saved for this user.
+  private readonly persist = effect(() => {
+    const f = this.wf();
+    const data: WfSaved = { bar: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, [...v]])), queues: this.qf(), split: this.splitByLob() };
+    try { localStorage.setItem(WF_SAVE_KEY, JSON.stringify(data)); } catch { /* storage unavailable: filters last for the session */ }
+  });
+  qfHas(id: string, k: QfKey, v: string) { return !!this.qf()[id]?.[k]?.includes(v); }
+  toggleQf(id: string, k: QfKey, v: string) {
+    const cur = this.qf()[id] ?? {}, vals = cur[k] ?? [];
+    const next = vals.includes(v) ? vals.filter((x) => x !== v) : [...vals, v];
+    const q: QueueFilter = { ...cur, [k]: next };
+    if (!next.length) delete q[k];
+    const all = { ...this.qf() };
+    if (Object.keys(q).length) all[id] = q; else delete all[id];
+    this.qf.set(all);
+  }
+  clearQf(id: string) { const all = { ...this.qf() }; delete all[id]; this.qf.set(all); }
+  private qfMatch(f: QueueFilter | undefined, c: CaseRec) {
+    if (!f) return true;
+    return (!f.plan?.length || f.plan.includes(bhpProductOf(bhpOf(c.authId)))) && (!f.urg?.length || f.urg.includes(urgencyOf(c)))
+      && (!f.state?.length || f.state.includes(stateCodeOf(c.authId))) && (!f.prio?.length || f.prio.includes(priorityOf(c)));
+  }
+  private qfSummaryOf(f: QueueFilter | undefined) {
+    if (!f) return '';
+    return QF_DIMS.filter((d) => f[d.key]?.length).map((d) => {
+      const vals = f[d.key]!;
+      return d.key === 'plan' ? (vals.length === 1 ? d.options.find((o) => o.id === vals[0])?.label : `${vals.length} plans`) : vals.join(' or ');
+    }).join(' · ');
+  }
   readonly wfActive = computed(() => Object.values(this.wf()).some((x) => x.size > 0));
   readonly plansSummary = computed(() => this.lobFilter.summary());
   toggleWf(k: WfDim, v: string) {
@@ -427,20 +519,38 @@ export class WorkforceTab {
   }
   private inLookback(c: CaseRec): boolean { return this.lookback.includes(c.submitted); }
 
+  /** Unclaimed work per queue in the current scope, after each queue's own filters. */
+  readonly unclaimedByQueue = computed(() => {
+    const by = new Map<string, CaseRec[]>(), qf = this.qf();
+    for (const c of this.wfmCases()) {
+      if (this.ownerOf(c) !== '—') continue;
+      const id = wfmQueueOf(c);
+      if (!this.qfMatch(qf[id], c)) continue;
+      if (!by.has(id)) by.set(id, []);
+      by.get(id)!.push(c);
+    }
+    return by;
+  });
+  private cardCases(id: string, lob?: string) { return (this.unclaimedByQueue().get(id) ?? []).filter((c) => !lob || lobOf(c.authId) === lob); }
+  private card(q: WfmQueue, cs: CaseRec[], lob?: string): DisplayQueue {
+    const total = cs.length || 1, bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
+    cs.forEach((c) => { bands[bandOf(c.authId, c.tags.includes('breached'))]++; });
+    const f = this.qf()[q.id];
+    return {
+      key: lob ? `${q.id}|${lob}` : q.id, baseName: q.id, lob, name: lob ? `${q.name} · ${lob}` : q.name, count: cs.length, type: q.type, flag: q.flag,
+      qfCount: f ? Object.values(f).reduce((n, v) => n + (v?.length ?? 0), 0) : 0, qfSummary: this.qfSummaryOf(f),
+      buckets: {
+        fresh: Math.round((bands.fresh / total) * 100), day2: Math.round((bands.day2 / total) * 100),
+        over48: Math.round((bands.over48 / total) * 100), breach: Math.round((bands.breach / total) * 100),
+      },
+    };
+  }
   readonly displayQueues = computed((): DisplayQueue[] => {
-    const byQueue = new Map<string, CaseRec[]>();
-    for (const c of this.wfmCases()) { const id = wfmQueueOf(c); if (!byQueue.has(id)) byQueue.set(id, []); byQueue.get(id)!.push(c); }
-    let list: DisplayQueue[] = WFM_QUEUES.filter((q) => this.queueMatches(q)).map((q) => {
-      const cs = byQueue.get(q.id) ?? [], total = cs.length || 1;
-      const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
-      cs.forEach((c) => { bands[bandOf(c.authId, c.tags.includes('breached'))]++; });
-      return {
-        name: q.name, baseName: q.id, count: cs.length, unassigned: cs.filter((c) => this.ownerOf(c) === '—').length, type: q.type, flag: q.flag,
-        buckets: {
-          fresh: Math.round((bands.fresh / total) * 100), day2: Math.round((bands.day2 / total) * 100),
-          over48: Math.round((bands.over48 / total) * 100), breach: Math.round((bands.breach / total) * 100),
-        },
-      };
+    let list: DisplayQueue[] = WFM_QUEUES.filter((q) => this.queueMatches(q)).flatMap((q) => {
+      const cs = this.cardCases(q.id);
+      if (!this.splitByLob()) return [this.card(q, cs)];
+      // per-LOB cards; LOBs with nothing in this queue are skipped, no empty noise
+      return LOBS.map((l) => this.card(q, cs.filter((c) => lobOf(c.authId) === l), l)).filter((d) => d.count > 0);
     });
     const q = this.queueSearch().trim().toLowerCase();
     if (q) list = list.filter((x) => x.name.toLowerCase().includes(q));
@@ -617,19 +727,19 @@ export class WorkforceTab {
   private ageLabel(h: number) { return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d ${h % 24}h`; }
 
   /** Drill a queue's age band -> Case Explorer of the work in it, in the current filter scope. */
-  openBucket(queueId: string, band: string) {
+  openBucket(queueId: string, band: string, lob?: string) {
     const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
     const queue = WFM_QUEUES.find((q) => q.id === queueId)?.name ?? queueId;
-    const rows = this.wfmCases()
-      .filter((c) => wfmQueueOf(c) === queueId && bandOf(c.authId, c.tags.includes('breached')) === band)
-      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), stateCodeOf(c.authId), this.ownerOf(c), this.ageLabel(ageH(c.authId))] as (string | number)[]);
+    const rows = this.cardCases(queueId, lob)
+      .filter((c) => bandOf(c.authId, c.tags.includes('breached')) === band)
+      .map((c) => [c.authId, c.member, c.procedure, c.provider, urgencyOf(c), stateCodeOf(c.authId), this.ageLabel(ageH(c.authId))] as (string | number)[]);
     const period = this.lookback.period();
-    const queueLabel = `${queue}${period !== '30d' ? ` · ${this.lookback.label()}` : ''}`;
+    const queueLabel = `${lob ? `${queue} · ${lob}` : queue}${period !== '30d' ? ` · ${this.lookback.label()}` : ''}`;
     this.ix.openExplorer({
       title: `${queueLabel} — ${labels[band]}`,
-      context: `${rows.length} authorization(s) · ${labels[band]}`,
-      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'State', 'Assigned to', 'Age in Queue'],
-      rows, exportName: `${queue.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${band}${TODAY_ISO}`, memberColumn: 1,
+      context: `${rows.length} unclaimed authorization(s) in ${queueLabel} · ${labels[band]}`,
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'State', 'Age in Queue'],
+      rows, exportName: `${queueLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${band}${TODAY_ISO}`, memberColumn: 1,
     });
   }
 

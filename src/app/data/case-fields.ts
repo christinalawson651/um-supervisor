@@ -41,6 +41,9 @@ export const bhpStateOf = (id: string): string => { let n = BHP_BY[id]; while (n
 /** Path below the state, e.g. "LTC-LF › Region 3". */
 export const bhpRelPath = (id: string): string => { const p: string[] = []; let n: BhpNode | undefined = BHP_BY[id]; while (n && n.parent) { p.unshift(n.name); n = BHP_BY[n.parent]; } return p.join(' › '); };
 export const bhpPath = (id: string): string => `Centene › HealthPlan › ${bhpStateOf(id)} › ${bhpRelPath(id)}`;
+/** The product a plan sits under (itself when it is a product). */
+export const bhpProductOf = (id: string): string => { let n = BHP_BY[id]; while (n.level !== 'product' && n.parent) n = BHP_BY[n.parent]; return n.id; };
+export const BHP_PRODUCTS = BHP.filter((n) => n.level === 'product');
 /** LOB of a plan: the nearest ancestor product that carries one. */
 export const lobOfPlan = (id: string): string => { let n: BhpNode | undefined = BHP_BY[id]; while (n && !n.lob) n = n.parent ? BHP_BY[n.parent] : undefined; return n?.lob ?? 'Medicaid'; };
 // Weighted so the big Medicaid products carry most of the volume, as they do in the pilot.

@@ -34,7 +34,7 @@ type Pick = 'all' | 'breach' | 'risk' | 'exp';
           <div class="body">
             <div class="col">
               <div class="col-head">
-                <span class="ct">Unassigned <span class="cn">{{ selected().size }}/{{ shown().length }}</span></span>
+                <span class="ct">Unclaimed <span class="cn">{{ selected().size }}/{{ shown().length }}</span></span>
                 <div class="take">
                   <span class="tl">Take</span>
                   @for (n of takes; track n) { <button class="tk" (click)="take(n)">{{ n === 0 ? 'All' : 'Top ' + n }}</button> }
@@ -58,7 +58,7 @@ type Pick = 'all' | 'breach' | 'risk' | 'exp';
                     @if (plan().to.get(c.authId); as who) { <span class="to">→ {{ short(who) }}</span> }
                     @else if (selected().has(c.authId)) { <span class="to none">no eligible staff</span> }
                   </label>
-                } @empty { <div class="empty">Nothing unassigned in this scope.</div> }
+                } @empty { <div class="empty">Nothing unclaimed in this scope.</div> }
               </div>
             </div>
 
