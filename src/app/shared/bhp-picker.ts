@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, EventEmitter, HostListener, Input, Output, computed, inject, signal } from '@angular/core';
 import { BHP, BhpNode, BHP_BY, bhpChildren, bhpIsLeaf, bhpLeavesUnder } from '../data/case-fields';
 import { LobFilter, summarize } from './lob-filter';
 
@@ -6,13 +6,15 @@ interface Row { node: BhpNode; depth: number; branch: boolean; open: boolean; to
 
 // Plans (BHP) tree picker for the shell filter bar. Tri-state ticks: a parent selects every leaf
 // under it. Edits go to a draft and apply when the picker closes (Done, Escape or a click outside).
+// Bound to the shell's LobFilter by default; pass [value] / (valueChange) to drive a selection of
+// your own instead (e.g. one queue's plans on the Workforce tab).
 @Component({
   selector: 'app-bhp-picker',
   standalone: true,
   template: `
     <div class="bp">
-      <button type="button" class="bp-btn" [class.custom]="filter.selected().size" [attr.aria-expanded]="open()" (click)="toggle()">
-        <span class="bp-v">{{ filter.summary() }}</span><span aria-hidden="true">▾</span>
+      <button type="button" class="bp-btn" [class.custom]="current().size" [attr.aria-expanded]="open()" (click)="toggle()">
+        <span class="bp-v">{{ currentSummary() }}</span><span aria-hidden="true">▾</span>
       </button>
       @if (open()) {
         <div class="bp-pop" role="dialog" aria-label="Choose plans">
@@ -43,6 +45,7 @@ interface Row { node: BhpNode; depth: number; branch: boolean; open: boolean; to
   `,
   styles: [`
     .bp { position:relative; }
+    :host(.block) { display:block; } :host(.block) .bp-btn { width:100%; max-width:none; justify-content:space-between; padding:7px 10px; font-size:12px; }
     .bp-btn { display:inline-flex; gap:8px; align-items:center; border:1px solid var(--gray-300); border-radius:7px; background:#fff;
       padding:4px 10px; font-size:11px; font-weight:600; color:var(--gray-700); cursor:pointer; max-width:320px; }
     .bp-btn.custom { border-color:var(--teal-600); background:var(--teal-100); color:var(--teal-900); }
@@ -69,6 +72,12 @@ interface Row { node: BhpNode; depth: number; branch: boolean; open: boolean; to
 })
 export class BhpPicker {
   readonly filter = inject(LobFilter);
+  private readonly ext = signal<ReadonlySet<string> | null>(null);
+  /** Own selection (leaf plan codes) instead of the shell filter. */
+  @Input() set value(v: Iterable<string> | null | undefined) { this.ext.set(v ? new Set(v) : v === null ? null : new Set()); }
+  @Output() readonly valueChange = new EventEmitter<string[]>();
+  readonly current = computed(() => this.ext() ?? this.filter.selected());
+  readonly currentSummary = computed(() => summarize(this.current()));
   private host = inject(ElementRef<HTMLElement>);
   clear() { this.draft.set(new Set()); }
 
@@ -107,8 +116,12 @@ export class BhpPicker {
   });
 
   toggle() { this.open() ? this.apply() : this.openPicker(); }
-  private openPicker() { this.draft.set(new Set(this.filter.selected())); this.q.set(''); this.open.set(true); }
-  apply() { this.filter.selected.set(new Set(this.draft())); this.open.set(false); }
+  private openPicker() { this.draft.set(new Set(this.current())); this.q.set(''); this.open.set(true); }
+  apply() {
+    if (this.ext()) this.valueChange.emit([...this.draft()]);
+    else this.filter.selected.set(new Set(this.draft()));
+    this.open.set(false);
+  }
 
   expand(id: string) {
     const next = new Set(this.expanded());

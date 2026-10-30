@@ -20,7 +20,7 @@ type Mode = 'route' | 'step' | 'urgency';
         <div class="dlg" (click)="$event.stopPropagation()">
           <div class="dh">
             <div><h3>Escalate {{ auths() }} authorization{{ auths() === 1 ? '' : 's' }} <span class="sub">({{ items.length }} line{{ items.length === 1 ? '' : 's' }})</span></h3>
-              <div class="stat">{{ slaBreached() }} past SLA · {{ stepOverdue() }} past step due</div></div>
+              <div class="stat">{{ slaBreached() }} TAT overdue · {{ stepOverdue() }} step overdue</div></div>
             <button class="x" (click)="close.emit()">×</button>
           </div>
 
@@ -29,9 +29,9 @@ type Mode = 'route' | 'step' | 'urgency';
               <div><b>Route up</b><span>Move the lines to the role that acts next. The holder changes; the line status does not.</span></div></label>
             @if (store.perms().stepDue) {
               <label class="mode" [class.on]="mode() === 'step'"><input type="radio" name="m" [checked]="mode() === 'step'" (change)="mode.set('step')" />
-                <div><b>Reprioritize</b><span>Bring the step due date forward. The SLA does not move.</span></div></label>
+                <div><b>Reprioritize</b><span>Bring the step due date forward. The TAT does not move.</span></div></label>
               <label class="mode" [class.on]="mode() === 'urgency'"><input type="radio" name="m" [checked]="mode() === 'urgency'" (change)="mode.set('urgency')" />
-                <div><b>Change urgency</b><span>Set on the authorization; the decision due date (SLA) is recalculated.</span></div></label>
+                <div><b>Change urgency</b><span>Set on the authorization; the TAT (regulatory due) is recalculated.</span></div></label>
             }
           </div>
 
@@ -62,7 +62,7 @@ type Mode = 'route' | 'step' | 'urgency';
                   <div class="seg">@for (u of urgencies; track u) {
                     <button type="button" [class.on]="urg() === u" (click)="urg.set(u)">{{ u }}</button> }</div></div>
                 <label class="f">Reason <input type="text" [ngModel]="note()" (ngModelChange)="note.set($event)" placeholder="Required" /></label>
-                <div class="hint">Decision due date becomes {{ urg() === 'Expedited' ? expH + ' hours' : medicaidD + ' days (Medicaid) or ' + mpD + ' days (Marketplace)' }} from receipt.
+                <div class="hint">TAT becomes {{ urg() === 'Expedited' ? expH + ' hours' : medicaidD + ' days (Medicaid) or ' + mpD + ' days (Marketplace)' }} from receipt.
                   @if (urg() === 'Expedited') { Changing to Expedited cancels any line downgrades. } @else { A member notice is owed when expedited work moves to standard. }</div>
               }
             }

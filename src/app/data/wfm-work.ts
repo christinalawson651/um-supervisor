@@ -89,6 +89,32 @@ export function linesOf(c: CaseRec): WorkLine[] {
   return lines;
 }
 
+// ---- Terms, as in the UM spec addenda (um-01 §3, um-02 §5, um-05 §6):
+// TAT       = the regulatory (decision) due. On an authorization it is the narrowest running line
+//             clock: the earliest due among its open lines (tolled and terminal lines left out).
+// Step due  = the working due of the line's current step (adjustable, with a reason).
+// At risk   = TAT within UM_AT_RISK_HOURS.
+export const UM_AT_RISK_HOURS = 72;
+export const UM_TAT_HMS_HOURS = 72;
+
+/** TAT cell text (um-05 §6): "Xd Yh" from 72 h out, "51h 22m 10s" inside that, "⚠ Overdue Xd Yh Zm" past due. */
+export function tatText(at: number, now: number): string {
+  const d = at - now;
+  if (d < 0) {
+    const m = Math.floor(-d / 60e3), days = Math.floor(m / 1440), hrs = Math.floor((m % 1440) / 60);
+    return `⚠ Overdue ${days ? days + 'd ' : ''}${hrs}h ${m % 60}m`;
+  }
+  const h = d / H;
+  if (h >= UM_TAT_HMS_HOURS) return `${Math.floor(h / 24)}d ${Math.floor(h % 24)}h`;
+  const s = Math.floor(d / 1000);
+  return `${h <= UM_AT_RISK_HOURS ? '⚠ ' : ''}${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ${s % 60}s`;
+}
+/** red: overdue or under 24 h · amber: at risk (≤ 72 h) · ok otherwise. */
+export function tatTone(at: number, now: number): 'red' | 'amber' | 'ok' {
+  const h = (at - now) / H;
+  return h < 24 ? 'red' : h <= UM_AT_RISK_HOURS ? 'amber' : 'ok';
+}
+
 /** "in 3h", "in 2d 4h", "5h overdue". */
 export function dueLabel(at: number): string {
   const d = at - NOW, a = Math.abs(d), h = Math.round(a / H);

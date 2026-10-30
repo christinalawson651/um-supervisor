@@ -59,7 +59,7 @@
       <div class="dash-date">{{ data.today }}</div>
     </div>
 
-    @if (nav.module() !== 'overview' && nav.module() !== 'reports' && nav.module() !== 'audit') {
+    @if (nav.module() !== 'overview' && nav.module() !== 'reports' && nav.module() !== 'audit' && !(nav.module() === 'um' && selected() === 'workforce')) {
       <div class="period-bar">
         <span class="period-lab">Dates</span>
         <div class="period-seg">

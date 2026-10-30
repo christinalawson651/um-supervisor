@@ -20,7 +20,7 @@ export const WFM_PERMS: Record<'Supervisor' | WfmRole, WfmPerms> = {
 };
 
 /** A queue worklist's own filters. */
-export type QfKey = 'plan' | 'urg' | 'state' | 'prio' | 'holder' | 'due';
+export type QfKey = 'plan' | 'urg' | 'state' | 'holder';
 export type QueueFilter = Partial<Record<QfKey, string[]>>;
 export interface WorkState {
   /** Finding queues: by name, what the queue is (type, setting, product, specialty, role) and flags. */
@@ -176,10 +176,15 @@ export class WfmStore {
     this.setHolders(items, () => me);
     this.history('Claimed from WFM queue', `${this.n(items)} claimed by ${me}`, items, me);
   }
-  release(items: Item[]) {
-    this.log(items, 'Returned to queue', () => UNCLAIMED);
+  /** Route lines to a different queue: they arrive there queued (no holder). */
+  routeToQueue(items: Item[], queueId: string, reason: string) {
+    const name = WFM_QUEUES.find((q) => q.id === queueId)?.name ?? queueId;
+    const q = new Map(this.queueOv());
+    items.forEach((i) => q.set(i.key, queueId));
+    this.log(items, `Routed to ${name}`, () => UNCLAIMED, reason);
+    this.queueOv.set(q);
     this.setHolders(items, () => UNCLAIMED);
-    this.history('Returned to queue', `${this.n(items)} returned to their queues`, items);
+    this.history('Routed to another queue', `${this.n(items)} → ${name}${reason ? ' · ' + reason : ''}`, items);
   }
   /** Route up: to the L2 queue for MD review or peer-to-peer (unclaimed there), or straight to a named MD. */
   route(items: Item[], target: 'MD Review' | 'Peer-to-Peer' | string, reason: string) {

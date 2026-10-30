@@ -3,12 +3,10 @@ import { FormsModule } from '@angular/forms';
 import { CASE_POOL } from '../data/case-pool';
 import {
   WFM_QUEUES, WFM_ROLES, WFM_SPECIALTIES, WfmQueue, LOBS, TODAY_ISO,
-  inPlanScope, lobOf, bandOf, ageH, urgencyOf, stateCodeOf,
+  lobOf, bandOf, urgencyOf, stateCodeOf,
 } from '../data/case-fields';
 import { NOW, dueLabel, dueTone } from '../data/wfm-work';
 import { Item, UNCLAIMED, WfmStore, WorkState, unclaimedHere } from '../shared/wfm-store';
-import { LobFilter } from '../shared/lob-filter';
-import { Lookback } from '../shared/lookback';
 import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
 import { WidgetVisibility } from '../shared/widget-visibility';
@@ -77,14 +75,14 @@ interface Card {
           @for (v of roles; track v) { <button class="chip" [class.on]="finderHas('role', v)" (click)="toggleFinder('role', v)">{{ v }}</button> }
         }
         <button class="chip" [class.on]="st().find.pinned" (click)="setFind('pinned', !st().find.pinned)">★ Pinned</button>
-        <button class="chip" [class.on]="st().find.breach" (click)="setFind('breach', !st().find.breach)">Has SLA breaches</button>
-        <button class="chip" [class.on]="st().find.unclaimed" (click)="setFind('unclaimed', !st().find.unclaimed)">Has unclaimed</button>
+        <button class="chip" [class.on]="st().find.breach" (click)="setFind('breach', !st().find.breach)">Has TAT overdue</button>
+        <button class="chip" [class.on]="st().find.unclaimed" (click)="setFind('unclaimed', !st().find.unclaimed)">Has queued work</button>
       </div>
       <div class="finder">
         <label class="sortsel"><span>Sort</span>
           <select [ngModel]="st().cardSort" (ngModelChange)="store.patch(s => s.cardSort = $event)">
-            <option value="volume">Most unclaimed</option><option value="due">Soonest SLA</option>
-            <option value="breach">Most SLA breaches</option><option value="name">Name A–Z</option>
+            <option value="volume">Most queued</option><option value="due">Soonest TAT</option>
+            <option value="breach">Most TAT overdue</option><option value="name">Name A–Z</option>
           </select></label>
         <button class="btn outline sm" [class.on]="st().split" (click)="store.patch(s => s.split = !s.split)">{{ st().split ? 'Split by LOB ✓' : 'Split by LOB' }}</button>
         <span class="count">{{ cards().length }} of {{ store.visibleQueues().length }} queues</span>
@@ -93,8 +91,8 @@ interface Card {
 
     @if (!openQueue()) {
       <div class="qhint">
-        @if (store.isReviewer()) { You see the queues your role, specialties and licensed states allow, with unclaimed work and your own. Open a queue and claim any item. }
-        @else { Cards show <b>unclaimed authorizations available to pull next</b>. Bars show how long each has waited; click a band to see those authorizations. <b>Open a queue</b> to filter its work and assign it. }
+        @if (store.isReviewer()) { You see the queues your role, specialties and licensed states allow, with queued work and your own. Open a queue and claim any item. }
+        @else { Cards count <b>queued authorizations</b>: ones with an open line in the queue that no one holds. Bars show how long each has waited; click a band to see those authorizations. <b>Open a queue</b> to filter its work and assign it. }
       </div>
 
       <div class="cards">
@@ -114,18 +112,18 @@ interface Card {
               <span class="name">{{ c.name }}</span>
               <span class="cnt">{{ c.auths }}</span>
             </div>
-            <div class="meta">{{ c.lines }} line{{ c.lines === 1 ? '' : 's' }}@if (store.isReviewer()) { · {{ c.mine }} mine } · {{ c.queue.type }} · {{ c.queue.scope }}</div>
+            <div class="meta">queued · {{ c.lines }} line{{ c.lines === 1 ? '' : 's' }}@if (store.isReviewer()) { · {{ c.mine }} mine } · {{ c.queue.type }} · {{ c.queue.scope }}</div>
             <div class="flags">
-              @if (c.slaBreached) { <span class="fl red">{{ c.slaBreached }} past SLA</span> }
-              @if (c.stepOverdue) { <span class="fl amber">{{ c.stepOverdue }} past step due</span> }
-              @if (c.auths) { <span class="fl" [attr.data-t]="tone(c.soonest)">next SLA {{ due(c.soonest) }}</span> }
+              @if (c.slaBreached) { <span class="fl red">{{ c.slaBreached }} TAT overdue</span> }
+              @if (c.stepOverdue) { <span class="fl amber">{{ c.stepOverdue }} step overdue</span> }
+              @if (c.auths) { <span class="fl" [attr.data-t]="tone(c.soonest)">next TAT {{ due(c.soonest) }}</span> }
             </div>
             @if (qfText(c.queue.id); as t) { <div class="qf" [title]="t">Queue filters: {{ t }}</div> }
             <div class="seg">
               <span class="s-fresh"  [style.width.%]="c.buckets.fresh"  title="0–24h in queue" (click)="openBucket(c, 'fresh')"></span>
               <span class="s-day2"   [style.width.%]="c.buckets.day2"   title="24–48h in queue" (click)="openBucket(c, 'day2')"></span>
               <span class="s-over48" [style.width.%]="c.buckets.over48" title="Over 48h in queue" (click)="openBucket(c, 'over48')"></span>
-              <span class="s-breach" [style.width.%]="c.buckets.breach" title="Past SLA" (click)="openBucket(c, 'breach')"></span>
+              <span class="s-breach" [style.width.%]="c.buckets.breach" title="TAT overdue" (click)="openBucket(c, 'breach')"></span>
             </div>
             <div class="legend">
               <span (click)="openBucket(c, 'fresh')"><i class="d-fresh"></i>0-24h</span>
@@ -198,8 +196,6 @@ interface Card {
 })
 export class WfmQueues {
   readonly store = inject(WfmStore);
-  readonly lobFilter = inject(LobFilter);
-  private lookback = inject(Lookback);
   readonly ix = inject(Interaction);
   private exporter = inject(Exporter);
   @Input() vis?: WidgetVisibility;
@@ -246,14 +242,11 @@ export class WfmQueues {
   /** All of a queue's work in scope, before its own filters (the filter offers plans from it). */
   queueItems(id: string) { return this.byQueue().get(id) ?? []; }
 
-  /** Open lines in scope: the shell's Plans and Dates, and for a reviewer only unclaimed or their
-   *  own work in the states they are licensed in. Each queue's own filters apply on top. */
+  /** All open work (queues are current work, so no page-level Plans or Dates), and for a reviewer
+   *  only queued or their own work in the states they are licensed in. Each queue's filters apply on top. */
   readonly items = computed((): Item[] => {
-    const plans = this.lobFilter.value(), period = this.lookback.period();
-    this.lookback.from(); this.lookback.to();
     const me = this.store.me(), actor = this.store.actor();
-    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && inPlanScope(c.authId, plans) && (period === '30d' || this.lookback.includes(c.submitted))
-      && (!me || me.states.includes(stateCodeOf(c.authId))));
+    const cases = CASE_POOL.filter((c) => c.phase === 'pending' && (!me || me.states.includes(stateCodeOf(c.authId))));
     return this.store.items(cases).filter((i) => this.store.perms().othersWork || i.holder === UNCLAIMED || i.holder === actor);
   });
   private queueOk(q: WfmQueue) {
@@ -329,7 +322,7 @@ export class WfmQueues {
 
   // ---- drill and export
   openBucket(c: Card, band: string) {
-    const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
+    const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'TAT overdue' };
     const un = this.worklistFor(c).filter(unclaimedHere);
     const ids = [...new Set(un.map((i) => i.c.authId))].filter((id) => {
       const sla = Math.min(...un.filter((i) => i.c.authId === id).map((i) => i.l.slaDue));
@@ -340,8 +333,8 @@ export class WfmQueues {
       return [id, c0.member, c0.procedure, c0.provider, urgencyOf(c0), stateCodeOf(id), xs.length, dueLabel(Math.min(...xs.map((x) => x.l.stepDue))), dueLabel(Math.min(...xs.map((x) => x.l.slaDue)))] as (string | number)[];
     });
     this.ix.openExplorer({
-      title: `${c.name} — ${labels[band]}`, context: `${rows.length} unclaimed authorization(s) in ${c.name} · ${labels[band]}`,
-      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'State', 'Open lines', 'Step due', 'SLA'],
+      title: `${c.name} — ${labels[band]}`, context: `${rows.length} queued authorization(s) in ${c.name} · ${labels[band]}`,
+      columns: ['Auth ID', 'Member', 'Procedure', 'Provider', 'Urgency', 'State', 'Open lines', 'Step due', 'TAT'],
       rows, exportName: `${c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${band}${TODAY_ISO}`, memberColumn: 1,
     });
   }
@@ -349,7 +342,7 @@ export class WfmQueues {
   exportCard(c: Card) {
     this.exporter.open({
       title: c.name, name: `queue-${c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${TODAY_ISO}`, columns: ['Metric', 'Value'],
-      rows: [['Unclaimed authorizations', c.auths], ['Unclaimed lines', c.lines], ['Past SLA', c.slaBreached], ['Past step due', c.stepOverdue],
+      rows: [['Queued authorizations', c.auths], ['Queued lines', c.lines], ['TAT overdue', c.slaBreached], ['Step overdue', c.stepOverdue],
         ['0-24h %', c.buckets.fresh], ['24-48h %', c.buckets.day2], ['>48h %', c.buckets.over48], ['Breach %', c.buckets.breach]],
     });
   }
@@ -357,7 +350,7 @@ export class WfmQueues {
   exportAll() {
     this.exporter.open({
       title: 'UM queues', name: `um-queues${TODAY_ISO}`,
-      columns: ['Queue', 'Type', 'Scope', 'Unclaimed authorizations', 'Unclaimed lines', 'Past SLA', 'Past step due', 'Next SLA'],
+      columns: ['Queue', 'Type', 'Scope', 'Queued authorizations', 'Queued lines', 'TAT overdue', 'Step overdue', 'Next TAT'],
       rows: this.cards().map((c) => [c.name, c.queue.type, c.queue.scope, c.auths, c.lines, c.slaBreached, c.stepOverdue, c.auths ? dueLabel(c.soonest) : '—']),
     });
   }
