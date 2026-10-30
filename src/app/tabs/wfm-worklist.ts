@@ -10,6 +10,10 @@ import { Exporter } from '../shared/exporter';
 export { prioOf };
 const stepOf = (i: Item) => (i.queue !== wfmQueueOf(i.c) ? 'MD Review' : i.c.status);
 const PEOPLE_SHOWN = 5;
+const PANELS_KEY = 'zyter-um-wfm-panels-v1';
+function loadPanels(): { filters: boolean; people: boolean } {
+  try { return { filters: true, people: true, ...JSON.parse(localStorage.getItem(PANELS_KEY) ?? '{}') }; } catch { return { filters: true, people: true }; }
+}
 
 interface AuthRow { authId: string; items: Item[]; first: Item; tat: number; stepDue: number; driver: Item; }
 type SortKey = 'tat' | 'step';
@@ -38,13 +42,20 @@ type SortKey = 'tat' | 'step';
       @if (queue) { <button class="pin" [class.on]="store.pins().includes(queue.id)" (click)="store.togglePin(queue.id)" title="Pin this queue">★</button> }
     </div>
 
-    <div class="ws" [class.noRail]="!showRail()">
-      <!-- LEFT: this queue's filters -->
-      <aside class="panel side">
-        <div class="ph"><b>Filters</b>@if (fCount()) { <button class="link" (click)="clearF()">Clear all</button> }</div>
-        <app-wfm-queue-filter [queueId]="queueId"></app-wfm-queue-filter>
-        <div class="note">This queue only · saved for {{ store.actor() }}</div>
-      </aside>
+    <div class="ws" [class.noRail]="!showRail()" [class.fMin]="!panels().filters" [class.pMin]="!panels().people">
+      <!-- LEFT: this queue's filters (collapsible) -->
+      @if (panels().filters) {
+        <aside class="panel side">
+          <div class="ph"><button class="col" (click)="setPanel('filters', false)" title="Collapse filters" aria-label="Collapse filters">«</button>
+            <b>Filters</b>@if (fCount()) { <button class="link" (click)="clearF()">Clear all</button> }</div>
+          <app-wfm-queue-filter [queueId]="queueId"></app-wfm-queue-filter>
+          <div class="note">This queue only · saved for {{ store.actor() }}</div>
+        </aside>
+      } @else {
+        <button class="rail" (click)="setPanel('filters', true)" title="Show filters" aria-label="Show filters">
+          <span class="ri">»</span><span class="rl">Filters</span>@if (fCount()) { <span class="rb" title="Active filters">{{ fCount() }}</span> }
+        </button>
+      }
 
       <!-- MIDDLE: the work, by due date -->
       <section class="panel work">
@@ -149,10 +160,16 @@ type SortKey = 'tat' | 'step';
         <div class="legend"><b>TAT</b> is the regulatory due: on an authorization, the earliest due among its open lines (the line that drives it shows on hover). ⚠ amber within 72 h, red within 24 h. <b>Step due</b> is the working due of the line's current step.</div>
       </section>
 
-      <!-- RIGHT: who gets it -->
-      @if (showRail()) {
+      <!-- RIGHT: who gets it (collapsible) -->
+      @if (showRail() && !panels().people) {
+        <button class="rail" (click)="setPanel('people', true)" title="Show assignees" aria-label="Show assignees">
+          <span class="ri">«</span><span class="rl">Assign to</span>@if (sel().size) { <span class="rb" title="Selected authorizations">{{ selAuths() }}</span> }
+        </button>
+      }
+      @if (showRail() && panels().people) {
         <aside class="panel side people">
-          <div class="ph"><b>Assign to</b><span class="mut">{{ staff().length }} eligible</span></div>
+          <div class="ph"><b>Assign to</b><span class="mut">{{ staff().length }} eligible</span>
+            <button class="col" (click)="setPanel('people', false)" title="Collapse assignees" aria-label="Collapse assignees">»</button></div>
           <div class="srch sm"><span>⌕</span><input type="text" placeholder="Find a person" [ngModel]="who()" (ngModelChange)="who.set($event)" /></div>
           <div class="hint">@if (sel().size) { Click <b>Assign</b> to give the {{ selAuths() }} selected authorization{{ selAuths() === 1 ? '' : 's' }} to one person, or tick several and split. } @else { Select work, then pick who gets it. Most available first. }</div>
           <div class="plist">
@@ -195,9 +212,19 @@ type SortKey = 'tat' | 'step';
     .stat.red b { color:#fecaca; } .stat.amber b { color:#fde68a; }
     .pin { border:none; background:none; font-size:20px; color:rgba(255,255,255,.4); cursor:pointer; } .pin.on { color:#fcd34d; }
 
-    .ws { display:grid; grid-template-columns: 230px minmax(0, 1fr) 300px; gap:14px; align-items:start; }
-    .ws.noRail { grid-template-columns: 230px minmax(0, 1fr); }
-    @media (max-width: 1100px) { .ws, .ws.noRail { grid-template-columns: minmax(0, 1fr); } }
+    .ws { --fw: 230px; --pw: 300px; display:grid; grid-template-columns: var(--fw) minmax(0, 1fr) var(--pw); gap:14px; align-items:start; }
+    .ws.fMin { --fw: 40px; } .ws.pMin { --pw: 40px; }
+    .ws.noRail { grid-template-columns: var(--fw) minmax(0, 1fr); }
+    @media (max-width: 1100px) { .ws, .ws.noRail { grid-template-columns: minmax(0, 1fr); } .rail { flex-direction:row; min-height:0; width:100%; } .rail .rl { writing-mode:horizontal-tb; transform:none; } }
+    .col { border:1px solid var(--gray-200); background:#fff; color:var(--gray-500); border-radius:6px; width:24px; height:24px; font-size:13px; line-height:1; cursor:pointer; padding:0; }
+    .col:hover { color:var(--teal-700); border-color:var(--teal-600); }
+    .ph .col:first-child { margin-right:8px; } .ph b { flex:1; }
+    .rail { position:sticky; top:8px; display:flex; flex-direction:column; align-items:center; gap:10px; width:40px; min-height:180px; padding:10px 0;
+      border:1px solid var(--border); border-radius:var(--radius); background:#fff; box-shadow:var(--shadow); cursor:pointer; color:var(--teal-700); }
+    .rail:hover { border-color:var(--teal-600); background:var(--teal-50); }
+    .ri { font-size:14px; font-weight:700; }
+    .rl { writing-mode:vertical-rl; transform:rotate(180deg); font-size:12px; font-weight:700; letter-spacing:.04em; color:var(--ink-soft); }
+    .rb { min-width:20px; height:20px; border-radius:999px; background:var(--teal-700); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 5px; }
     .panel { background:#fff; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px; }
     .side { position:sticky; top:8px; }
     .ph { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; font-size:13.5px; color:var(--ink); }
@@ -369,6 +396,14 @@ export class WfmWorklist {
 
   // ---- Assign to: most available first, type-ahead, see all; one person per authorization
   readonly showRail = computed(() => !!this.queue && this.store.perms().assignOthers);
+
+  // ---- collapsible side panels, remembered in this browser
+  readonly panels = signal<{ filters: boolean; people: boolean }>(loadPanels());
+  setPanel(k: 'filters' | 'people', open: boolean) {
+    const next = { ...this.panels(), [k]: open };
+    this.panels.set(next);
+    try { localStorage.setItem(PANELS_KEY, JSON.stringify(next)); } catch { /* storage unavailable: lasts for the session */ }
+  }
   readonly staff = computed(() => {
     const q = this.queue;
     return q ? this.store.staffLoads().filter((s) => wfmEligible(s, q)).sort((a, b) => a.utilization - b.utilization) : [];
