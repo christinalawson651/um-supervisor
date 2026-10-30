@@ -51,7 +51,7 @@ const WORKFORCE_WIDGETS = [...WFM_QUEUES.map((q) => ({ id: q.id, title: q.name }
 
     <app-wfm-queues [vis]="vis"></app-wfm-queues>
 
-    @if (!store.isReviewer() && !isHidden('workload')) {
+    @if (!store.isReviewer() && !board()?.openQueue() && !isHidden('workload')) {
     <div class="panel mt-6">
       <div class="panel-pad tbl-head">
         <h3 class="panel-title">Workload {{ groupBy() === 'team' ? '— by Team' : 'per Nurse' }}{{ workloadScope() }}</h3>

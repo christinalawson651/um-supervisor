@@ -6,16 +6,15 @@ import {
   inPlanScope, lobOf, bandOf, ageH, urgencyOf, stateCodeOf,
 } from '../data/case-fields';
 import { NOW, dueLabel, dueTone } from '../data/wfm-work';
-import { Item, UNCLAIMED, WfmStore, WorkState } from '../shared/wfm-store';
+import { Item, UNCLAIMED, WfmStore, WorkState, unclaimedHere } from '../shared/wfm-store';
 import { LobFilter } from '../shared/lob-filter';
 import { Lookback } from '../shared/lookback';
 import { Interaction } from '../shared/interaction';
 import { Exporter } from '../shared/exporter';
 import { WidgetVisibility } from '../shared/widget-visibility';
 import { WidgetActions } from '../shared/widget-actions';
-import { WfmAssignPanel, AssignCase, AssignRequest } from './wfm-assign-panel';
 import { WfmWorklist } from './wfm-worklist';
-import { WfmQueueFilter, matchQueueFilter, prioOf, qfCount, qfSummary } from './wfm-queue-filter';
+import { qfCount, qfSummary } from './wfm-queue-filter';
 import { WfmEscalateDialog } from './wfm-escalate-dialog';
 
 type FindList = 'type' | 'setting' | 'product' | 'spec' | 'role';
@@ -25,13 +24,13 @@ interface Card {
   buckets: { fresh: number; day2: number; over48: number; breach: number };
 }
 
-/** The UM queues: saved views, a queue finder, queue cards each with its own filters and, once a
- *  queue is opened, its worklist (which shares the queue's filters). Supervisors assign in bulk; reviewers see only the queues
+/** The UM queues: saved views, a queue finder and queue cards. Opening a queue opens its workspace,
+ *  where that queue's filters and assignment live. Supervisors assign in bulk; reviewers see only the queues
  *  they may work and claim (cherry-pick) any item for themselves. */
 @Component({
   selector: 'app-wfm-queues',
   standalone: true,
-  imports: [FormsModule, WidgetActions, WfmAssignPanel, WfmWorklist, WfmEscalateDialog, WfmQueueFilter],
+  imports: [FormsModule, WidgetActions, WfmWorklist, WfmEscalateDialog],
   template: `
     <!-- Saved views -->
     <div class="views">
@@ -58,8 +57,8 @@ interface Card {
     </div>
 
     @if (openQueue(); as oq) {
-      <app-wfm-worklist [queueId]="oq" [title]="worklistTitle()" [items]="worklistItems()"
-        (back)="openQueue.set(null)" (assign)="assignItems($event)" (escalate)="escItems.set($event)"></app-wfm-worklist>
+      <app-wfm-worklist [queueId]="oq" [queue]="openDef()" [title]="worklistTitle()" [items]="worklistItems()"
+        (back)="openQueue.set(null)" (escalate)="escItems.set($event)"></app-wfm-worklist>
     } @else {
       <!-- Queue finder -->
       <div class="finder">
@@ -93,21 +92,9 @@ interface Card {
     }
 
     @if (!openQueue()) {
-      @if (store.perms().assignOthers) {
-        <div class="bulk" [class.on]="selCards().size">
-          <label class="selall"><input type="checkbox" [checked]="allCardsSel()" (change)="toggleAllCards()" />
-            {{ selCards().size ? selCards().size + ' queue' + (selCards().size === 1 ? '' : 's') + ' selected' : 'Select queues to assign in bulk' }}</label>
-          @if (selCards().size) {
-            <span><b>{{ selUnclaimed() }}</b> unclaimed authorizations</span><span class="spacer"></span>
-            <button class="btn outline sm" (click)="selCards.set(none())">Clear</button>
-            <button class="btn primary sm" [disabled]="!selUnclaimed()" (click)="assignCards([...selCards()])">Assign {{ selUnclaimed() }}…</button>
-          }
-        </div>
-      }
-
       <div class="qhint">
         @if (store.isReviewer()) { You see the queues your role, specialties and licensed states allow, with unclaimed work and your own. Open a queue and claim any item. }
-        @else { Cards show <b>unclaimed authorizations available to pull next</b>, after <b>each queue's own filters</b> (Plans at the top apply to all). Bars show how long each has waited; click a band to see those authorizations. Open a queue for its worklist, which uses the same filters. }
+        @else { Cards show <b>unclaimed authorizations available to pull next</b>. Bars show how long each has waited; click a band to see those authorizations. <b>Open a queue</b> to filter its work and assign it. }
       </div>
 
       <div class="cards">
@@ -120,10 +107,9 @@ interface Card {
         }
         @for (c of cards(); track c.key) {
           @if (!vis || !vis.isHidden(c.queue.id)) {
-          <div class="card" [class.picked]="selCards().has(c.key)">
+          <div class="card">
             @if (vis && store.perms().assignOthers) { <z-widget-actions (exportClick)="exportCard(c)" (removeClick)="vis.remove(c.queue.id)"></z-widget-actions> }
             <div class="top">
-              @if (store.perms().assignOthers) { <input class="pick" type="checkbox" [checked]="selCards().has(c.key)" (change)="toggleCard(c.key)" [attr.aria-label]="'Select ' + c.name" /> }
               <button class="pin" [class.on]="store.pins().includes(c.queue.id)" (click)="store.togglePin(c.queue.id)" title="Pin">★</button>
               <span class="name">{{ c.name }}</span>
               <span class="cnt">{{ c.auths }}</span>
@@ -134,18 +120,7 @@ interface Card {
               @if (c.stepOverdue) { <span class="fl amber">{{ c.stepOverdue }} past step due</span> }
               @if (c.auths) { <span class="fl" [attr.data-t]="tone(c.soonest)">next SLA {{ due(c.soonest) }}</span> }
             </div>
-            <div class="qf">
-              <button class="qfbtn" [class.on]="qfN(c.queue.id)" (click)="filterOpen.set(filterOpen() === c.key ? null : c.key)">
-                ⚲ Filters@if (qfN(c.queue.id)) { · {{ qfN(c.queue.id) }}}</button>
-              @if (qfText(c.queue.id); as t) { <span class="qfsum" [title]="t">{{ t }}</span><button class="qfx" (click)="clearQf(c.queue.id)" title="Clear this queue's filters">×</button> }
-            </div>
-            @if (filterOpen() === c.key) {
-              <div class="qfpop">
-                <app-wfm-queue-filter class="stack" [queueId]="c.queue.id" [items]="queueItems(c.queue.id)" [holder]="false"></app-wfm-queue-filter>
-                <div class="qff"><span>Applies to this queue's card and worklist · saved for {{ store.actor() }}</span>
-                  <button class="btn primary sm" (click)="filterOpen.set(null)">Done</button></div>
-              </div>
-            }
+            @if (qfText(c.queue.id); as t) { <div class="qf" [title]="t">Queue filters: {{ t }}</div> }
             <div class="seg">
               <span class="s-fresh"  [style.width.%]="c.buckets.fresh"  title="0–24h in queue" (click)="openBucket(c, 'fresh')"></span>
               <span class="s-day2"   [style.width.%]="c.buckets.day2"   title="24–48h in queue" (click)="openBucket(c, 'day2')"></span>
@@ -159,8 +134,7 @@ interface Card {
               <span (click)="openBucket(c, 'breach')"><i class="d-breach"></i>Breach</span>
             </div>
             <div class="acts">
-              <button class="open" (click)="openQueue.set(c.key)">Open worklist</button>
-              @if (store.perms().assignOthers) { <button class="assign" [disabled]="!c.auths" (click)="assignCards([c.key])">Assign {{ c.auths || '' }}</button> }
+              <button class="assign" (click)="openQueue.set(c.key)">{{ store.perms().assignOthers ? 'Open queue to assign' : 'Open queue' }}</button>
             </div>
           </div>
           }
@@ -171,7 +145,6 @@ interface Card {
         <div>{{ notInPilot.join(' · ') }}</div></details>
     }
 
-    <app-wfm-assign-panel [request]="assignReq()" [staff]="store.staffLoads()" (assign)="applyAssign($event)" (close)="assignReq.set(null)"></app-wfm-assign-panel>
     <app-wfm-escalate-dialog [items]="escItems()" (close)="escItems.set([])" (done)="escItems.set([])"></app-wfm-escalate-dialog>
   `,
   styles: [`
@@ -188,13 +161,7 @@ interface Card {
     .btn.on { background:var(--teal-700); border-color:var(--teal-700); color:#fff; }
     .sortsel { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray-500); }
     .count { margin-left:auto; font-size:12px; font-weight:600; color:var(--gray-500); }
-    .qf { display:flex; align-items:center; gap:6px; margin-bottom:8px; min-width:0; }
-    .qfbtn { border:1px solid var(--gray-300); background:#fff; color:var(--gray-500); border-radius:6px; padding:2px 9px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
-    .qfbtn.on { border-color:var(--teal-600); color:var(--teal-700); background:var(--teal-50); }
-    .qfsum { font-size:11px; color:var(--teal-900); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; }
-    .qfx { border:none; background:none; color:var(--gray-500); cursor:pointer; font-size:15px; line-height:1; padding:0; }
-    .qfpop { position:absolute; left:8px; top:96px; z-index:20; width:min(440px, 92vw); background:#fff; border:1px solid var(--teal-600); border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.18); padding:12px; }
-    .qff { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:11px; color:var(--gray-500); } .qff span { flex:1; }
+    .qf { font-size:11px; color:var(--teal-900); background:var(--teal-50); border-radius:6px; padding:2px 8px; margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .bhp { font-size:11.5px; font-weight:600; color:var(--teal-900); background:var(--teal-50); border:1px solid var(--teal-100); border-radius:999px; padding:3px 10px; }
     .bulk { display:flex; align-items:center; gap:12px; margin:0 0 12px; padding:6px 12px; border:1px dashed var(--gray-300); border-radius:8px; font-size:12px; color:var(--gray-500); }
     .bulk.on { position:sticky; top:0; z-index:5; border:1px solid var(--teal-600); background:var(--teal-50); color:var(--teal-900); }
@@ -244,7 +211,6 @@ export class WfmQueues {
   ];
   readonly specs = WFM_SPECIALTIES;
   readonly roles = WFM_ROLES;
-  readonly filterOpen = signal<string | null>(null);
   readonly finderGroups = [
     { key: 'type' as const, label: 'Type', values: ['General', 'Specialized'] },
     { key: 'setting' as const, label: 'Setting', values: ['IP', 'OP'] },
@@ -254,12 +220,9 @@ export class WfmQueues {
   readonly openQueue = signal<string | null>(null);
   readonly naming = signal(false);
   readonly viewName = signal('');
-  readonly selCards = signal<ReadonlySet<string>>(new Set());
-  readonly assignReq = signal<AssignRequest | null>(null);
   readonly escItems = signal<Item[]>([]);
-  private assignRows = new Map<string, Item[]>();
   // A different user (role switch) starts from their own queue list, not the last user's open worklist.
-  private readonly onUser = effect(() => { this.store.actor(); this.openQueue.set(null); this.selCards.set(new Set()); });
+  private readonly onUser = effect(() => { this.store.actor(); this.openQueue.set(null); });
   none() { return new Set<string>(); }
 
   // ---- views
@@ -279,13 +242,9 @@ export class WfmQueues {
   toggleFinder(k: FindList, v: string) {
     this.store.patch((s) => { const a = s.find[k]; s.find[k] = a.includes(v) ? a.filter((x) => x !== v) : [...a, v]; });
   }
-  qfN(id: string) { return qfCount(this.st().qf[id]); }
   qfText(id: string) { return qfSummary(this.st().qf[id]); }
-  clearQf(id: string) { this.store.patch((s) => { delete s.qf[id]; }); }
   /** All of a queue's work in scope, before its own filters (the filter offers plans from it). */
   queueItems(id: string) { return this.byQueue().get(id) ?? []; }
-  /** A queue's work after its own filters — what its card counts and assigns. */
-  private filtered(id: string) { const f = this.st().qf[id] ?? {}, me = this.store.actor(); return this.queueItems(id).filter((i) => matchQueueFilter(f, i, me)); }
 
   /** Open lines in scope: the shell's Plans and Dates, and for a reviewer only unclaimed or their
    *  own work in the states they are licensed in. Each queue's own filters apply on top. */
@@ -313,7 +272,7 @@ export class WfmQueues {
   private card(q: WfmQueue, all: Item[], lob?: string): Card {
     const actor = this.store.actor();
     const items = lob ? all.filter((i) => lobOf(i.c.authId) === lob) : all;
-    const un = items.filter((i) => i.holder === UNCLAIMED);
+    const un = items.filter(unclaimedHere);
     const auths = new Map<string, Item[]>();
     un.forEach((i) => { if (!auths.has(i.c.authId)) auths.set(i.c.authId, []); auths.get(i.c.authId)!.push(i); });
     const bands = { fresh: 0, day2: 0, over48: 0, breach: 0 };
@@ -335,7 +294,7 @@ export class WfmQueues {
   readonly cards = computed((): Card[] => {
     const s = this.st(), pins = this.store.pins();
     let list = this.store.visibleQueues().filter((q) => this.queueOk(q)).flatMap((q) => {
-      const all = this.filtered(q.id);
+      const all = this.queueItems(q.id);
       return s.split ? LOBS.map((l) => this.card(q, all, l)).filter((c) => c.auths > 0) : [this.card(q, all)];
     });
     if (s.find.breach) list = list.filter((c) => c.slaBreached > 0);
@@ -366,45 +325,12 @@ export class WfmQueues {
     return (this.byQueue().get(id) ?? []).filter((i) => !lob || lobOf(i.c.authId) === lob);
   });
 
-  // ---- card selection and bulk assign
-  toggleCard(k: string) { const s = new Set(this.selCards()); s.has(k) ? s.delete(k) : s.add(k); this.selCards.set(s); }
-  private shownKeys() { return this.cards().filter((c) => !this.vis?.isHidden(c.queue.id)).map((c) => c.key); }
-  allCardsSel() { const k = this.shownKeys(); return k.length > 0 && k.every((x) => this.selCards().has(x)); }
-  toggleAllCards() { this.selCards.set(this.allCardsSel() ? new Set() : new Set(this.shownKeys())); }
-  readonly selUnclaimed = computed(() => this.cards().filter((c) => this.selCards().has(c.key)).reduce((n, c) => n + c.auths, 0));
-  assignCards(keys: string[]) {
-    const items = keys.flatMap((k) => { const { id, lob } = this.parse(k); return this.filtered(id).filter((i) => i.holder === UNCLAIMED && (!lob || lobOf(i.c.authId) === lob)); });
-    this.assignItems(items);
-  }
-  /** One assign row per authorization: its selected lines move together. */
-  assignItems(items: Item[]) {
-    const by = new Map<string, Item[]>();
-    items.forEach((i) => { if (!by.has(i.c.authId)) by.set(i.c.authId, []); by.get(i.c.authId)!.push(i); });
-    this.assignRows = by;
-    const cases: AssignCase[] = [...by].map(([authId, xs]) => {
-      const all = this.items().filter((i) => i.c.authId === authId).length;
-      const p = prioOf(xs.reduce((a, b) => (b.l.slaDue < a.l.slaDue ? b : a)));
-      return {
-        authId, label: xs.length < all ? `${authId} · L${xs.map((x) => x.l.no).join(',')}` : authId, lines: xs.length,
-        member: xs[0].c.member, queueId: xs[0].queue, urgency: xs[0].l.urgency, state: stateCodeOf(authId), ageH: ageH(authId),
-        slaDue: Math.min(...xs.map((x) => x.l.slaDue)), priority: p as AssignCase['priority'],
-      };
-    });
-    const qids = new Set(cases.map((c) => c.queueId));
-    this.assignReq.set({ queues: WFM_QUEUES.filter((q) => qids.has(q.id)), cases });
-  }
-  applyAssign(list: { authId: string; to: string }[]) {
-    const plan = list.flatMap(({ authId, to }) => (this.assignRows.get(authId) ?? []).map((item) => ({ item, to })));
-    this.store.assign(plan);
-    const people = new Set(list.map((x) => x.to));
-    this.ix.toast(`${list.length} authorization(s) assigned to ${people.size === 1 ? [...people][0] : people.size + ' people'}.`);
-    this.assignReq.set(null); this.selCards.set(new Set());
-  }
+  readonly openDef = computed(() => { const k = this.openQueue(); return k && k !== '*mine*' ? WFM_QUEUES.find((q) => q.id === this.parse(k).id) : undefined; });
 
   // ---- drill and export
   openBucket(c: Card, band: string) {
     const labels: Record<string, string> = { fresh: '0–24h in queue', day2: '24–48h in queue', over48: '>48h in queue', breach: 'Breach (past SLA)' };
-    const un = this.worklistFor(c).filter((i) => i.holder === UNCLAIMED);
+    const un = this.worklistFor(c).filter(unclaimedHere);
     const ids = [...new Set(un.map((i) => i.c.authId))].filter((id) => {
       const sla = Math.min(...un.filter((i) => i.c.authId === id).map((i) => i.l.slaDue));
       return bandOf(id, sla < NOW) === band;
@@ -419,7 +345,7 @@ export class WfmQueues {
       rows, exportName: `${c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${band}${TODAY_ISO}`, memberColumn: 1,
     });
   }
-  private worklistFor(c: Card) { return this.filtered(c.queue.id).filter((i) => !c.lob || lobOf(i.c.authId) === c.lob); }
+  private worklistFor(c: Card) { return this.queueItems(c.queue.id).filter((i) => !c.lob || lobOf(i.c.authId) === c.lob); }
   exportCard(c: Card) {
     this.exporter.open({
       title: c.name, name: `queue-${c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${TODAY_ISO}`, columns: ['Metric', 'Value'],

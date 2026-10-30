@@ -1,7 +1,7 @@
 import { Component, Input, computed, inject, signal } from '@angular/core';
 import { BHP_BY, BHP_PRODUCTS, WFM_STATES, bhpOf, bhpProductOf, bhpStateOf, stateCodeOf } from '../data/case-fields';
 import { H, NOW } from '../data/wfm-work';
-import { Item, QfKey, QueueFilter, UNCLAIMED, WfmStore } from '../shared/wfm-store';
+import { Item, QfKey, QueueFilter, UNCLAIMED, WfmStore, unclaimedHere } from '../shared/wfm-store';
 
 // Each queue has its own filters, because different queues need different cuts of their work.
 // One filter set per queue, per user: the queue's card and its worklist both read and write it,
@@ -14,7 +14,7 @@ export const productLabel = (id: string) => `${bhpStateOf(id) === 'Arizona' ? 'A
 /** Does this line pass its queue's filters? */
 export function matchQueueFilter(f: QueueFilter, i: Item, actor: string): boolean {
   const any = (k: QfKey, ok: (v: string) => boolean) => !f[k]?.length || f[k]!.some(ok);
-  return any('holder', (v) => (v === 'Unclaimed' ? i.holder === UNCLAIMED : v === 'Mine' ? i.holder === actor : i.holder !== UNCLAIMED))
+  return any('holder', (v) => (v === 'Unclaimed' ? unclaimedHere(i) : v === 'Mine' ? i.holder === actor : i.holder !== UNCLAIMED))
     && any('due', (v) => (v === 'SLA breached' ? i.l.slaDue < NOW : v === 'SLA < 24h' ? i.l.slaDue >= NOW && i.l.slaDue - NOW < 24 * H : i.l.stepDue < NOW))
     && any('urg', (v) => v === i.l.urgency) && any('prio', (v) => v === prioOf(i)) && any('state', (v) => v === stateCodeOf(i.c.authId))
     && any('plan', (v) => v === bhpProductOf(bhpOf(i.c.authId)));

@@ -1,7 +1,7 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { CaseRec } from '../data/case-pool';
 import { WFM_QUEUES, WFM_STAFF, WfmRole, WfmStaff, wfmEligible, wfmQueueOf } from '../data/case-fields';
-import { H, LINE_OPEN, Urgency, WorkLine, linesOf, receivedOf, windowH } from '../data/wfm-work';
+import { H, LINE_OPEN, Urgency, WorkLine, linesOf, poolOf, receivedOf, windowH } from '../data/wfm-work';
 import { DashboardData } from '../data/dashboard-data';
 import { Nav } from './nav';
 
@@ -47,6 +47,8 @@ const withDefaults = (x?: Partial<WorkState>): WorkState => {
 export interface Item { c: CaseRec; l: WorkLine; key: string; queue: string; holder: string; }
 export interface CustodyEntry { at: number; authId: string; line: number; action: string; from: string; to: string; by: string; reason?: string; }
 export const lineKey = (authId: string, no: number) => `${authId}#${no}`;
+/** Unclaimed work this queue can hand out: a pool line (RX) waiting in its pool is not this queue's to assign. */
+export const unclaimedHere = (i: Item) => i.holder === UNCLAIMED && !poolOf(i.l);
 
 /** The L2 queue that MD review / peer-to-peer routes a line to. Specialized queues keep their queue. */
 export function l2QueueOf(queueId: string): string {
@@ -66,6 +68,8 @@ export class WfmStore {
 
   // ---- session changes layered over TruCare's data (these are the writes Pulse would send to 26.x)
   private readonly holders = signal<ReadonlyMap<string, string>>(new Map());
+  /** Auth Owner: the person accountable for closing the authorization (um-03 addendum 01 §12.0). */
+  private readonly owners = signal<ReadonlyMap<string, string>>(new Map());
   private readonly queueOv = signal<ReadonlyMap<string, string>>(new Map());
   private readonly stepOv = signal<ReadonlyMap<string, { at: number; reason: string }>>(new Map());
   private readonly urgOv = signal<ReadonlyMap<string, { u: Urgency; reason: string }>>(new Map());
@@ -88,7 +92,9 @@ export class WfmStore {
       return s ? { ...x, stepDue: s.at } : x;
     });
   }
-  holderOf(c: CaseRec, l: WorkLine) { return this.holders().get(lineKey(c.authId, l.no)) ?? c.nurse; }
+  /** A pool line (an RX line) starts queued in its pool; any other line starts with the case's holder. */
+  holderOf(c: CaseRec, l: WorkLine) { return this.holders().get(lineKey(c.authId, l.no)) ?? (poolOf(l) ? UNCLAIMED : c.nurse); }
+  ownerOf(c: CaseRec) { return this.owners().get(c.authId) ?? c.nurse; }
   queueOf(c: CaseRec, l: WorkLine) { return this.queueOv().get(lineKey(c.authId, l.no)) ?? wfmQueueOf(c); }
   /** Every open line of these cases, each in its queue with its holder. */
   items(cases: CaseRec[]): Item[] {
@@ -142,16 +148,30 @@ export class WfmStore {
     return `${auths} authorization(s), ${items.length} line(s)`;
   }
 
-  assign(plan: { item: Item; to: string }[]) {
-    if (!plan.length) return;
-    const to = new Map(plan.map((p) => [p.item.key, p.to])), items = plan.map((p) => p.item);
-    this.log(items, 'Assigned', (i) => to.get(i.key)!);
-    this.setHolders(items, (i) => to.get(i.key)!);
-    const people = [...new Set(plan.map((p) => p.to))];
-    this.history('Bulk assigned from WFM queue', `${this.n(items)} → ${people.join(', ')}`, items, people.length === 1 ? people[0] : undefined);
+  /** Assign authorizations, one person each. The person becomes Auth Owner and takes the lines
+   *  their role works; a pool line (RX) is not handed to them: it keeps a holder who works the pool,
+   *  or stays queued in the pool. Returns how many lines stayed in a pool. */
+  assignAuths(plan: { items: Item[]; to: string }[]): number {
+    const give: { item: Item; to: string }[] = [];
+    let pooled = 0;
+    for (const p of plan) for (const item of p.items) (poolOf(item.l) ? pooled++ : give.push({ item, to: p.to }));
+    // the assignee becomes Auth Owner when they take lines (or nobody owns it yet)
+    const owners = new Map(this.owners());
+    plan.forEach((p) => { const c = p.items[0].c; if (p.items.some((i) => !poolOf(i.l)) || this.ownerOf(c) === UNCLAIMED) owners.set(c.authId, p.to); });
+    this.owners.set(owners);
+    if (give.length) {
+      const to = new Map(give.map((g) => [g.item.key, g.to])), items = give.map((g) => g.item);
+      this.log(items, 'Assigned', (i) => to.get(i.key)!);
+      this.setHolders(items, (i) => to.get(i.key)!);
+    }
+    const people = [...new Set(plan.map((p) => p.to))], all = plan.flatMap((p) => p.items);
+    const pool = pooled ? `; ${pooled} RX line(s) left with the pharmacist pool` : '';
+    this.history('Bulk assigned from WFM queue', `${this.n(all)} → ${people.join(', ')} (Auth Owner)${pool}`, all, people.length === 1 ? people[0] : undefined);
+    return pooled;
   }
   claim(items: Item[]) {
     const me = this.actor();
+    items = items.filter((i) => !poolOf(i.l)); // a pool line is claimed from its pool, not by the queue's role
     this.log(items, 'Claimed', () => me);
     this.setHolders(items, () => me);
     this.history('Claimed from WFM queue', `${this.n(items)} claimed by ${me}`, items, me);

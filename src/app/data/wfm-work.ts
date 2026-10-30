@@ -16,6 +16,10 @@ export interface WorkLine {
   /** Due date for the current step on this line (ms). */ stepDue: number;
 }
 export const LINE_OPEN = (l: WorkLine) => l.status === 'Pending review' || l.status === 'Pending information';
+/** A line that needs a specialty pool rather than the queue's role (um-02 addendum 01 §13.2):
+ *  drug lines go to the pharmacist pool. Assigning the authorization leaves these lines in their
+ *  pool's queue (or with a holder who works that pool) instead of handing them to the assignee. */
+export const poolOf = (l: WorkLine): 'Pharmacist' | null => (l.type === 'RX Line' ? 'Pharmacist' : null);
 
 export const H = 3600e3;
 /** "Now" for every due-date calculation, fixed at load so countdowns agree across the page. */
